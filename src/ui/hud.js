@@ -217,11 +217,12 @@ export class Hud {
       const alive = c.alive;
       const col = !alive ? rgba(72, 66, 66, 255) : c.burning ? rgba(255, 132, 46, 255)
         : targeted ? RED : GREEN;
+      const label = !alive ? `† ${c.name}` : c.burning ? `${c.name} ✦` : c.name;
       const bg = !alive ? rgba(24, 20, 22, 255) : INK;
       fillRectBuf(buf, W, H, x, y, bw, 12 * s, bg, 0.62);
       fillRectBuf(buf, W, H, x, y, bw, 1.5 * s, col, alive ? 0.95 : 0.4);
       const blink = targeted && alive ? 0.55 + 0.45 * Math.abs(Math.sin(this.tick * 7)) : 1;
-      T.draw(buf, W, H, x + bw / 2, y + 9 * s, alive ? c.name : `† ${c.name}`, {
+      T.draw(buf, W, H, x + bw / 2, y + 9 * s, label, {
         size: Math.round(7.4 * s), color: col, align: 'center', track: 0.6, alpha: blink * (alive ? 1 : 0.55),
       });
       x += bw + gap;
@@ -481,7 +482,7 @@ export class Hud {
       size: Math.round(10 * s), color: AMBER, align: 'center', track: 3,
     });
     this.text.draw(buf, W, H, W / 2, oy + mh + 36 * s,
-      `SECRETS ${game.player.secretsFound}/${game.secretTotal}   KILLS ${game.player.kills}/${game.enemyTotal}   TREASURE ${game.player.treasure}/${game.treasureTotal}`, {
+      `SECRETS ${game.player.secretsFound}/${game.secretTotal}   KILLS ${game.levelKills}/${game.enemyTotal}   TREASURE ${game.player.treasure}/${game.treasureTotal}`, {
       size: Math.round(8 * s), color: BONE, align: 'center', track: 2, alpha: 0.8,
     });
   }

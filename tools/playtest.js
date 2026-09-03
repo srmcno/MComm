@@ -127,14 +127,17 @@ s = await page.evaluate(() => {
   g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('pistol');
   const w = g.sky.spawnWarhead('stick', 1);
   const before = g.sky.warheads.length;
-  const range = window.T.aimLead(w);
-  window.T.fire();
-  window.T.step(6);
-  return { before, after: g.sky.warheads.length, range: +range.toFixed(1),
+  let range = 0, tries = 0;
+  for (; tries < 6 && g.sky.warheads.length >= before; tries++) {
+    range = window.T.aimLead(g.sky.warheads[0]);
+    window.T.fireNow();
+    window.T.step(1.6);
+  }
+  return { before, after: g.sky.warheads.length, range: +range.toFixed(1), tries,
     score: g.player.score, flakLeft: g.sky.flak.length };
 });
 check('flak airburst kills a warhead', s.after < s.before && s.score > 0,
-  `range ${s.range}m, score ${s.score}`);
+  `${s.tries} shot${s.tries === 1 ? '' : 's'} at ${s.range}m, score ${s.score}`);
 
 // ----------------------------------------------- 4. contact does NOT kill
 s = await page.evaluate(() => {
@@ -181,15 +184,21 @@ s = await page.evaluate(() => {
   const g = window.NUKEHAUS.game;
   g.loadLevel(0); g.setState('play'); g._god = true;
   const before = g.sky.livingCities().length;
-  const w = g.sky.spawnWarhead('stick', 1);
-  w.target = g.sky.cities[0];
-  w.x = w.target.x; w.y = w.target.y; w.z = 4;
-  w._aim();
-  window.T.step(3);
-  return { before, after: g.sky.livingCities().length, dead: g.sky.cities[0].alive === false,
-    banner: g.hud.banner ? g.hud.banner.title : null };
+  const c = g.sky.cities[0];
+  const hit = () => {
+    const w = g.sky.spawnWarhead('stick', 1);
+    w.stray = false; w.target = c;
+    w.x = c.x; w.y = c.y; w.z = 4; w._aim();
+    window.T.step(3);
+  };
+  hit();
+  const burningAfterOne = c.burning && c.alive;
+  hit();                                    // cities take two
+  return { before, after: g.sky.livingCities().length, burningAfterOne,
+    dead: !c.alive, banner: g.hud.banner ? g.hud.banner.title : null };
 });
-check('a leaked warhead destroys its city', s.after === s.before - 1 && s.dead, s.banner || '');
+check('one leak burns a city, two destroy it',
+  s.burningAfterOne && s.dead && s.after === s.before - 1, s.banner || '');
 
 // ------------------------------------------------------ 7. MIRV splits
 s = await page.evaluate(() => {

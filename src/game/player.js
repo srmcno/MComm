@@ -43,7 +43,8 @@ export class Player {
     this.regenTimer = 0;
     this.lastDamageAt = -99;
     this.score = 0;
-    this.kills = 0;
+    this.kills = 0;        // enemies
+    this.skyKills = 0;     // warheads
     this.secretsFound = 0;
     this.treasure = 0;
   }
@@ -134,11 +135,13 @@ export class Player {
     this.hurtFlash = damp(this.hurtFlash, 0, 3.4, dt);
     this.emp = Math.max(0, this.emp - dt);
 
-    // The Widow quietly tops you up so you're never stranded with nothing.
+    // The Widow is meant to never leave you naked, so the flak pool trickles
+    // back to a working floor. Sustained pistol fire is roughly free; anything
+    // heavier draws down reserves you have to go and find.
     this.regenTimer += dt;
-    if (this.regenTimer > 2.6) {
+    if (this.regenTimer > 0.8) {
       this.regenTimer = 0;
-      if (this.ammo[AMMO_FLAK] < 26) this.giveAmmo(AMMO_FLAK, 2);
+      if (this.ammo[AMMO_FLAK] < 40) this.giveAmmo(AMMO_FLAK, 1);
     }
 
     // Weapon swap: the viewmodel dips out and back.

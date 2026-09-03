@@ -7,7 +7,7 @@ import { Level } from './level.js';
 import { Player, EYE_HEIGHT, FUSE_MIN, FUSE_MAX } from './player.js';
 import { Enemy, Bolt, ENEMY_TYPES, ST } from './entities.js';
 import { Particles } from './particles.js';
-import { SkyWar, City, WARHEAD_TYPES } from './sky.js';
+import { SkyWar, City, WARHEAD_TYPES, CITY_MAX_HP } from './sky.js';
 import { WEAPONS, WEAPON_ORDER, AMMO_FLAK, AMMO_NAIL, AMMO_CHARGE, weaponBySlot } from './weapons.js';
 import { Hud } from '../ui/hud.js';
 import { Text, blitFrame, fillRectBuf, addRectBuf } from '../ui/text.js';
@@ -23,6 +23,9 @@ export const STATE = {
 const SKY_PALETTES = ['dusk', 'ash', 'night', 'furnace', 'terminal'];
 
 // What the three exposure settings on the title screen actually change.
+// Score threshold at which MUTTER rebuilds a city, straight out of 1980.
+export const BONUS_CITY_EVERY = 15000;
+
 export const DIFFICULTY = [
   { name: 'CLERICAL',   warheadSpeed: 0.80, enemyDamage: 0.55, enemyHp: 0.85,
     waveCount: 0.75, maxAliveDelta: -1, blast: 1.18, health: 125, regen: 1.8 },
@@ -96,6 +99,7 @@ export class Game {
     this.pendingState = null;
     this.messageQueue = [];
     this.diff = DIFFICULTY[1];
+    this.nextBonusCity = BONUS_CITY_EVERY;
     this.idleTaunt = 22;
     this.bossKilled = false;
     this.hitStop = 0;
@@ -131,6 +135,7 @@ export class Game {
     this.levelIndex = 0;
     this.totalScoreCarry = 0;
     this.bossKilled = false;
+    this.nextBonusCity = BONUS_CITY_EVERY;
     this.loadLevel(0);
   }
 
@@ -166,6 +171,11 @@ export class Game {
     p.emp = 0;
     p.health = Math.max(p.health, 45);
 
+    this.triggerOrder = [];
+    for (let n = 0; n < this.level.trigger.length; n++) {
+      if (this.level.trigger[n]) this.triggerOrder.push(n);
+    }
+    this.waveQueue = [];
     let secretTotal = 0, treasureTotal = 0;
     for (let n = 0; n < this.level.secret.length; n++) if (this.level.secret[n]) secretTotal++;
 
@@ -195,6 +205,7 @@ export class Game {
       }
     }
     this.enemyTotal = this.enemies.length;
+    this.levelKills = 0;
     this.secretTotal = secretTotal;
     this.treasureTotal = treasureTotal;
 
@@ -232,10 +243,11 @@ export class Game {
     const perfect = (killPct >= 1 ? 5000 : 0) + (secretPct >= 1 ? 5000 : 0);
     return {
       time: this.levelTime, timeBonus, cityBonus, perfect,
-      kills: p.kills, enemyTotal: this.enemyTotal,
+      kills: this.levelKills, enemyTotal: this.enemyTotal,
       secrets: p.secretsFound, secretTotal: this.secretTotal,
       treasure: p.treasure, treasureTotal: this.treasureTotal,
       bestChain: this.sky.bestChain,
+      skyKills: p.skyKills,
       total: timeBonus + cityBonus + perfect,
     };
   }
@@ -402,6 +414,7 @@ export class Game {
     }
     this.sky.update(dt, this);
     this.particles.update(dt, lv);
+    this.checkBonusCity();
     this.updateItems(dt);
     this.updateTriggers(dt);
     this.updateWave(dt);
@@ -420,6 +433,30 @@ export class Game {
       p.z = damp(p.z, 0.16, 2.2, dt);
       if (this.deathT > 2.6) { this.deathT = 0; this.gameOver('killed'); }
     }
+  }
+
+  /** Every BONUS_CITY_EVERY points, the machine puts one back. */
+  checkBonusCity() {
+    if (this.player.score < this.nextBonusCity) return;
+    this.nextBonusCity += BONUS_CITY_EVERY;
+    const hurt = this.sky.cities.filter((c) => c.hp < CITY_MAX_HP)
+      .sort((a, b) => a.hp - b.hp);
+    if (!hurt.length) {
+      this.player.score += 5000;
+      this.hud.popup('ALL SIX INTACT  +5,000', { size: 14, life: 2.4, color: rgba(126, 232, 128, 255) });
+      return;
+    }
+    const c = hurt[0];
+    const wasDead = !c.alive;
+    c.hp = CITY_MAX_HP;
+    this.skyDome.rebuild(this.sky.cities);
+    this.sound.sfx('pickup_treasure');
+    this.sound.sfx('wave_clear', { delay: 0.25 });
+    this.hud.showBanner(wasDead ? `${c.name} REBUILT` : `${c.name} REPAIRED`,
+      'THE MACHINE SEES NO CONTRADICTION', 3.6, rgba(126, 232, 128, 255));
+    this.hud.setFace('face_grin', 2.4);
+    this.speak('city_rebuilt', {},
+      `${c.name} has been reissued. The previous ${c.name} is not to be discussed.`);
   }
 
   updateRangeLock() {
@@ -454,10 +491,10 @@ export class Game {
         this.speak('key_taken', {}, 'That one opens the bad room.'); break;
       case 'medkit_small': got = p.heal(18) > 0; msg = '+18 VITALS'; this.sound.sfx('pickup_health'); break;
       case 'medkit_big': got = p.heal(48) > 0; msg = '+48 VITALS'; this.sound.sfx('pickup_health'); break;
-      case 'ammo': got = p.giveAmmo(AMMO_FLAK, 14) > 0 || p.giveAmmo(AMMO_NAIL, 26) > 0;
+      case 'ammo': got = p.giveAmmo(AMMO_FLAK, 20) > 0 || p.giveAmmo(AMMO_NAIL, 26) > 0;
         msg = 'FLAK SHELLS'; col = rgba(255, 186, 64, 255); this.sound.sfx('pickup_ammo'); break;
       case 'ammo_crate':
-        p.giveAmmo(AMMO_FLAK, 34); p.giveAmmo(AMMO_NAIL, 60);
+        p.giveAmmo(AMMO_FLAK, 50); p.giveAmmo(AMMO_NAIL, 60);
         msg = 'AMMO CRATE'; col = rgba(255, 186, 64, 255); this.sound.sfx('pickup_ammo'); break;
       case 'treasure': p.treasure++; p.score += 2500; msg = 'LAUNCH KEY  +2500';
         col = rgba(255, 208, 72, 255); this.sound.sfx('pickup_treasure'); this.hud.setFace('face_grin', 1.6); break;
@@ -487,7 +524,7 @@ export class Game {
     const i = lv.idx(p.x, p.y);
     if (lv.trigger[i] && !this.triggersFired.has(i) && !this.sky.active) {
       this.triggersFired.add(i);
-      this.beginSiege();
+      this.beginSiege(i);
     }
     if (lv.exit[i] && this.canExit()) {
       this.sound.sfx('elevator');
@@ -511,10 +548,31 @@ export class Game {
     return true;
   }
 
-  beginSiege() {
+  /**
+   * Start the wave (or run of waves) belonging to a trigger.
+   *
+   * A trigger owns every wave whose `trigger` index matches its reading-order
+   * position, and those run back to back, so a deck can escalate. Levels with
+   * more waves than triggers depend on this.
+   */
+  beginSiege(triggerCell) {
     const waves = (this.level.def.siege && this.level.def.siege.waves) || [];
-    const idx = clamp(this.waveIndexFor(), 0, Math.max(0, waves.length - 1));
-    let def = waves[idx];
+    if (!waves.length) return;
+    let tIdx = 0;
+    if (triggerCell !== undefined && this.triggerOrder) {
+      const at = this.triggerOrder.indexOf(triggerCell);
+      if (at >= 0) tIdx = at;
+    } else {
+      tIdx = clamp(this.triggersFired.size - 1, 0, waves.length - 1);
+    }
+    let queue = waves.map((w, i) => ({ w, i })).filter(({ w }) => (w.trigger || 0) === tIdx);
+    if (!queue.length) queue = [{ w: waves[clamp(tIdx, 0, waves.length - 1)], i: tIdx }];
+    this.waveQueue = queue.slice(1);
+    this.startWaveDef(queue[0].w, queue[0].i);
+  }
+
+  startWaveDef(defIn, idx) {
+    let def = defIn;
     if (!def) return;
     const D = this.diff;
     if (D.waveCount !== 1 || D.maxAliveDelta !== 0 || D.warheadSpeed !== 1) {
@@ -530,15 +588,17 @@ export class Game {
     }
     this.level.openRoof();
     this.sound.sfx('roof_open');
-    this.sound.music('siege', { fadeIn: 1.6, intensity: def.intensity || 0.5 });
+    this._siegeIntensity = def.intensity || 0.5;
+    this.sound.music('siege', { fadeIn: 1.6, intensity: this._siegeIntensity });
     this.shake = 3.2;
     this.sky.startWave(def, idx);
-    this.hud.showBanner(def.name || 'INBOUND', 'DEFEND THE SIX', 3.2, rgba(255, 74, 62, 255));
+    const more = this.waveQueue && this.waveQueue.length;
+    this.hud.showBanner(def.name || 'INBOUND',
+      more ? `DEFEND THE SIX  ·  ${more + 1} FLIGHTS` : 'DEFEND THE SIX',
+      3.2, rgba(255, 74, 62, 255));
     this.speak('roof_opening', {}, 'The roof is opening. Please look up.');
     this.pendingGrunts = (def.grunts || []).map((g) => ({ ...g, spawned: 0 }));
   }
-
-  waveIndexFor() { return this.triggersFired.size - 1; }
 
   updateWave(dt) {
     if (!this.sky.active) return;
@@ -553,10 +613,30 @@ export class Game {
         }
       }
     }
-    this.sound.music('siege', { intensity: this.sky.intensity });
+    // music() cross-fades, so only nudge it when the intensity has actually
+    // moved. Calling it every frame restarts the track sixty times a second.
+    if (this._siegeIntensity === undefined ||
+        Math.abs(this.sky.intensity - this._siegeIntensity) > 0.06) {
+      this._siegeIntensity = this.sky.intensity;
+      this.sound.music('siege', { fadeIn: 0.4, intensity: this.sky.intensity });
+    }
     if (this.sky.waveComplete) {
       const cleared = this.sky.livingCities().length;
+      const next = this.waveQueue && this.waveQueue.shift();
       this.sky.endWave();
+      this._siegeIntensity = undefined;
+      if (next) {
+        // Another flight from the same deck: a breather, then it starts again.
+        this.player.score += 900 + this.sky.bestChain * 200;
+        this.hud.showBanner('FLIGHT DOWN', 'ANOTHER IS COMING', 2.6, rgba(255, 186, 64, 255));
+        this.sound.sfx('wave_clear');
+        this.speak('wave_clear', {}, 'That flight is accounted for. The next one is not.');
+        const at = this.levelIndex;
+        setTimeout(() => {
+          if (this.state === STATE.PLAY && this.levelIndex === at) this.startWaveDef(next.w, next.i);
+        }, 6000);
+        return;
+      }
       this.level.roofTarget = 0;
       this.sound.sfx('wave_clear');
       this.sound.music(this.level.def.music || 'prowl', { fadeIn: 2.2 });
@@ -626,12 +706,14 @@ export class Game {
     p.cooldown = spec.refire;
     p.kick = spec.kick;
     p.kickVel = 0;
-    p.recoilPitch += spec.kick * 0.9;
     p.flashTimer = 0.075;
     p.fireAnim = Math.min(0.22, spec.refire * 0.85);
     this.shake = Math.max(this.shake, spec.shakeAmount);
     this.sound.sfx(spec.sfx, { vol: 1 });
 
+    // Take the aim vector BEFORE applying recoil: the shell leaves along where
+    // you were pointing, and the kick moves the view afterwards. The other way
+    // round throws every shot high by the recoil of the shot itself.
     const a = p.aimVector(this.rc.projY);
     const muzzle = {
       x: p.x + a.x * 0.35, y: p.y + a.y * 0.35, z: p.z + a.z * 0.35 - 0.08,
@@ -646,6 +728,7 @@ export class Game {
       case 'nuke': this.fireDeadman(spec, a, muzzle); break;
       default: break;
     }
+    p.recoilPitch += spec.kick * 0.9;
     this.alertNearby(p.x, p.y, spec.kind === 'kinetic' ? 9 : 15);
     if (spec.kind !== 'nuke') this.particles.casing(muzzle.x, muzzle.y, p.z - 0.12, p.ang);
   }
@@ -764,7 +847,8 @@ export class Game {
     for (const it of this.items) {
       if (it.solid && !it.taken && it.kind === 'barrel' && dist(x, y, it.x, it.y) < radius) {
         // Chained barrels: give the next one a beat so it reads as a chain.
-        setTimeout(() => this.damageProp(it, 999), 90);
+        const lvl = this.level;
+        setTimeout(() => { if (this.level === lvl && !it.taken) this.damageProp(it, 999); }, 90);
       }
     }
     const p = this.player;
@@ -882,7 +966,7 @@ export class Game {
 
     this.sky.combo = Math.max(this.sky.combo, chain);
     this.sky.comboTimer = 2.4;
-    p.kills++;
+    p.skyKills++;
 
     // The ACE bonus: the fuse landed within 12% of true range.
     if (chain === 1 && b.idealRange > 0 && b.travelled > 0) {
@@ -938,10 +1022,25 @@ export class Game {
 
   onCityHit(city, w) {
     if (!city.alive) return;
-    city.alive = false;
-    city.burning = true;
-    city.burnTimer = 22;
+    city.hp--;
     this.skyDome.rebuild(this.sky.cities);
+    if (city.alive) {
+      // Hurt, not gone. Still on the board, still worth shells.
+      this.sound.sfx('city_hit', { vol: 0.8 });
+      this.post.flash = 0.45;
+      this.post.flashCol = [1, 0.7, 0.42];
+      this.shake = 4.2;
+      const bx = this.sky.cx + Math.cos(city.az) * 58;
+      const by = this.sky.cy + Math.sin(city.az) * 58;
+      this.particles.mushroom(bx, by, 3);
+      this.hud.showBanner(`${city.name} IS BURNING`, 'ONE MORE AND IT IS GONE', 3.0,
+        rgba(255, 132, 46, 255));
+      this.hud.setFace('face_hurt', 1.6);
+      this.player.score = Math.max(0, this.player.score - 750);
+      this.speak('city_burning', { args: [city.name] },
+        `${city.name} is on fire. This is within acceptable parameters.`);
+      return;
+    }
     this.sound.sfx('city_hit');
     this.sound.sfx('city_lost_sting', { delay: 0.4 });
     this.post.flash = 0.85;
@@ -960,7 +1059,11 @@ export class Game {
     this.player.score = Math.max(0, this.player.score - 2000);
     if (left === 0) {
       this.speak('all_cities_lost', {}, 'That was the last one. You are relieved of duty.');
-      setTimeout(() => this.gameOver('cities'), 2600);
+      const at = this.levelIndex;
+      setTimeout(() => {
+        if (this.state === STATE.PLAY && this.levelIndex === at &&
+            !this.sky.livingCities().length) this.gameOver('cities');
+      }, 2600);
     } else if (left === 1) {
       this.speak('city_lost_last', { args: [city.name] }, `${city.name} is retired. One left. No pressure.`);
     } else {
@@ -971,9 +1074,17 @@ export class Game {
 
   onCityCooled(city) { this.skyDome.rebuild(this.sky.cities); }
 
+
   onStrayImpact(w) {
-    this.particles.airburst(w.x, w.y, 1.2, 4, 0);
-    this.sound.sfx('airburst', { pan: this.panAt(w.x, w.y), vol: 0.4 });
+    // Aimed at the complex rather than a city, which does not make it harmless.
+    this.explodeAt(w.x, w.y, 0.7, 6.4, 48);
+    this.sound.sfx('barrel_explode', { pan: this.panAt(w.x, w.y) });
+    this.sound.sfx('airburst', { pan: this.panAt(w.x, w.y), vol: 0.7 });
+    const d = dist(w.x, w.y, this.player.x, this.player.y);
+    if (d < 14) {
+      this.shake = Math.max(this.shake, 4 * (1 - d / 14));
+      this.hud.damageFrom(Math.atan2(w.y - this.player.y, w.x - this.player.x));
+    }
   }
 
   onBusterImpact(w) {
@@ -998,6 +1109,7 @@ export class Game {
   onEnemyKilled(e) {
     const p = this.player;
     p.kills++;
+    this.levelKills++;
     p.score += e.def.score;
     this.sound.sfx(e.def.boss ? 'boss_death' : 'enemy_die', { pan: this.panOf(e) });
     this.particles.blood(e.x, e.y, e.z + e.height * 0.5, e.def.gib * 3, 0, 0);
@@ -1012,7 +1124,10 @@ export class Game {
       this.post.flash = 2.2;
       this.shake = 8;
       this.sky.endWave();
-      setTimeout(() => this.win(), 6500);
+      const at = this.levelIndex;
+      setTimeout(() => {
+        if (this.state === STATE.PLAY && this.levelIndex === at) this.win();
+      }, 6500);
     }
   }
   onPlayerHurt(src, how) {

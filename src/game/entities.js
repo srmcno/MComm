@@ -25,7 +25,7 @@ export const ENEMY_TYPES = {
     hp: 22, speed: 4.4, radius: 0.24, height: 0.44, eye: 0.1,
     sight: 22, attack: 'bolt', range: 11, damage: 7, windup: 0.22, cooldown: 0.85,
     score: 150, alert: 'wasp_buzz', pain: 0.18, gib: 2, flying: true,
-    z: 1.05, walkFps: 14, deathFps: 12,
+    z: 0.48, walkFps: 14, deathFps: 12,
   },
   priest: {
     hp: 96, speed: 1.9, radius: 0.32, height: 1.0, eye: 0.62,
@@ -245,7 +245,7 @@ export class Enemy {
 
     if (d.flying) {
       this.bobPhase += dt * 3.4;
-      this.z = d.z + Math.sin(this.bobPhase) * 0.22 + (toP < 6 ? 0.22 : 0);
+      this.z = d.z + Math.sin(this.bobPhase) * 0.10 + (toP < 6 ? 0.06 : 0);
     }
   }
 

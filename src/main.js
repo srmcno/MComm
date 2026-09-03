@@ -195,7 +195,10 @@ export async function boot() {
       renderWorld(game, iw, ih);
       frame.set(game.rc.buf);
       if (game.state !== STATE.GAMEOVER || game.overT < 0.8) drawViewmodel(game, frame, iw, ih);
-      game.hud.draw(frame, iw, ih, game);
+      // The HUD belongs to gameplay; the full-screen cards own the frame outright.
+      if (game.state === STATE.PLAY || game.state === STATE.PAUSE) {
+        game.hud.draw(frame, iw, ih, game);
+      }
       if (game.state === STATE.BRIEF) drawBrief(game, frame, iw, ih);
       else if (game.state === STATE.PAUSE) drawPause(game, frame, iw, ih);
       else if (game.state === STATE.INTERMISSION) drawIntermission(game, frame, iw, ih);

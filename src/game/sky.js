@@ -17,7 +17,7 @@ export const SPAWN_ALT_MAX = 76;
 export const WARHEAD_TYPES = {
   // `h` is world height. These are deliberately oversized: a warhead 80 units
   // out has to stay a readable target, not a subpixel speck.
-  stick:    { hp: 1, speed: 10.5, score: 100, frame: 'wh_stick',    h: 5.6, glow: [1.0, 0.55, 0.2] },
+  stick:    { hp: 1, speed: 9.2,  score: 100, frame: 'wh_stick',    h: 5.6, glow: [1.0, 0.55, 0.2] },
   mirv:     { hp: 1, speed: 9.0,  score: 150, frame: 'wh_mirv',     h: 7.0, glow: [1.0, 0.75, 0.3] },
   smart:    { hp: 1, speed: 12.5, score: 300, frame: 'wh_smart',    h: 5.0, glow: [0.4, 1.0, 0.9] },
   screamer: { hp: 1, speed: 19.0, score: 250, frame: 'wh_screamer', h: 4.6, glow: [1.0, 0.35, 0.35] },
@@ -25,16 +25,20 @@ export const WARHEAD_TYPES = {
   mine:     { hp: 1, speed: 0.9,  score: 50,  frame: 'skymine0',    h: 4.2, glow: [0.9, 0.3, 1.0] },
 };
 
+export const CITY_MAX_HP = 2;
+
 export class City {
   constructor(i) {
     this.index = i;
     this.name = CITY_NAMES[i];
     this.az = CITY_AZIMUTH[i];
-    this.alive = true;
-    this.burning = false;
-    this.burnTimer = 0;
+    // Two hits, not one. The first leaves it burning and still worth defending,
+    // which is the difference between a setback and a death spiral.
+    this.hp = CITY_MAX_HP;
     this.x = 0; this.y = 0;
   }
+  get alive() { return this.hp > 0; }
+  get burning() { return this.hp === 1; }
   place(cx, cy) {
     this.x = cx + Math.cos(this.az) * CITY_RADIUS;
     this.y = cy + Math.sin(this.az) * CITY_RADIUS;
@@ -190,10 +194,18 @@ export class SkyWar {
   spawnWarhead(type, speedMul = 1, salvo = 0) {
     const alive = this.livingCities();
     if (!alive.length && type !== 'buster') type = 'buster';
-    let target;
+    let target, stray = false;
     if (type === 'buster') {
       const p = this.game.player;
       target = { x: p.x, y: p.y, z: 0 };
+    } else if ((type === 'stick' || type === 'screamer') && this.rng() < 0.24) {
+      // Aimed at the complex, not at a city. Still lethal, just not to them.
+      stray = true;
+      target = {
+        x: this.cx + (this.rng() - 0.5) * this.game.level.W * 0.55,
+        y: this.cy + (this.rng() - 0.5) * this.game.level.H * 0.55,
+        z: 0,
+      };
     } else {
       target = alive[(this.rng() * alive.length) | 0];
     }
@@ -202,14 +214,15 @@ export class SkyWar {
     let lead = salvo ? this.salvos && this.salvos.get(salvo) : null;
     if (salvo && !lead) {
       lead = {
-        target,
-        az: target.az + (this.rng() - 0.5) * 1.4,
+        target, stray,
+        az: (target.az === undefined ? this.rng() * TAU : target.az) + (this.rng() - 0.5) * 1.4,
         rad: randRange(this.rng, SPAWN_RADIUS_MIN, SPAWN_RADIUS_MAX),
         alt: randRange(this.rng, SPAWN_ALT_MIN, SPAWN_ALT_MAX),
       };
       if (this.salvos) this.salvos.set(salvo, lead);
     }
-    if (lead) target = lead.target;
+    if (lead) { target = lead.target; stray = !!lead.stray; }
+    if (lead && lead.stray === undefined) lead.stray = stray;
     const az = type === 'buster' ? this.rng() * TAU
       : lead ? lead.az + (this.rng() - 0.5) * 0.055
       : target.az + (this.rng() - 0.5) * 1.5;
@@ -218,6 +231,7 @@ export class SkyWar {
     const y = this.cy + Math.sin(az) * rad;
     const z = lead ? lead.alt + (this.rng() - 0.5) * 6 : randRange(this.rng, SPAWN_ALT_MIN, SPAWN_ALT_MAX);
     const w = new Warhead(type, x, y, z, target);
+    w.stray = stray;
     w.speed *= speedMul;
     w._aim();
     if (type === 'mine') { w.vx *= 0.15; w.vy *= 0.15; w.vz = -0.35; }
@@ -264,12 +278,7 @@ export class SkyWar {
     this._updateFlak(dt, game);
     this._updateBlasts(dt, game);
 
-    for (const c of this.cities) {
-      if (c.burnTimer > 0) {
-        c.burnTimer -= dt;
-        if (c.burnTimer <= 0 && c.burning) { c.burning = false; game.onCityCooled(c); }
-      }
-    }
+
   }
 
   _updateWarheads(dt, game) {
@@ -346,12 +355,14 @@ export class SkyWar {
   }
 
   _split(parent, game) {
-    const n = 3;
+    // Two, not three. Each MIRV used to triple a wave's real budget behind the
+    // designer's back, which is why the later levels were unplayable.
+    const n = 2;
     const alive = this.livingCities();
     for (let i = 0; i < n; i++) {
       const t = alive.length ? alive[(this.rng() * alive.length) | 0] : parent.target;
       const w = new Warhead('stick', parent.x, parent.y, parent.z, t);
-      w.speed *= 1.15;
+      w.speed *= 1.05;
       w._aim();
       // Fan them out so a single burst can't trivially catch all three.
       w.vx += (this.rng() - 0.5) * 3.2;
@@ -365,8 +376,14 @@ export class SkyWar {
   _updateFlak(dt, game) {
     for (let i = this.flak.length - 1; i >= 0; i--) {
       const f = this.flak[i];
-      const step = Math.hypot(f.vx, f.vy, f.vz) * dt;
-      f.x += f.vx * dt; f.y += f.vy * dt; f.z += f.vz * dt;
+      const speed = Math.hypot(f.vx, f.vy, f.vz);
+      // Stop exactly on the fuse distance rather than at the end of whatever
+      // frame crossed it; a fast shell can otherwise overshoot by metres, which
+      // is the difference between an airburst and a near miss.
+      let h = dt;
+      if (f.travelled + speed * dt >= f.fuse) h = Math.max(0, (f.fuse - f.travelled) / speed);
+      const step = speed * h;
+      f.x += f.vx * h; f.y += f.vy * h; f.z += f.vz * h;
       f.travelled += step;
       f.trailT += dt;
       if (f.trailT > 0.02) { f.trailT = 0; f.trail.push(f.x, f.y, f.z); if (f.trail.length > 30) f.trail.splice(0, 3); }
@@ -381,8 +398,10 @@ export class SkyWar {
           if (dist3(f.x, f.y, f.z, w.x, w.y, w.z) < 2.6) { pop = true; break; }
         }
       }
-      // Shells also burst on architecture so you can't cheese through a wall.
-      if (!pop && game.level && f.z < 1.05 && game.level.blocked(f.x, f.y)) pop = true;
+      // Shells burst on architecture, but only on what is actually in the way:
+      // a parapet stops nothing above its cap, and the map boundary stops
+      // nothing at all, since every warhead lives beyond it.
+      if (!pop && game.level && f.z < 1.4 && game.level.blockedAt(f.x, f.y, f.z)) pop = true;
 
       if (pop) {
         f.alive = false;

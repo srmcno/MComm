@@ -189,6 +189,23 @@ export class Level {
     return false;
   }
 
+  /**
+   * Height-aware collision for things that fly.
+   *
+   * Two differences from blocked(): a parapet only stops what is below its
+   * cap, and leaving the map is not an obstruction — flak has to cross the
+   * boundary, because every warhead in the game is outside it.
+   */
+  blockedAt(x, y, z) {
+    if (x < 0 || y < 0 || x >= this.W || y >= this.H) return false;
+    const i = this.idx(x, y);
+    if (this.propBlock[i] && z < 0.95) return true;
+    const c = this.wall[i];
+    if (c === CELL_SOLID) return z < this.height[i];
+    if (c === CELL_DOOR) return z < 1 && this.blocked(x, y);
+    return false;
+  }
+
   /** True if the cell blocks line of sight (doors count until nearly open). */
   opaque(x, y) {
     if (x < 0 || y < 0 || x >= this.W || y >= this.H) return true;

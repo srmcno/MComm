@@ -348,7 +348,7 @@ const METAL = { base: rgba(140, 143, 152, 255), gloss: 0.46, grain: 0.075 };
 
 /** Slight per-pixel albedo grain so flat metal is never a dead colour. */
 function grainy(c, x, y, seed, amt) {
-  const n = (hash2(x, y, seed) - 0.5) * 2 + (fbm(seed, x / 9, y / 9, 3, 8) - 0.5) * 1.6;
+  const n = (hash2(x, y, seed) - 0.5) * 2 + (fbm(seed, x / 9, y / 9, 2, 8) - 0.5) * 1.6;
   return shade(c, 1 + n * amt);
 }
 
@@ -583,7 +583,7 @@ function scuff(cv, x, y, w, h, seed, n = 20, amt = 0.5, gl = 0.75) {
 function soot(cv, x, y, w, h, seed, amt = 0.45, scale = 11) {
   for (let j = 0; j < h; j += ST) {
     for (let i = 0; i < w; i += ST) {
-      const n = fbm(seed, (x + i) / scale, (y + j) / scale, 4, 8);
+      const n = fbm(seed, (x + i) / scale, (y + j) / scale, 3, 8);
       const k = smoothstep(0.52, 0.86, n) * amt;
       if (k > 0.02) tint(cv, x + i, y + j, rgba(26, 22, 22, 255), k);
     }
@@ -712,7 +712,7 @@ function leatherShader(seed, o = {}) {
   const base = shade(mix(LEATHER.base, LEATHER.mid, tone), 1 - dark);
   const deep = shade(LEATHER.deep, 1 - dark * 0.5);
   return (t, u, x, y) => {
-    const n = fbm(seed, x / 4.6, y / 4.6, 3, 8);
+    const n = fbm(seed, x / 4.6, y / 4.6, 2, 8);
     const n2 = fbm(seed + 51, x / 11.0, y / 11.0, 2, 8);
     let c = mix(deep, base, clamp(0.30 + n * 0.85, 0, 1));
     c = shade(c, 0.92 + n2 * 0.18);
@@ -2227,9 +2227,9 @@ function drawBoom(size, t, seed = 1301) {
       const d = hypot(dx, dy);
       if (d > edge) continue;
       const ang = atan2(dy, dx);
-      const warp = fbm(seed + 3, cos(ang) * 3.2 + 4 + t * 2, sin(ang) * 3.2 + 4, 4, 8);
-      const puff = fbm(seed + 7, x / (7 + t * 7), y / (7 + t * 7), 4, 8);
-      const puff2 = fbm(seed + 13, x / 3.4, y / 3.4, 3, 8);
+      const warp = fbm(seed + 3, cos(ang) * 3.2 + 4 + t * 2, sin(ang) * 3.2 + 4, 3, 8);
+      const puff = fbm(seed + 7, x / (7 + t * 7), y / (7 + t * 7), 3, 8);
+      const puff2 = fbm(seed + 13, x / 3.4, y / 3.4, 2, 8);
       const rr = smokeR * (0.66 + warp * 0.60);
       const shell = pow(max(0, 1 - abs(d - rr * 0.66) / (rr * 0.82)), 1.35);
       let dens = shell * (0.26 + puff * 1.35 + puff2 * 0.34) * smoothstep(0.02, 0.30, t) * (1.2 - cool * 0.35);
@@ -2247,8 +2247,8 @@ function drawBoom(size, t, seed = 1301) {
       const dx = x - cx, dy = y - cy;
       const d = hypot(dx, dy);
       if (d > fireR * 1.9 || d > edge) continue;
-      const turb = fbm(seed, x / (5 + t * 8), y / (5 + t * 8), 4, 8);
-      const turb2 = fbm(seed + 11, x / 2.8, y / 2.8, 3, 8);
+      const turb = fbm(seed, x / (5 + t * 8), y / (5 + t * 8), 3, 8);
+      const turb2 = fbm(seed + 11, x / 2.8, y / 2.8, 2, 8);
       const rr = fireR * (0.72 + turb * 0.70);
       let inten = pow(max(0, 1 - d / rr), 1.30) * (1.30 - cool * 0.75);
       inten *= 0.58 + turb2 * 0.80;
@@ -2311,7 +2311,7 @@ function drawNuke(size, t, seed = 1401) {
         const dx = (x - cx) / dw, dy = (y - ground) / 24;
         const d = hypot(dx, dy * 1.4);
         if (d > 1.2) continue;
-        const n = fbm(seed + 21, x / 11, y / 8 + t * 3, 4, 8);
+        const n = fbm(seed + 21, x / 11, y / 8 + t * 3, 3, 8);
         const dens = pow(max(0, 1 - d), 1.0) * (0.30 + n * 1.05) * clamp((t - 0.08) * 3.2, 0, 1);
         if (dens < 0.02) continue;
         const glow = clamp(heat * (1 - d) * 1.3, 0, 1);
@@ -2336,7 +2336,7 @@ function drawNuke(size, t, seed = 1401) {
           for (let i = -lr; i <= lr; i++) {
             const d = hypot(i, j * 1.5) / lr;
             if (d > 1) continue;
-            const n = fbm(seed + 31, (lx + i) / 7, (y + j) / 7, 4, 8);
+            const n = fbm(seed + 31, (lx + i) / 7, (y + j) / 7, 3, 8);
             const dens = pow(1 - d, 0.9) * (0.42 + n * 0.85);
             if (dens < 0.04) continue;
             const glow = clamp(heat * (1 - u * 0.30) * (1 - d * 0.55) * 1.15, 0, 1);
@@ -2361,8 +2361,8 @@ function drawNuke(size, t, seed = 1401) {
       for (let i = -lr; i <= lr; i++) {
         const d = hypot(i, j * 1.18) / lr;
         if (d > 1) continue;
-        const n = fbm(seed + 43, (lx + i) / 8, (ly + j) / 8, 4, 8);
-        const n2 = fbm(seed + 47, (lx + i) / 3, (ly + j) / 3, 3, 8);
+        const n = fbm(seed + 43, (lx + i) / 8, (ly + j) / 8, 3, 8);
+        const n2 = fbm(seed + 47, (lx + i) / 3, (ly + j) / 3, 2, 8);
         const dens = pow(1 - d, 0.8) * (0.44 + n * 0.80 + n2 * 0.22);
         if (dens < 0.05) continue;
         // hot from inside and underneath, cool and top-lit above
@@ -2396,7 +2396,7 @@ function drawNuke(size, t, seed = 1401) {
       for (let x = cx - cr * 1.3; x <= cx + cr * 1.3; x++) {
         const dx = (x - cx) / cr, dy = (y - cy2) / ch2;
         const d = hypot(dx, dy);
-        const n = fbm(seed + 51, x / 8, y / 5, 4, 8);
+        const n = fbm(seed + 51, x / 8, y / 5, 3, 8);
         const band = pow(max(0, 1 - abs(d - 0.88) / 0.52), 1.7);
         const dens = band * (0.22 + n * 0.85) * amt * 0.46;
         if (dens < 0.015) continue;
@@ -3663,7 +3663,7 @@ function buildCity(idx, mood) {
           for (let i = -r; i <= r; i += 1) {
             const d = hypot(i, j) / r;
             if (d > 1) continue;
-            const n = fbm(seed + 93 + c2, (px2 + i) / 7, (py2 + j) / 7, 3, 8);
+            const n = fbm(seed + 93 + c2, (px2 + i) / 7, (py2 + j) / 7, 2, 8);
             const a = pow(1 - d, 1.6) * (0.16 + n * 0.30) * (1 - t * 0.45);
             const lit = clamp((1 - t * 2.4), 0, 1);
             const g = smokeGradient(clamp(0.25 + t * 0.55, 0, 1));
@@ -3684,7 +3684,7 @@ function buildCity(idx, mood) {
         for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) {
           const d = hypot(i, j) / r;
           if (d > 1) continue;
-          const n = fbm(seed + 43 + c2, (px2 + i) / 6, (py2 + j) / 6, 3, 8);
+          const n = fbm(seed + 43 + c2, (px2 + i) / 6, (py2 + j) / 6, 2, 8);
           blend(f, px2 + i, py2 + j, rgba(92, 92, 98, 255), pow(1 - d, 1.7) * (0.08 + n * 0.16) * (1 - t * 0.5));
         }
       }
@@ -3695,7 +3695,7 @@ function buildCity(idx, mood) {
   for (let y = GROUND - 17; y < CH; y++) {
     const k = smoothstep(GROUND - 17, GROUND + 5, y);
     for (let x = 0; x < CW; x++) {
-      const n = fbm(seed + 5, x / 22, y / 8, 3, 8);
+      const n = fbm(seed + 5, x / 22, y / 8, 2, 8);
       const a = k * T.hazeA * (0.55 + n * 0.75);
       if (a > 0.01) blend(f, x, y, T.hazeC, min(a, 0.86));
     }

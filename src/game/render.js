@@ -70,7 +70,7 @@ export function renderWorld(game, W, H) {
   const underSky = lv.underSky(p.x, p.y);
   const ambient = underSky
     ? [0.80, 0.78, 0.88]
-    : [0.60, 0.58, 0.65];
+    : [0.55, 0.53, 0.60];
   game.lights.build(cam, ambient, lights, 24);
 
   // ------------------------------------------------------------- sprites
@@ -296,6 +296,7 @@ export function drawIntermission(game, buf, W, H) {
     ['KILLS', `${st.kills} / ${st.enemyTotal}`, st.kills >= st.enemyTotal ? '+5,000' : ''],
     ['SECRETS', `${st.secrets} / ${st.secretTotal}`, st.secrets >= st.secretTotal && st.secretTotal ? '+5,000' : ''],
     ['LAUNCH KEYS', `${st.treasure} / ${st.treasureTotal}`, ''],
+    ['WARHEADS DOWN', `${st.skyKills}`, ''],
     ['BEST CHAIN', `×${st.bestChain}`, ''],
     ['CITIES STANDING', `${game.sky.livingCities().length} / 6`, `+${commas(st.cityBonus)}`],
   ];
