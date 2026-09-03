@@ -237,8 +237,36 @@ const SFX_NAMES = [
   'chain5', 'perfect_burst',
   'ui_move', 'ui_select', 'ui_back', 'ui_start', 'score_tick', 'countdown',
   'player_hurt', 'player_die', 'heartbeat', 'footstep_a', 'footstep_b',
+  // --- expansion: mutants, gore, melee, radio, feel ---
+  'ghoul_alert', 'ghoul_attack', 'ghoul_pain', 'ghoul_die',
+  'gorger_alert', 'gorger_attack', 'gorger_pain', 'gorger_burst',
+  'howler_alert', 'howler_spit', 'howler_pain', 'howler_die',
+  'stalker_alert', 'stalker_charge', 'stalker_attack', 'stalker_pain', 'stalker_die',
+  'maw_roar', 'maw_hurt', 'maw_die',
+  'gib', 'splat', 'bone_crack', 'acid_hit', 'acid_burn',
+  'kick_swing', 'kick_hit', 'kick_wall', 'punt',
+  'pipebomb_throw', 'pipebomb_land', 'pipebomb_beep', 'pipebomb_blow',
+  'radio_open', 'radio_close', 'radio_static', 'radio_beep', 'objective', 'story_sting',
+  'combo_up', 'taunt_hit', 'heartbeat_fast', 'slowmo_in', 'slowmo_out',
 ];
-const TRACK_NAMES = ['title', 'prowl', 'siege', 'boss', 'victory', 'gameover'];
+
+/** Names that shipped in the first version. None of them may ever disappear. */
+const SHIPPED = [
+  'flak_fire', 'flak_arm', 'airburst', 'airburst_small', 'nailer_fire', 'halo_fire',
+  'halo_sweep', 'deadman_arm', 'deadman_blow', 'pistol_fire', 'dryfire', 'reload',
+  'weapon_switch', 'hit_wall', 'hit_flesh', 'ricochet', 'barrel_explode', 'door_open',
+  'door_close', 'door_locked', 'secret_found', 'pickup_health', 'pickup_ammo',
+  'pickup_key', 'pickup_treasure', 'pickup_weapon', 'elevator', 'roof_open', 'alarm',
+  'wrencher_alert', 'wrencher_swing', 'sparker_fire', 'bellows_flame', 'wasp_buzz',
+  'priest_chant', 'enemy_pain', 'enemy_die', 'boss_roar', 'boss_hurt', 'boss_death',
+  'warhead_launch', 'warhead_incoming', 'mirv_split', 'smart_evade', 'city_hit',
+  'city_lost_sting', 'wave_start', 'wave_clear', 'chain2', 'chain3', 'chain4',
+  'chain5', 'perfect_burst', 'ui_move', 'ui_select', 'ui_back', 'ui_start',
+  'score_tick', 'countdown', 'player_hurt', 'player_die', 'heartbeat',
+  'footstep_a', 'footstep_b',
+];
+const SHIPPED_TRACKS = ['title', 'prowl', 'siege', 'boss', 'victory', 'gameover'];
+const TRACK_NAMES = ['title', 'prowl', 'siege', 'boss', 'victory', 'gameover', 'hunt', 'hero'];
 
 async function main() {
   console.log('NUKEHAUS audio-check — stub Web Audio driver\n');
@@ -265,6 +293,12 @@ async function main() {
   const b1 = S.sfxBus;
   await S.init(ctx);
   ok(S.sfxBus === b1 && liveNodes() === graphNodes, 'init() is idempotent', `${graphNodes} persistent nodes`);
+  // The game shipped calling these by name; losing one is a broken build.
+  const goneS = SHIPPED.filter((n) => !EXPORTED_NAMES.includes(n));
+  const goneT = SHIPPED_TRACKS.filter((n) => !EXPORTED_TRACKS.includes(n));
+  ok(goneS.length === 0, 'every shipped SFX name still exists', goneS.join(','));
+  ok(goneT.length === 0, 'every shipped track still exists', goneT.join(','));
+
   const hasComp = LOG.nodes.some((n) => n._type === 'comp');
   const hasConv = LOG.nodes.filter((n) => n._type === 'convolver').length;
   ok(hasComp, 'master compressor present');
@@ -344,29 +378,34 @@ async function main() {
   ok(busGains.every((g) => g <= 1.05), 'no track is left above unity', busGains.join(','));
 
   // ---- (d) the shooter stress test -----------------------------------------
-  console.log('\n-- 60 s of prowl + 500 nailer_fire --');
+  console.log('\n-- 60 s of prowl + 500 nailer_fire + 300 gib + 200 stalker_attack --');
   S.panic();
   ctx.tick(0.5); S.update(0.5);
   S.music('prowl', { fadeIn: 0.5 });
-  let stressPeak = 0, fired = 0;
+  let stressPeak = 0, fired = 0, gibs = 0, claws = 0;
   for (let f = 0; f < 3600; f++) {
     ctx.tick(1 / 60); S.update(1 / 60);
     if (fired < 500 && f % 6 === 0) { S.sfx('nailer_fire', { pan: (f % 7) / 7 - 0.5 }); fired++; }
+    if (gibs < 300 && f % 11 === 0) { S.sfx('gib', { rate: 0.8 + (f % 5) * 0.1 }); gibs++; }
+    if (claws < 200 && f % 17 === 0) { S.sfx('stalker_attack', { pan: 0.3 }); claws++; }
     const lv = liveNodes();
     if (lv > stressPeak) stressPeak = lv;
   }
-  ok(fired === 500, 'fired 500 rounds', `${fired}`);
+  ok(fired === 500 && gibs === 300 && claws === 200, 'fired the whole magazine',
+    `${fired} nailer, ${gibs} gib, ${claws} stalker_attack`);
   ok(liveNodes() < 200, '(d) live nodes bounded after the run', `${liveNodes()} live, peak ${stressPeak}`);
   ok(stressPeak < 200, '(d) live nodes bounded throughout the run', `peak ${stressPeak}`);
 
   // pathological: an entire magazine inside one frame
   let burstPeak = 0;
   for (let i = 0; i < 500; i++) S.sfx('nailer_fire');
+  for (let i = 0; i < 300; i++) S.sfx('gib');
   burstPeak = liveNodes();
   for (let i = 0; i < 40; i++) S.sfx('airburst');
+  for (let i = 0; i < 30; i++) S.sfx('gorger_burst');
   const burst2 = liveNodes();
   ok(burstPeak < 200 && burst2 < 200, 'voice cap survives a single-frame burst',
-    `500 nailers -> ${burstPeak}, +40 airbursts -> ${burst2}`);
+    `500 nailer + 300 gib -> ${burstPeak}, +40 airburst +30 gorger_burst -> ${burst2}`);
   for (let f = 0; f < 600; f++) { ctx.tick(1 / 60); S.update(1 / 60); }
 
   // ---- ducking + volumes ----------------------------------------------------
@@ -384,7 +423,8 @@ async function main() {
   console.log('\n-- panic --');
   S.music('boss', { fadeIn: 0.4 });
   for (let f = 0; f < 120; f++) { ctx.tick(1 / 60); S.update(1 / 60); }
-  for (const n of ['airburst', 'city_hit', 'roof_open', 'boss_roar', 'deadman_blow']) S.sfx(n);
+  for (const n of ['airburst', 'city_hit', 'roof_open', 'boss_roar', 'deadman_blow',
+                   'maw_roar', 'gorger_burst', 'maw_die', 'stalker_charge', 'howler_alert']) S.sfx(n);
   const liveBefore = liveNodes();
   S.panic();
   const unstopped = LOG.srcs.filter((s) => s._started && !s._stopped);

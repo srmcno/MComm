@@ -13,6 +13,30 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
 import { writeSpectrogram, writeWav } from './vox-spectro.js';
 
+function fftInPlace(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang);
+    for (let i = 0; i < n; i += len) {
+      let cr = 1, ci = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const ur = re[i + k], ui = im[i + k];
+        const vr = re[i + k + len / 2] * cr - im[i + k + len / 2] * ci;
+        const vi = re[i + k + len / 2] * ci + im[i + k + len / 2] * cr;
+        re[i + k] = ur + vr; im[i + k] = ui + vi;
+        re[i + k + len / 2] = ur - vr; im[i + k + len / 2] = ui - vi;
+        const nc = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = nc;
+      }
+    }
+  }
+}
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const arg = (n, d) => {
   const i = process.argv.indexOf('--' + n);
@@ -45,6 +69,34 @@ const CASES = [
   { id: '23-mood-dying', kind: 'text', text: 'Please do not be discouraged. Five remain.', opts: { mood: 'dying' } },
   { id: '24-glitch', kind: 'text', text: 'Please do not be discouraged. Five remain.', opts: { mood: 'calm', glitch: 0.85 } },
   { id: '15-sentence', kind: 'text', text: 'The six cities are not people. The assets are screaming.', opts: { mood: 'calm' } },
+
+  /* --- the three voices on identical words, so formants are comparable --- */
+  { id: '40-AB-mutter', kind: 'text', text: '{HH EH1 D HH EH1 D HH EH1 D}', opts: { voice: 'mutter', mood: 'calm', rate: 0.75 }, formant: 1 },
+  { id: '41-AB-brick', kind: 'text', text: '{HH EH1 D HH EH1 D HH EH1 D}', opts: { voice: 'brick', mood: 'calm', rate: 0.75 }, formant: 1 },
+  { id: '42-AB-ilsa', kind: 'text', text: '{HH EH1 D HH EH1 D HH EH1 D}', opts: { voice: 'ilsa', mood: 'calm', rate: 0.75 }, formant: 1 },
+  { id: '43-vowels-mutter', kind: 'text', text: '{IY1 EH1 AA1 UW1}', opts: { voice: 'mutter', mood: 'calm', rate: 0.7 } },
+  { id: '44-vowels-brick', kind: 'text', text: '{IY1 EH1 AA1 UW1}', opts: { voice: 'brick', mood: 'calm', rate: 0.7 } },
+  { id: '45-vowels-ilsa', kind: 'text', text: '{IY1 EH1 AA1 UW1}', opts: { voice: 'ilsa', mood: 'calm', rate: 0.7 } },
+
+  /* --- BRICK HARDIGAN --- */
+  { id: '50-brick-boot', kind: 'line', key: 'brick_boot', pick: 0, opts: { voice: 'brick', mood: 'calm' } },
+  { id: '51-brick-kill', kind: 'line', key: 'brick_kill', pick: 2, opts: { voice: 'brick', mood: 'urgent' } },
+  { id: '52-brick-distracted', kind: 'line', key: 'brick_distracted', pick: 0, opts: { voice: 'brick', mood: 'calm' } },
+  { id: '53-brick-chain', kind: 'line', key: 'brick_chain', pick: 0, opts: { voice: 'brick', mood: 'urgent' } },
+  { id: '54-brick-death', kind: 'line', key: 'brick_death', pick: 0, opts: { voice: 'brick', mood: 'dying' } },
+  { id: '55-brick-idle', kind: 'line', key: 'brick_idle', pick: 3, opts: { voice: 'brick', mood: 'calm' } },
+
+  /* --- DR. ILSA VANCE --- */
+  { id: '60-ilsa-intro', kind: 'line', key: 'ilsa_intro', pick: 0, opts: { voice: 'ilsa', mood: 'calm' } },
+  { id: '61-ilsa-level5', kind: 'line', key: 'ilsa_level5', pick: 0, opts: { voice: 'ilsa', mood: 'calm' } },
+  { id: '62-ilsa-reply', kind: 'line', key: 'ilsa_distracted_reply', pick: 2, opts: { voice: 'ilsa', mood: 'calm' } },
+  { id: '63-ilsa-chaintip', kind: 'line', key: 'ilsa_chain_tip', pick: 0, opts: { voice: 'ilsa', mood: 'calm' } },
+  { id: '64-ilsa-rescued', kind: 'line', key: 'ilsa_rescued', pick: 0, opts: { voice: 'ilsa', mood: 'sweet' } },
+  { id: '65-ilsa-incoming', kind: 'line', key: 'ilsa_wave_incoming', pick: 0, opts: { voice: 'ilsa', mood: 'urgent' } },
+
+  /* --- MUTTER on the personnel --- */
+  { id: '70-mutter-exfile', kind: 'line', key: 'mutter_ex_file', pick: 0, opts: { voice: 'mutter', mood: 'sweet', args: ['Verity'] } },
+  { id: '71-mutter-brickfile', kind: 'line', key: 'mutter_brick_file', pick: 0, opts: { voice: 'mutter', mood: 'calm' } },
 ];
 const cases = ONLY ? CASES.filter((c) => ONLY.split(',').some((s) => c.id.includes(s))) : CASES;
 
@@ -113,6 +165,7 @@ await page.goto(`http://127.0.0.1:${PORT}/tools/_vox-page.html`);
 await page.waitForFunction('window.__ready === true', null, { timeout: 20000 });
 
 let fails = 0;
+const measured = {};
 console.log(`\nrendering ${cases.length} cases at ${SR} Hz into ${OUT}\n`);
 for (const c of cases) {
   const r = await page.evaluate(([cc, sr]) => window.__render(cc, sr), [c, SR]);
@@ -158,14 +211,58 @@ for (const c of cases) {
   f0s.sort((a, b) => a - b);
   const f0 = f0s.length ? f0s[Math.floor(f0s.length / 2)] : 0;
 
+  // Formant estimate: average the spectrum over the steady middle, smooth with
+  // a window scaled to this voice's F0 (a fixed window finds harmonics, not
+  // formants, once F0 is up at Ilsa's register), then take the strongest peak
+  // inside the band each formant is known to live in.
+  let formants = null;
+  if (c.formant) {
+    const N = 2048, half = N / 2, binHz = r.sr / N;
+    const acc = new Float64Array(half);
+    const a0 = Math.floor(trimmed.length * 0.12), a1 = Math.floor(trimmed.length * 0.88);
+    for (let off = a0; off + N < a1; off += 256) {
+      const re = new Float64Array(N), im = new Float64Array(N);
+      for (let q = 0; q < N; q++) re[q] = trimmed[off + q] * (0.5 - 0.5 * Math.cos(2 * Math.PI * q / (N - 1)));
+      fftInPlace(re, im);
+      for (let q = 0; q < half; q++) acc[q] += Math.sqrt(re[q] * re[q] + im[q] * im[q]);
+    }
+    const w = Math.max(3, Math.round((f0 > 40 ? f0 * 1.8 : 200) / binHz));
+    const sm = new Float64Array(half);
+    for (let q = 0; q < half; q++) {
+      let sum = 0, n = 0;
+      for (let z = Math.max(0, q - w); z <= Math.min(half - 1, q + w); z++) { sum += acc[z]; n++; }
+      sm[q] = sum / n;
+    }
+    const peakIn = (lo, hi) => {
+      let best = -1, bi = -1;
+      for (let q = Math.ceil(lo / binHz); q <= Math.floor(hi / binHz) && q < half; q++) {
+        if (sm[q] > best) { best = sm[q]; bi = q; }
+      }
+      return bi < 0 ? 0 : Math.round(bi * binHz);
+    };
+    formants = [peakIn(250, 950), peakIn(1000, 3000)];
+  }
+
   const errPct = Math.abs(audible - r.dur) / r.dur * 100;
   const ok = r.peak < 0.99 && r.peak > 0.02 && errPct <= 15 && rms > 0.005;
   if (!ok) fails++;
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${c.id.padEnd(16)} say()=${r.dur.toFixed(2)}s ` +
-    `audible=${audible.toFixed(2)}s (${errPct.toFixed(1)}%) peak=${r.peak.toFixed(3)} rms=${rms.toFixed(4)} F0=${f0.toFixed(0)}Hz`);
+    `audible=${audible.toFixed(2)}s (${errPct.toFixed(1)}%) peak=${r.peak.toFixed(3)} rms=${rms.toFixed(4)} F0=${f0.toFixed(0)}Hz` +
+    (formants ? `  formants=[${formants.join(', ')}]` : ''));
+  if (formants) measured[c.id] = formants;
   if (!ok) console.log(`        peak<0.99:${r.peak < 0.99} peak>0.02:${r.peak > 0.02} dur<=15%:${errPct <= 15} rms>0.005:${rms > 0.005}`);
   console.log(`        "${r.text.slice(0, 96)}"`);
 }
+
+// Voice separation is the whole point of the update: assert it numerically.
+const M = measured['40-AB-mutter'], B = measured['41-AB-brick'], I = measured['42-AB-ilsa'];
+if (M && B && I && M.length >= 2 && B.length >= 2 && I.length >= 2) {
+  const ratio = I[1] / B[1];
+  const sep = B[1] < M[1] && M[1] < I[1] && ratio > 1.25;
+  if (!sep) fails++;
+  console.log(`\n  ${sep ? 'ok  ' : 'FAIL'} /eh/ formants  brick ${B[0]}/${B[1]}Hz` +
+    `   mutter ${M[0]}/${M[1]}Hz   ilsa ${I[0]}/${I[1]}Hz   ilsa:brick F2 = ${ratio.toFixed(2)}x`);
+} else { fails++; console.log('\n  FAIL could not measure the A/B formants'); }
 
 await browser.close();
 server.close();

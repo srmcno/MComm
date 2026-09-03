@@ -40,6 +40,12 @@ function deg(n) {
   return o * 12 + PHRYG[n - o * 7];
 }
 
+/** Same, for the major pentatonic `hero` runs up and down. */
+function pent(n) {
+  const o = Math.floor(n / 5);
+  return o * 12 + PENT[n - o * 5];
+}
+
 /** Chord voicings, semitones above ROOT. Shared by every track. */
 const CHORD = {
   i:    [0, 3, 7, 10],      // Dm7
@@ -67,7 +73,12 @@ const TRACKS = {
   boss:     { bpm: 132, spb: 14, bars: 4, gain: 0.84, loop: true,  space: [0.227, 0.55, 1800] },
   victory:  { bpm: 120, spb: 16, bars: 7, gain: 1.00, loop: false, tail: 3.2, space: [0.25, 0.5, 4000] },
   gameover: { bpm: 62,  spb: 16, bars: 4, gain: 0.95, loop: false, tail: 4.5, space: [0.41, 0.66, 2000] },
+  hunt:     { bpm: 96,  spb: 16, bars: 8, gain: 1.00, loop: true,  space: [0.195, 0.5, 1200] },
+  hero:     { bpm: 118, spb: 16, bars: 8, gain: 0.90, loop: true,  space: [0.127, 0.3, 3800] },
 };
+
+/** Major pentatonic, for the one track that is allowed to enjoy itself. */
+const PENT = [0, 2, 4, 7, 9];
 
 /* -------------------------------------------------------------------- limits */
 
@@ -213,6 +224,43 @@ export class Sound {
       const t = i / n;
       const decay = Math.pow(1 - t, 1.7);
       return decay * (0.25 + 0.75 * Math.pow(hash(i * 2654435761), 2));
+    });
+    // Slow irregular bubbling — the inside of something that should not be moving.
+    this._gurgleCurve = shapeCurve(192, (i, n) => {
+      const t = i / n;
+      const slow = 0.5 + 0.5 * Math.sin(t * Math.PI * 5.7 + Math.sin(t * 11.3) * 1.6);
+      return (0.18 + 0.82 * slow * slow) * (0.55 + 0.45 * hash(i * 40503));
+    });
+    // Dense spatter that thins out as the mess finishes landing.
+    this._splatCurve = shapeCurve(512, (i, n) => {
+      const t = i / n;
+      const density = Math.pow(1 - t, 1.25);
+      const grain = hash(i * 2246822507);
+      // hard gaps between landings: the contrast is the whole effect
+      return density * (grain > 0.55 ? 0.2 + 0.8 * grain * grain : 0.015);
+    });
+    // Claw impacts that speed up: spike spacing shrinks toward the end.
+    this._scrabbleCurve = shapeCurve(384, (i, n) => {
+      const t = i / n;
+      const phase = t * t * 26 + t * 7;             // accelerating
+      const f = phase - Math.floor(phase);
+      const hit = Math.pow(1 - f, 7);
+      return hit * (0.45 + 0.55 * hash(Math.floor(phase) * 7919)) * (0.5 + 0.5 * t);
+    });
+    // Fast dry chittering, mandibles rather than machinery.
+    this._chitterCurve = shapeCurve(224, (i, n) => {
+      const t = i / n;
+      const phase = t * 34;
+      const f = phase - Math.floor(phase);
+      const on = hash(Math.floor(phase) * 26699) > 0.34 ? 1 : 0;
+      return on * Math.pow(1 - f, 4.5) * Math.pow(1 - t, 0.7);
+    });
+    // Acid on armour: a hiss that keeps spitting.
+    this._sizzleCurve = shapeCurve(160, (i, n) => {
+      const t = i / n;
+      const base = Math.pow(1 - t, 1.4);
+      const spit = hash(i * 374761393) > 0.86 ? 1.7 : 1;
+      return base * 0.55 * spit;
     });
 
     this._ready = true;
@@ -952,6 +1000,64 @@ function snare(S, t, T, g) {
   S._tone(v, T, 0.13, { type: 'triangle', f: 196, f2: 138, sweep: 0.5, g: g * 0.5, dec: 0.12 });
   S._nz(v, T, 0.19, { type: 'highpass', f: 1150, q: 0.8, g: g * 0.85, dec: 0.17 });
   S._nz(v, T, 0.09, { type: 'bandpass', f: 340, q: 1.4, g: g * 0.4, dec: 0.08 });
+}
+
+/**
+ * One noise source through several resonant peaks. Sharing the source is the
+ * whole point: correlated formants read as one throat, whereas separate noise
+ * per band reads as two filters. Peaks may sweep at different rates, which is
+ * how `howler_alert` gets three tones beating against each other.
+ *
+ * peaks: [{f, f2, sweep, q, g}]   o: {g, atk, dec, hold, rel, pink, rate, rate2}
+ */
+function gullet(S, v, t, dur, peaks, o) {
+  const ctx = S._ctx;
+  const src = ctx.createBufferSource();
+  const buf = o.pink === false ? S._nzW : S._nzP;
+  src.buffer = buf;
+  src.loop = true;
+  const r0 = clamp(fin(o.rate, 1), 0.06, 16);
+  src.playbackRate.setValueAtTime(r0, t);
+  if (o.rate2) {
+    src.playbackRate.exponentialRampToValueAtTime(clamp(fin(o.rate2, r0), 0.06, 16), t + dur * 0.9);
+  }
+  const g = ctx.createGain();
+  g.gain.value = 0;
+  src.connect(g);
+  S._n(v, src); S._n(v, g);
+  for (let i = 0; i < peaks.length; i++) {
+    const p = peaks[i];
+    const b = ctx.createBiquadFilter();
+    b.type = p.type || 'bandpass';
+    const f = clamp(fin(p.f, 800), 20, 18000);
+    b.frequency.setValueAtTime(f, t);
+    if (p.f2) b.frequency.exponentialRampToValueAtTime(clamp(fin(p.f2, f), 20, 18000), t + dur * fin(p.sweep, 0.9));
+    b.Q.value = clamp(fin(p.q, 9), 0.0001, 40);
+    const bg = ctx.createGain();
+    bg.gain.value = fin(p.g, 0.3);
+    g.connect(b); b.connect(bg); bg.connect(o.to || v.out);
+    S._n(v, b); S._n(v, bg);
+  }
+  const len = o.hold !== undefined
+    ? S._ahr(g, t, fin(o.g, 0.5), fin(o.atk, 0.01), o.hold, fin(o.rel, dur * 0.4))
+    : S._env(g, t, fin(o.g, 0.5), fin(o.atk, 0.01), fin(o.dec, dur));
+  S._go(v, src, t, len + 0.01, S._r() * buf.duration * 0.9);
+  return g;
+}
+
+/**
+ * Re-route a layer through a generated amplitude curve — the granular gate that
+ * turns smooth noise into spatter, chittering or claws. Costs one node.
+ */
+function gate(S, v, node, curveArr, t, dur) {
+  const cg = S._ctx.createGain();
+  cg.gain.setValueCurveAtTime(curveArr, t, dur);
+  cg.gain.setValueAtTime(0, t + dur + 0.002);
+  node.disconnect();
+  node.connect(cg);
+  cg.connect(v.out);
+  S._n(v, cg);
+  return cg;
 }
 
 function hat(S, t, T, g, open) {
@@ -1882,6 +1988,629 @@ Object.assign(SFX, {
     const r = o.rate * 0.92;
     S._nz(v, t, 0.11, { type: 'lowpass', f: 360 * r, f2: 150 * r, q: 1.6, g: 0.32, atk: 0.002, dec: 0.1 });
     S._nz(v, t + 0.008, 0.07, { type: 'bandpass', f: 1450 * r, q: 3.2, g: 0.08, atk: 0.002, dec: 0.065 });
+  },
+});
+
+
+/* ------------------------------------------------------------- mutants */
+// Nothing in here is a clean tone. The mechanical enemies got oscillators and
+// metal; these got filtered noise, resonant throats, collapsing pitch and
+// granular gates. Wet, in the bad way.
+
+Object.assign(SFX, {
+
+  ghoul_alert(S, t, o) {
+    const v = V(S, o, 6, 0.45, 0.15); if (!v) return;
+    const r = o.rate;
+    // the intake: a rising band with the attack on the wrong end
+    S._nz(v, t, 0.26, { type: 'bandpass', f: 380 * r, f2: 1500 * r, q: 3.2, g: 0.3, atk: 0.19, dec: 0.07 });
+    // and then it sees you
+    gullet(S, v, t + 0.24, 0.62, [
+      { f: 900 * r, f2: 1950 * r, q: 13, g: 0.5, sweep: 0.5 },
+      { f: 1750 * r, f2: 3250 * r, q: 15, g: 0.34, sweep: 0.62 },
+      { f: 2900 * r, f2: 4400 * r, q: 11, g: 0.16, sweep: 0.44 },
+    ], { g: 0.75, atk: 0.02, dec: 0.6, rate: 1, rate2: 1.5 });
+  },
+
+  ghoul_attack(S, t, o) {
+    const v = V(S, o, 5, 0.35, 0); if (!v) return;
+    const r = o.rate * (0.92 + S._r() * 0.18);
+    S._nz(v, t, 0.03, { type: 'highpass', f: 2600 * r, q: 0.7, g: 0.55, atk: 0.0012, dec: 0.026 });
+    // the bone click inside the bite
+    S._nz(v, t + 0.006, 0.06, { type: 'bandpass', f: 1150 * r, q: 19, g: 0.4, atk: 0.001, dec: 0.05 });
+    S._nz(v, t + 0.004, 0.11, { type: 'lowpass', f: 430 * r, f2: 190, q: 1.6, g: 0.45, atk: 0.002, dec: 0.1 });
+  },
+
+  ghoul_pain(S, t, o) {
+    const v = V(S, o, 5, 0.4, 0.1); if (!v) return;
+    const r = o.rate;
+    gullet(S, v, t, 0.26, [
+      { f: 1050 * r, f2: 620 * r, q: 11, g: 0.55 },
+      { f: 2150 * r, f2: 1400 * r, q: 9, g: 0.28 },
+    ], { g: 0.7, atk: 0.006, dec: 0.24, rate: 1.25, rate2: 0.8 });
+  },
+
+  ghoul_die(S, t, o) {
+    const v = V(S, o, 6, 0.5, 0.2); if (!v) return;
+    const r = o.rate;
+    const rattle = gullet(S, v, t, 1.35, [
+      { f: 780 * r, f2: 300 * r, q: 10, g: 0.5 },
+      { f: 1500 * r, f2: 520 * r, q: 8, g: 0.26 },
+    ], { g: 0.75, atk: 0.02, dec: 1.3, rate: 1.15, rate2: 0.55 });
+    gate(S, v, rattle, S._gurgleCurve, t, 1.3);
+    S._nz(v, t + 1.1, 0.4, { type: 'lowpass', f: 300, f2: 130, q: 1.4, g: 0.3, atk: 0.01, dec: 0.38, pink: true });
+  },
+
+  gorger_alert(S, t, o) {
+    const v = V(S, o, 6, 0.4, 0.25); if (!v) return;
+    const r = o.rate;
+    const drone = gullet(S, v, t, 1.7, [
+      { f: 170 * r, f2: 230 * r, q: 7, g: 0.6 },
+      { f: 430 * r, f2: 330 * r, q: 9, g: 0.35 },
+      { f: 820 * r, f2: 640 * r, q: 12, g: 0.14 },
+    ], { g: 0.7, atk: 0.25, hold: 0.9, rel: 0.55, rate: 0.7, rate2: 0.55 });
+    gate(S, v, drone, S._gurgleCurve, t, 1.65);
+    S._tone(v, t, 1.6, { type: 'sine', f: 47 * r, f2: 38 * r, sweep: 0.9, g: 0.45, atk: 0.3, hold: 0.7, rel: 0.55 });
+  },
+
+  gorger_attack(S, t, o) {
+    const v = V(S, o, 6, 0.35, 0.1); if (!v) return;
+    const r = o.rate;
+    S._nz(v, t, 0.2, { type: 'bandpass', f: 260 * r, f2: 900 * r, q: 2, g: 0.32, atk: 0.14, dec: 0.07 });
+    S._nz(v, t + 0.18, 0.2, { type: 'lowpass', f: 700 * r, f2: 200, q: 1.8, g: 0.6, atk: 0.002, dec: 0.19, pink: true });
+    S._tone(v, t + 0.18, 0.28, { type: 'sine', f: 96 * r, f2: 44 * r, sweep: 0.45, g: 0.45, dec: 0.26 });
+  },
+
+  gorger_pain(S, t, o) {
+    const v = V(S, o, 5, 0.4, 0.1); if (!v) return;
+    const r = o.rate;
+    gullet(S, v, t, 0.42, [
+      { f: 240 * r, f2: 150 * r, q: 8, g: 0.6 },
+      { f: 640 * r, f2: 400 * r, q: 10, g: 0.28 },
+    ], { g: 0.75, atk: 0.008, dec: 0.4, rate: 0.8, rate2: 0.5 });
+    S._tone(v, t, 0.3, { type: 'sine', f: 88 * r, f2: 50 * r, sweep: 0.6, g: 0.32, dec: 0.28 });
+  },
+
+  // The money sound. A pressurised thing at close range, ceasing to be one.
+  gorger_burst(S, t, o) {
+    const v = V(S, o, 10, 0.35, 0.7); if (!v) return;
+    const r = o.rate;
+    // the rupture itself — wide open, then it closes like a fist
+    S._nz(v, t, 0.22, { type: 'bandpass', f: 1500 * r, f2: 190, q: 1.1, g: 0.95, atk: 0.0015, dec: 0.2, sweep: 0.3 });
+    // the sub thump you feel in the floor
+    S._tone(v, t + 0.005, 1.5, { type: 'sine', f: 74 * r, f2: 17, sweep: 0.5, g: 1.0, atk: 0.006, dec: 1.35 });
+    // wet body
+    S._nz(v, t + 0.01, 1.0, { type: 'lowpass', f: 880 * r, f2: 165, q: 1.5, g: 0.7, atk: 0.008, dec: 0.95, pink: true });
+    // and then the long splattering tail, gated into individual landings
+    const splat = S._nz(v, t + 0.1, 2.3, {
+      type: 'bandpass', f: 1350 * r, f2: 520, q: 1.3, g: 0.75, atk: 0.02, dec: 2.2, pink: true,
+    });
+    gate(S, v, splat, S._splatCurve, t + 0.1, 2.25);
+  },
+
+  // Three formant peaks climbing at three different rates, so the scream beats
+  // against itself. The detuned pair underneath makes the beating audible.
+  howler_alert(S, t, o) {
+    const v = V(S, o, 8, 0.3, 0.5); if (!v) return;
+    const r = o.rate;
+    gullet(S, v, t, 1.5, [
+      { f: 620 * r, f2: 2300 * r, q: 16, g: 0.62, sweep: 0.95 },
+      { f: 940 * r, f2: 3050 * r, q: 18, g: 0.5, sweep: 0.82 },
+      { f: 1280 * r, f2: 3900 * r, q: 14, g: 0.32, sweep: 0.7 },
+    ], { g: 1.5, atk: 0.28, hold: 0.7, rel: 0.5, rate: 0.9, rate2: 1.7 });
+    S._tone(v, t + 0.05, 1.4, { type: 'sawtooth', f: 310 * r, f2: 1150 * r, sweep: 0.93, g: 0.17, atk: 0.35, hold: 0.6, rel: 0.4 });
+    S._tone(v, t + 0.05, 1.4, { type: 'sawtooth', f: 317 * r, f2: 1178 * r, sweep: 0.87, g: 0.17, atk: 0.4, hold: 0.55, rel: 0.4 });
+  },
+
+  howler_spit(S, t, o) {
+    const v = V(S, o, 6, 0.3, 0.35); if (!v) return;
+    const r = o.rate;
+    S._nz(v, t, 0.09, { type: 'bandpass', f: 700 * r, f2: 2200 * r, q: 4, g: 0.5, atk: 0.004, dec: 0.085 });
+    S._tone(v, t, 0.16, { type: 'square', f: 420 * r, f2: 900 * r, sweep: 0.8, g: 0.16, atk: 0.003, dec: 0.15 });
+    S._nz(v, t + 0.05, 0.5, { type: 'highpass', f: 3200 * r, q: 0.8, g: 0.16, atk: 0.03, dec: 0.46 });
+  },
+
+  howler_pain(S, t, o) {
+    const v = V(S, o, 5, 0.35, 0.15); if (!v) return;
+    const r = o.rate;
+    gullet(S, v, t, 0.3, [
+      { f: 1400 * r, f2: 800 * r, q: 15, g: 0.5 },
+      { f: 2300 * r, f2: 1500 * r, q: 13, g: 0.3 },
+    ], { g: 0.7, atk: 0.007, dec: 0.28, rate: 1.4, rate2: 0.85 });
+  },
+
+  howler_die(S, t, o) {
+    const v = V(S, o, 6, 0.4, 0.35); if (!v) return;
+    const r = o.rate;
+    gullet(S, v, t, 1.5, [
+      { f: 1500 * r, f2: 330 * r, q: 13, g: 0.5, sweep: 0.85 },
+      { f: 2500 * r, f2: 700 * r, q: 11, g: 0.28, sweep: 0.8 },
+      { f: 3600 * r, f2: 1100 * r, q: 9, g: 0.12, sweep: 0.75 },
+    ], { g: 0.75, atk: 0.02, dec: 1.45, rate: 1.5, rate2: 0.45 });
+  },
+
+  stalker_alert(S, t, o) {
+    const v = V(S, o, 5, 0.4, 0.1); if (!v) return;
+    const r = o.rate;
+    const ch = S._nz(v, t, 0.85, { type: 'bandpass', f: 2400 * r, f2: 3400 * r, q: 9, g: 0.42, atk: 0.005, dec: 0.82 });
+    gate(S, v, ch, S._chitterCurve, t, 0.8);
+    S._nz(v, t, 0.5, { type: 'bandpass', f: 800 * r, q: 5, g: 0.09, atk: 0.02, dec: 0.47 });
+  },
+
+  // Claws on grating, getting closer faster than you would like.
+  stalker_charge(S, t, o) {
+    const v = V(S, o, 7, 0.45, 0.1); if (!v) return;
+    const r = o.rate;
+    const sc = S._nz(v, t, 1.6, { type: 'bandpass', f: 1700 * r, f2: 2600 * r, q: 6, g: 0.5, atk: 0.005, dec: 1.55 });
+    gate(S, v, sc, S._scrabbleCurve, t, 1.55);
+    S._nz(v, t, 1.55, { type: 'lowpass', f: 300 * r, f2: 460 * r, q: 1.4, g: 0.22, atk: 0.4, hold: 0.7, rel: 0.4, pink: true });
+  },
+
+  stalker_attack(S, t, o) {
+    const v = V(S, o, 5, 0.35, 0); if (!v) return;
+    const r = o.rate * (0.9 + S._r() * 0.22);
+    S._nz(v, t, 0.09, { type: 'bandpass', f: 2200 * r, f2: 900 * r, q: 3, g: 0.5, atk: 0.002, dec: 0.085 });
+    S._nz(v, t + 0.02, 0.08, { type: 'lowpass', f: 520 * r, f2: 220, q: 1.6, g: 0.34, atk: 0.002, dec: 0.075 });
+  },
+
+  stalker_pain(S, t, o) {
+    const v = V(S, o, 5, 0.35, 0); if (!v) return;
+    const r = o.rate;
+    gullet(S, v, t, 0.2, [
+      { f: 1900 * r, f2: 1150 * r, q: 14, g: 0.5 },
+      { f: 3100 * r, f2: 2000 * r, q: 12, g: 0.22 },
+    ], { g: 0.65, atk: 0.004, dec: 0.19, rate: 1.6, rate2: 1.0 });
+  },
+
+  stalker_die(S, t, o) {
+    const v = V(S, o, 6, 0.4, 0.15); if (!v) return;
+    const r = o.rate;
+    const d = gullet(S, v, t, 0.85, [
+      { f: 2100 * r, f2: 620 * r, q: 12, g: 0.5 },
+      { f: 3300 * r, f2: 1100 * r, q: 10, g: 0.22 },
+    ], { g: 0.7, atk: 0.006, dec: 0.82, rate: 1.7, rate2: 0.5 });
+    gate(S, v, d, S._chitterCurve, t, 0.8);
+  },
+
+  // MAW. Boss scale: several seconds, four layers, and a throat full of gravel.
+  maw_roar(S, t, o) {
+    const v = V(S, o, 11, 0.3, 0.85); if (!v) return;
+    const r = o.rate;
+    const ctx = S._ctx;
+    const ws = ctx.createWaveShaper();
+    ws.curve = S._crushCurve; ws.oversample = 'none';
+    ws.connect(v.out); S._n(v, ws);
+    gullet(S, v, t, 3.4, [
+      { f: 210 * r, f2: 150 * r, q: 8, g: 0.55, sweep: 0.85 },
+      { f: 470 * r, f2: 330 * r, q: 10, g: 0.36, sweep: 0.8 },
+      { f: 910 * r, f2: 620 * r, q: 12, g: 0.16, sweep: 0.75 },
+    ], { g: 0.85, atk: 0.35, hold: 1.9, rel: 1.1, rate: 0.6, rate2: 0.38, to: ws });
+    S._tone(v, t, 3.5, { type: 'sine', f: 34 * r, f2: 25 * r, sweep: 0.9, g: 0.8, atk: 0.4, hold: 1.9, rel: 1.1 });
+    const wetg = S._nz(v, t + 0.3, 2.8, {
+      type: 'lowpass', f: 620 * r, f2: 260, q: 2.2, g: 0.3, atk: 0.5, hold: 1.3, rel: 0.9, pink: true,
+    });
+    gate(S, v, wetg, S._gurgleCurve, t + 0.3, 2.7);
+  },
+
+  maw_hurt(S, t, o) {
+    const v = V(S, o, 8, 0.35, 0.45); if (!v) return;
+    const r = o.rate;
+    S._nz(v, t, 0.24, { type: 'lowpass', f: 900 * r, f2: 210, q: 1.7, g: 0.7, atk: 0.002, dec: 0.22, pink: true });
+    gullet(S, v, t + 0.02, 0.65, [
+      { f: 300 * r, f2: 190 * r, q: 9, g: 0.55 },
+      { f: 720 * r, f2: 450 * r, q: 11, g: 0.26 },
+    ], { g: 0.7, atk: 0.01, dec: 0.62, rate: 0.75, rate2: 0.5 });
+  },
+
+  maw_die(S, t, o) {
+    const v = V(S, o, 12, 0.3, 0.9); if (!v) return;
+    const r = o.rate;
+    gullet(S, v, t, 2.6, [
+      { f: 260 * r, f2: 90 * r, q: 8, g: 0.55, sweep: 0.9 },
+      { f: 600 * r, f2: 210 * r, q: 10, g: 0.3, sweep: 0.85 },
+    ], { g: 0.8, atk: 0.15, hold: 1.2, rel: 1.2, rate: 0.7, rate2: 0.3 });
+    S._tone(v, t, 3.2, { type: 'sine', f: 62 * r, f2: 16, sweep: 0.85, g: 0.85, atk: 0.2, hold: 1.4, rel: 1.5 });
+    // and then it comes apart, wetly
+    S._nz(v, t + 2.0, 0.3, { type: 'bandpass', f: 1400, f2: 220, q: 1.2, g: 0.9, atk: 0.002, dec: 0.28, sweep: 0.3 });
+    const sp = S._nz(v, t + 2.05, 2.4, {
+      type: 'bandpass', f: 1200, f2: 430, q: 1.3, g: 0.75, atk: 0.02, dec: 2.3, pink: true,
+    });
+    gate(S, v, sp, S._splatCurve, t + 2.05, 2.35);
+  },
+});
+
+/* ------------------------------------------------------------------ gore */
+
+Object.assign(SFX, {
+
+  // Fired by the dozen when something comes apart, so: three nodes plus a voice.
+  gib(S, t, o) {
+    const v = V(S, o, 4, 0.3, 0); if (!v) return;
+    const r = o.rate * (0.8 + S._r() * 0.45);
+    S._nz(v, t, 0.14, { type: 'lowpass', f: 1100 * r, f2: 210, q: 1.8, g: 0.55, atk: 0.0015, dec: 0.13, sweep: 0.35, pink: true });
+    S._nz(v, t + 0.004, 0.07, { type: 'bandpass', f: 1900 * r, q: 3.5, g: 0.22, atk: 0.001, dec: 0.065 });
+  },
+
+  // Bodies hit walls in bunches, so this is two layers: one lowpass that starts
+  // wide and closes carries the impact and the wet smear that follows it.
+  splat(S, t, o) {
+    const v = V(S, o, 5, 0.4, 0.1); if (!v) return;
+    const r = o.rate * (0.9 + S._r() * 0.2);
+    S._nz(v, t, 0.46, {
+      type: 'lowpass', f: 1800 * r, f2: 155, q: 1.9, g: 0.8, atk: 0.002, dec: 0.44, sweep: 0.22, pink: true,
+    });
+    S._tone(v, t, 0.2, { type: 'sine', f: 105 * r, f2: 46 * r, sweep: 0.45, g: 0.42, dec: 0.18 });
+  },
+
+  bone_crack(S, t, o) {
+    const v = V(S, o, 5, 0.35, 0); if (!v) return;
+    const r = o.rate * (0.92 + S._r() * 0.16);
+    S._nz(v, t, 0.055, { type: 'bandpass', f: 1450 * r, q: 21, g: 0.55, atk: 0.0008, dec: 0.05 });
+    S._nz(v, t, 0.03, { type: 'highpass', f: 3400 * r, q: 0.7, g: 0.3, atk: 0.0008, dec: 0.026 });
+    S._nz(v, t + 0.01, 0.1, { type: 'lowpass', f: 380 * r, f2: 170, q: 1.5, g: 0.28, atk: 0.002, dec: 0.09 });
+  },
+
+  acid_hit(S, t, o) {
+    const v = V(S, o, 5, 0.3, 0.1); if (!v) return;
+    const r = o.rate;
+    S._nz(v, t, 0.1, { type: 'bandpass', f: 1600 * r, f2: 600, q: 2.4, g: 0.45, atk: 0.002, dec: 0.095 });
+    const hiss = S._nz(v, t + 0.02, 1.0, { type: 'highpass', f: 4200 * r, q: 0.8, g: 0.4, atk: 0.01, dec: 0.97 });
+    gate(S, v, hiss, S._sizzleCurve, t + 0.02, 0.95);
+  },
+
+  // Damage over time: this repeats every half second, so it stays tiny.
+  acid_burn(S, t, o) {
+    const v = V(S, o, 3, 0.2, 0); if (!v) return;
+    const r = o.rate * (0.9 + S._r() * 0.24);
+    const hiss = S._nz(v, t, 0.4, { type: 'highpass', f: 3600 * r, q: 0.8, g: 0.34, atk: 0.006, dec: 0.38 });
+    gate(S, v, hiss, S._sizzleCurve, t, 0.36);
+  },
+});
+
+/* --------------------------------------------------------- melee, ordnance */
+
+Object.assign(SFX, {
+
+  kick_swing(S, t, o) {
+    const v = V(S, o, 4, 0.3, 0); if (!v) return;
+    const r = o.rate;
+    S._nz(v, t, 0.2, { type: 'bandpass', f: 300 * r, f2: 1500 * r, q: 2.2, g: 0.34, atk: 0.11, dec: 0.09 });
+    S._nz(v, t + 0.02, 0.16, { type: 'lowpass', f: 700 * r, q: 1.2, g: 0.12, atk: 0.09, dec: 0.07 });
+  },
+
+  kick_hit(S, t, o) {
+    const v = V(S, o, 6, 0.4, 0.1); if (!v) return;
+    const r = o.rate;
+    S._tone(v, t, 0.26, { type: 'sine', f: 124 * r, f2: 48 * r, sweep: 0.3, g: 0.8, atk: 0.002, dec: 0.24 });
+    S._nz(v, t, 0.17, { type: 'lowpass', f: 560 * r, f2: 190, q: 1.7, g: 0.6, atk: 0.002, dec: 0.16, pink: true });
+    S._nz(v, t + 0.008, 0.07, { type: 'bandpass', f: 980 * r, q: 8, g: 0.3, atk: 0.001, dec: 0.065 });
+  },
+
+  kick_wall(S, t, o) {
+    const v = V(S, o, 4, 0.45, 0); if (!v) return;
+    const r = o.rate;
+    S._nz(v, t, 0.14, { type: 'lowpass', f: 420 * r, f2: 180, q: 1.5, g: 0.6, atk: 0.0015, dec: 0.13 });
+    S._nz(v, t + 0.004, 0.1, { type: 'bandpass', f: 2400 * r, q: 3, g: 0.14, atk: 0.001, dec: 0.095 });
+  },
+
+  // A light enemy leaving the roof. This is allowed to be funny.
+  punt(S, t, o) {
+    const v = V(S, o, 8, 0.25, 0.6); if (!v) return;
+    const r = o.rate;
+    // leather on boot
+    S._nz(v, t, 0.06, { type: 'bandpass', f: 1250 * r, q: 5, g: 0.7, atk: 0.001, dec: 0.055 });
+    S._tone(v, t, 0.16, { type: 'sine', f: 150 * r, f2: 62 * r, sweep: 0.3, g: 0.6, atk: 0.002, dec: 0.15 });
+    // the comedy departure: up, over, and away
+    S._tone(v, t + 0.02, 0.85, { type: 'triangle', f: 240 * r, f2: 1250 * r, sweep: 0.75, g: 0.3, atk: 0.01, dec: 0.8 });
+    S._tone(v, t + 0.02, 0.9, { type: 'sine', f: 480 * r, f2: 2500 * r, sweep: 0.72, g: 0.1, atk: 0.02, dec: 0.85 });
+    // doppler wash as it clears the parapet
+    S._nz(v, t + 0.05, 0.9, { type: 'bandpass', f: 900 * r, f2: 4200 * r, q: 3, g: 0.16, atk: 0.12, dec: 0.75 });
+  },
+
+  pipebomb_throw(S, t, o) {
+    const v = V(S, o, 4, 0.3, 0.1); if (!v) return;
+    const r = o.rate;
+    S._nz(v, t, 0.22, { type: 'bandpass', f: 420 * r, f2: 1700 * r, q: 2.4, g: 0.3, atk: 0.12, dec: 0.1 });
+    S._nz(v, t + 0.03, 0.05, { type: 'bandpass', f: 2900 * r, q: 9, g: 0.16, atk: 0.001, dec: 0.045 });
+  },
+
+  pipebomb_land(S, t, o) {
+    const v = V(S, o, 5, 0.5, 0.1); if (!v) return;
+    const r = o.rate;
+    // three bounces, closer together each time, like a dropped pipe
+    const at = [0, 0.13, 0.21, 0.26];
+    for (let i = 0; i < 4; i++) {
+      S._nz(v, t + at[i], 0.12, {
+        type: 'bandpass', f: 1150 * r * METAL[i], q: 15, g: 0.32 / (1 + i * 0.8), atk: 0.001, dec: 0.11,
+      });
+    }
+    S._nz(v, t, 0.1, { type: 'lowpass', f: 320 * r, f2: 150, q: 1.5, g: 0.35, atk: 0.0015, dec: 0.09 });
+  },
+
+  // Called every half second while it is armed. Two nodes. Do not add layers.
+  pipebomb_beep(S, t, o) {
+    const v = V(S, o, 3, 0.15, 0); if (!v) return;
+    S._tone(v, t, 0.035, { type: 'square', f: 2100 * o.rate, g: 0.16, atk: 0.001, dec: 0.032 });
+  },
+
+  // Tighter and drier than airburst: this one went off in a corridor.
+  pipebomb_blow(S, t, o) {
+    const v = V(S, o, 9, 0.4, 0.2); if (!v) return;
+    const r = o.rate;
+    S._nz(v, t, 0.06, { type: 'highpass', f: 2600 * r, q: 0.7, g: 0.95, atk: 0.001, dec: 0.055 });
+    S._tone(v, t, 0.34, { type: 'sine', f: 128 * r, f2: 36 * r, sweep: 0.3, g: 0.95, atk: 0.003, dec: 0.31 });
+    S._nz(v, t, 0.42, { type: 'lowpass', f: 1600 * r, f2: 200, q: 1.4, g: 0.75, atk: 0.002, dec: 0.4, sweep: 0.2 });
+    // shrapnel on concrete, and nothing else: no rolling tail
+    S._nz(v, t + 0.015, 0.35, { type: 'highpass', f: 4200, q: 0.7, g: 0.2, atk: 0.003, dec: 0.33 });
+  },
+});
+
+/* ------------------------------------------------------------ radio, story */
+// The radio is a narrow band with a hard shelf either side: everything here is
+// deliberately small and mid-heavy so a spoken line sits on top of it.
+
+Object.assign(SFX, {
+
+  radio_open(S, t, o) {
+    const v = V(S, o, 6, 0.2, 0); if (!v) return;
+    const r = o.rate;
+    // relay click, then the squelch letting go
+    S._nz(v, t, 0.018, { type: 'bandpass', f: 2600 * r, q: 12, g: 0.34, atk: 0.0008, dec: 0.016 });
+    const sq = S._nz(v, t + 0.015, 0.26, { type: 'bandpass', f: 1700 * r, f2: 900 * r, q: 1.6, g: 0.4, atk: 0.004, dec: 0.25 });
+    gate(S, v, sq, S._crackleCurve, t + 0.015, 0.25);
+  },
+
+  radio_close(S, t, o) {
+    const v = V(S, o, 5, 0.2, 0); if (!v) return;
+    const r = o.rate;
+    const sq = S._nz(v, t, 0.14, { type: 'bandpass', f: 1500 * r, f2: 2400 * r, q: 1.8, g: 0.3, atk: 0.004, dec: 0.13 });
+    gate(S, v, sq, S._crackleCurve, t, 0.13);
+    S._nz(v, t + 0.13, 0.02, { type: 'bandpass', f: 2200 * r, q: 12, g: 0.3, atk: 0.0008, dec: 0.018 });
+  },
+
+  radio_static(S, t, o) {
+    const v = V(S, o, 4, 0.15, 0); if (!v) return;
+    const r = o.rate;
+    const st = S._nz(v, t, 0.34, { type: 'bandpass', f: 1900 * r, q: 1.1, g: 0.34, atk: 0.003, dec: 0.33 });
+    gate(S, v, st, S._crackleCurve, t, 0.33);
+  },
+
+  // Plays constantly. Three nodes, and it has to stay likeable.
+  radio_beep(S, t, o) {
+    const v = V(S, o, 4, 0.15, 0); if (!v) return;
+    const r = o.rate;
+    S._tone(v, t, 0.07, { type: 'sine', f: 1046 * r, g: 0.17, atk: 0.004, dec: 0.065 });
+    S._tone(v, t + 0.075, 0.11, { type: 'sine', f: 1568 * r, g: 0.15, atk: 0.004, dec: 0.105 });
+  },
+
+  objective(S, t, o) {
+    const r = o.rate;
+    S.fmBell(t, mtof(81) * r, 1.1, { g: 0.2, ratio: 2.007, index: 2.2, revS: 0.2, revB: 0.3, pri: 6, vol: o.vol, pan: o.pan });
+    S.fmBell(t + 0.13, mtof(88) * r, 1.5, { g: 0.18, ratio: 2.007, index: 2.0, revS: 0.2, revB: 0.3, pri: 6, vol: o.vol, pan: o.pan });
+  },
+
+  story_sting(S, t, o) {
+    const v = V(S, o, 8, 0.3, 0.65); if (!v) return;
+    const r = o.rate;
+    S._tone(v, t, 1.5, { type: 'sine', f: 49 * r, f2: 37 * r, sweep: 0.7, g: 0.7, atk: 0.01, dec: 1.4 });
+    S.superSaw(t, mtof(50) * r, 1.4, {
+      n: 5, detune: 16, cutoff: 1500, co0: 0.4, open: 0.2, g: 0.3,
+      atk: 0.02, rel: 0.9, revB: 0.5, pri: 8, vol: o.vol,
+    });
+    S.superSaw(t + 0.01, mtof(51) * r, 1.3, {
+      n: 3, detune: 12, cutoff: 1200, g: 0.16, atk: 0.03, rel: 0.85, revB: 0.5, pri: 7, vol: o.vol,
+    });
+    S.fmBell(t + 0.02, mtof(86) * r, 2.0, { g: 0.16, ratio: 1.41, index: 3.4, revB: 0.6, pri: 8, vol: o.vol });
+  },
+});
+
+/* ------------------------------------------------------------------- feel */
+
+Object.assign(SFX, {
+
+  // The game raises opts.rate as the streak climbs, so these stack into a run.
+  combo_up(S, t, o) {
+    const v = V(S, o, 5, 0.2, 0.2); if (!v) return;
+    const r = o.rate;
+    S._tone(v, t, 0.07, { type: 'square', f: 784 * r, g: 0.12, atk: 0.002, dec: 0.065 });
+    S._tone(v, t + 0.05, 0.22, { type: 'triangle', f: 1175 * r, g: 0.16, atk: 0.002, dec: 0.21 });
+    S._tone(v, t + 0.05, 0.3, { type: 'sine', f: 2349 * r, g: 0.05, atk: 0.004, dec: 0.28 });
+  },
+
+  taunt_hit(S, t, o) {
+    const v = V(S, o, 6, 0.25, 0.2); if (!v) return;
+    const r = o.rate;
+    S._tone(v, t, 0.2, { type: 'sine', f: 150 * r, f2: 55 * r, sweep: 0.25, g: 0.7, atk: 0.002, dec: 0.19 });
+    S._nz(v, t, 0.1, { type: 'bandpass', f: 2200 * r, f2: 1100, q: 2.2, g: 0.24, atk: 0.001, dec: 0.095 });
+    S._tone(v, t, 0.26, { type: 'sawtooth', f: 300 * r, f2: 220 * r, sweep: 0.4, g: 0.14, atk: 0.004, dec: 0.25 });
+  },
+
+  heartbeat_fast(S, t, o) {
+    const v = V(S, o, 6, 0.15, 0); if (!v) return;
+    const r = o.rate * 1.18;
+    S._tone(v, t, 0.22, { type: 'sine', f: 72 * r, f2: 42 * r, sweep: 0.3, g: 0.8, atk: 0.005, dec: 0.2 });
+    S._tone(v, t + 0.165 / r, 0.26, { type: 'sine', f: 65 * r, f2: 37 * r, sweep: 0.3, g: 0.6, atk: 0.007, dec: 0.24 });
+  },
+
+  slowmo_in(S, t, o) {
+    const v = V(S, o, 8, 0.3, 0.5); if (!v) return;
+    const r = o.rate;
+    S._nz(v, t, 0.7, { type: 'lowpass', f: 5200 * r, f2: 190, q: 2.6, g: 0.42, atk: 0.02, dec: 0.68 });
+    S._tone(v, t, 0.72, { type: 'sawtooth', f: 420 * r, f2: 58 * r, sweep: 0.85, g: 0.2, atk: 0.01, dec: 0.7 });
+  },
+
+  slowmo_out(S, t, o) {
+    const v = V(S, o, 8, 0.3, 0.4); if (!v) return;
+    const r = o.rate;
+    S._nz(v, t, 0.5, { type: 'lowpass', f: 190 * r, f2: 6000 * r, q: 2.2, g: 0.38, atk: 0.36, dec: 0.14 });
+    S._tone(v, t, 0.5, { type: 'sawtooth', f: 62 * r, f2: 480 * r, sweep: 0.88, g: 0.18, atk: 0.3, dec: 0.2 });
+  },
+});
+
+/* ------------------------------------------------- the two expansion tracks */
+
+/** 1987 gated snare: a real hit, a bright tail, and the tail cut off dead. */
+function gatedSnare(S, t, T, g) {
+  const v = S._v(6, null, 0, 0, 1, t.bus);
+  if (!v) return;
+  v.owner = t;
+  S._tone(v, T, 0.13, { type: 'triangle', f: 210, f2: 146, sweep: 0.5, g: g * 0.5, dec: 0.12 });
+  S._nz(v, T, 0.16, { type: 'highpass', f: 1250, q: 0.8, g: g * 0.9, dec: 0.15 });
+  // the gate: held wide, then slammed shut mid-decay
+  S._nz(v, T + 0.01, 0.24, {
+    type: 'bandpass', f: 2100, q: 0.6, g: g * 0.55, atk: 0.006, hold: 0.185, rel: 0.012,
+  });
+}
+
+Object.assign(STEP, {
+
+  /* ---- HUNT — 96 BPM, D Phrygian. prowl, but something is in here with you. */
+  hunt(S, t, s, T) {
+    const st = s % 16, bar = (s / 16) | 0, vari = (bar >> 3) & 3;
+    const barLen = t.stepDur * 16;
+
+    const HK = [[0, 7], [0, 6, 11], [0, 9], [0, 5, 10]][vari];
+    if (HK.indexOf(st) >= 0) kick(S, t, T, 0.7, 0.9, 0.36);
+
+    // industrial percussion, darker and sparser than the corridors used to be
+    if (h2(bar * 5 + vari, st * 11) > 0.8) {
+      const v = S._v(3, null, 0, 0, 1, t.bus);
+      if (v) {
+        v.owner = t;
+        const f = 340 * (1 + 2.6 * h2(st, bar + 19));
+        const d = 0.06 + 0.14 * h2(bar, st + 5);
+        S._nz(v, T, d, { type: 'bandpass', f, q: 13, g: 0.26, dec: d });
+        S._own(v, t, 0.45);
+      }
+    }
+    if (st === 6 && bar % 2 === 1) {
+      const v = S._v(4, null, 0, 0, 1, t.bus);
+      if (v) {
+        v.owner = t;
+        for (let k = 0; k < 2; k++) {
+          S._nz(v, T, 0.34, { type: 'bandpass', f: 760 * METAL[k + 1], q: 17, g: 0.15 / (k + 1), dec: 0.32 });
+        }
+        S._own(v, t, 0.6);
+      }
+    }
+    if (st % 4 === 2) hat(S, t, T, 0.04, false);
+
+    // the brass-ish swell underneath — this is the part with teeth
+    if (st === 0 && bar % 2 === 0) {
+      S._own(S.superSaw(T, mtof(ROOT - 12), barLen * 2.15, mk(t, {
+        n: 4, detune: 13, cutoff: 330, co0: 0.35, open: 0.55, g: 0.28,
+        atk: barLen * 0.55, rel: barLen * 0.9, pri: 6,
+      })), t, 0.12);
+      const fifth = (bar >> 1) % 4 === 3 ? 1 : 7;      // slips to the flat second
+      S._own(S.superSaw(T + 0.03, mtof(ROOT - 12 + fifth), barLen * 2.05, mk(t, {
+        n: 3, detune: 17, cutoff: 340, co0: 0.5, g: 0.15, atk: barLen * 0.7, rel: barLen * 0.8, pri: 5,
+      })), t, 0.3);
+    }
+
+    // Organic noises on their own clock. They deliberately do not land on the
+    // grid: the hash is seeded from the absolute bar, so nothing ever repeats.
+    if (h2(bar * 31, st * 7 + 3) > 0.965) {
+      const v = S._v(5, null, 0, 0, 1, t.bus);
+      if (v) {
+        v.owner = t;
+        const up = h2(bar, st) > 0.5;
+        gullet(S, v, T, 1.1, [
+          { f: up ? 300 : 520, f2: up ? 620 : 260, q: 6, g: 0.4 },
+          { f: up ? 760 : 1150, f2: up ? 1250 : 640, q: 9, g: 0.18 },
+        ], { g: 0.32, atk: 0.35, hold: 0.3, rel: 0.45, rate: 0.8, rate2: up ? 1.15 : 0.6 });
+        S._own(v, t, 0.7);
+      }
+    }
+    // a scrape somewhere off the corridor
+    if (h2(bar * 17 + 5, st * 3) > 0.977) {
+      const v = S._v(4, null, 0, 0, 1, t.bus);
+      if (v) {
+        v.owner = t;
+        const sc = S._nz(v, T, 0.9, {
+          type: 'bandpass', f: 1400, f2: 2300, q: 7, g: 0.24, atk: 0.01, dec: 0.88,
+        });
+        gate(S, v, sc, S._scrabbleCurve, T, 0.85);
+        S._own(v, t, 0.75);
+      }
+    }
+    // and once in a while, a long way off, something screams
+    if (bar % 4 === 3 && st === 13) {
+      const v = S._v(6, null, 0, 0, 1, t.bus);
+      if (v) {
+        v.owner = t;
+        gullet(S, v, T, 1.6, [
+          { f: 700, f2: 1900, q: 15, g: 0.4, sweep: 0.9 },
+          { f: 1100, f2: 2700, q: 17, g: 0.26, sweep: 0.78 },
+          { f: 1600, f2: 3400, q: 13, g: 0.12, sweep: 0.66 },
+        ], { g: 0.16, atk: 0.4, hold: 0.6, rel: 0.6, rate: 0.9, rate2: 1.5 });
+        S._own(v, t, 0.95);
+      }
+    }
+    if (st === 0 && bar % 4 === 2) {
+      S._own(S.subBoom(T, 34, 2.6, mk(t, { g: 0.32, drop: 0.5, sweep: 0.6, pri: 7 })), t, 0.8);
+    }
+  },
+
+  /* ---- HERO — 118 BPM, D mixolydian. The warden's opinion of the warden. */
+  hero(S, t, s, T) {
+    const st = s % 16, bar = (s / 16) | 0, cyc = bar % 8;
+    const sd = t.stepDur;
+    // D D C G D D C A — the only chord progression he has ever needed
+    const ROOTS = [0, 0, 10, 5, 0, 0, 10, 7];
+    const root = ROOTS[cyc];
+    const solo = cyc >= 4;
+
+    if (st === 0 || st === 6 || st === 8 || st === 11) kick(S, t, T, 0.85, 1, 0.28);
+    if (st === 4 || st === 12) gatedSnare(S, t, T, 0.5);
+    if (st % 2 === 0 && st !== 4 && st !== 12) hat(S, t, T, 0.055, false);
+    if (cyc === 0 && st === 0) hat(S, t, T, 0.16, true);
+    if (cyc === 4 && st === 0) hat(S, t, T, 0.14, true);
+
+    // palm-muted octave bass: every sixteenth, alternating octaves, all chug
+    const oct = (st % 4 === 2 || st % 4 === 3) ? 12 : 0;
+    S._own(S.acidBass(T, mtof(ROOT - 12 + root + oct), sd * 0.62, mk(t, {
+      cutoff: 240, env: 820, q: 5, g: 0.34, accent: st % 4 === 0, decay: 0.5, drive: 1, pri: 6,
+    })), t, 0.05);
+
+    // power chords: root, fifth, octave — chugged, not strummed
+    const CHUG = [0, 2, 3, 6, 7, 10, 11, 14];
+    if (CHUG.indexOf(st) >= 0) {
+      const long = st === 0 || st === 7;
+      S._own(S.pad(T, [
+        mtof(ROOT + 12 + root), mtof(ROOT + 19 + root), mtof(ROOT + 24 + root),
+      ], long ? sd * 3.4 : sd * 1.25, mk(t, {
+        g: 0.42, detune: 9, voices: 1, cutoff: 2600, q: 1.6,
+        atk: 0.006, rel: long ? sd * 1.8 : sd * 0.7, pri: 6,
+      })), t, 0.2);
+    }
+
+    // the solo. It is not a good solo. It is an extremely confident solo.
+    const RUN = [7, 8, 9, 10, 9, 8, 9, 11, 10, 9, 8, 7, 8, 9, 7, 6];
+    if (solo) {
+      if (st % 2 === 0 || (cyc >= 6 && st % 2 === 1)) {
+        const n = ROOT + 24 + root + pent(RUN[st]);
+        const bend = st === 14 || st === 6;
+        S._own(S.acidBass(T, mtof(n), sd * (bend ? 2.6 : 1.35), mk(t, {
+          type: 'sawtooth', cutoff: 1700, env: 4200, q: 6.5, g: 0.2,
+          slide: bend ? mtof(n + 2) : 0, decay: 0.55, accent: st % 4 === 0, pri: 7,
+        })), t, 0.35);
+        if (st % 4 === 0) {
+          S._own(S.pluck(T + 0.006, mtof(n + 7), sd * 1.1, mk(t, {
+            type: 'sawtooth', g: 0.07, cutoff: 3800, q: 3, pri: 5,
+          })), t, 0.4);
+        }
+      }
+    } else if (st === 8 || st === 13) {
+      // the verse answer: two notes, delivered like they cost money
+      const n = ROOT + 24 + root + pent(st === 8 ? 7 : 9);
+      S._own(S.acidBass(T, mtof(n), sd * 2.2, mk(t, {
+        type: 'sawtooth', cutoff: 1500, env: 3400, q: 6, g: 0.17, decay: 0.6, pri: 6,
+      })), t, 0.4);
+    }
+
+    if (st === 0 && cyc === 0) {
+      S._own(S.subBoom(T, 62, 0.9, mk(t, { g: 0.5, drop: 0.4, pri: 7 })), t, 0.2);
+    }
   },
 });
 

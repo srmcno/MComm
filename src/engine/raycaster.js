@@ -249,8 +249,9 @@ export class Raycaster {
 
   _castPlanes(lv, cam, art, light, opts, horizon) {
     const { w, h, buf, wallTop, wallBot } = this;
-    const { floorTex, ceilTex, sky, W, H } = lv;
+    const { floorTex, ceilTex, sky, decal, W, H } = lv;
     const atlas = art.texAtlas, emis = art.texEmissive;
+    const decalAtlas = art.decalAtlas;
     const projY = this.projY;
     const eye = cam.z;
     const ceilH = 1.0;
@@ -316,7 +317,21 @@ export class Raycaster {
         let tx = ((fx - cx) * TEX) | 0, ty = ((fy - cy) * TEX) | 0;
         if (tx < 0) tx = 0; else if (tx >= TEX) tx = TEX - 1;
         if (ty < 0) ty = 0; else if (ty >= TEX) ty = TEX - 1;
-        const t = atlas[tex * TEX * TEX + ty * TEX + tx];
+        let t = atlas[tex * TEX * TEX + ty * TEX + tx];
+
+        // Blood, gore and scorch marks live in the floor, not on billboards, so
+        // they lie flat and take the same perspective as the ground they are on.
+        if (isFloor && decalAtlas && decal[ci] >= 0) {
+          const dpx = decalAtlas[decal[ci] * TEX * TEX + ty * TEX + tx];
+          const da = dpx >>> 24;
+          if (da) {
+            const k = da / 255;
+            const rr = (t & 255) + (((dpx & 255) - (t & 255)) * k);
+            const gg = ((t >>> 8) & 255) + ((((dpx >>> 8) & 255) - ((t >>> 8) & 255)) * k);
+            const bb = ((t >>> 16) & 255) + ((((dpx >>> 16) & 255) - ((t >>> 16) & 255)) * k);
+            t = (255 << 24 | (bb | 0) << 16 | (gg | 0) << 8 | (rr | 0)) >>> 0;
+          }
+        }
 
         const em = emis[tex];
         let mr, mg, mb;

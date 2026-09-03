@@ -36,14 +36,22 @@ const missingSfx = [...usedSfx].filter((n) => !new RegExp(`\\b${n}\\s*[:(]`).tes
 check(`all ${usedSfx.size} sfx names the game calls exist in synth.js`, missingSfx.length === 0,
   missingSfx.join(', '));
 
+const storySrc = fs.readFileSync(path.join(ROOT, 'src/game/story.js'), 'utf8');
 const usedLines = new Set();
 for (const m of gameSrc.matchAll(/speak\(\s*'([a-z0-9_]+)'/g)) usedLines.add(m[1]);
+for (const m of gameSrc.matchAll(/speakAs\(\s*[a-zA-Z.]+\s*,\s*'([a-z0-9_]+)'/g)) usedLines.add(m[1]);
+for (const m of gameSrc.matchAll(/\.say\(\s*'[a-z]+'\s*,\s*'([a-z0-9_]+)'/g)) usedLines.add(m[1]);
+for (const m of gameSrc.matchAll(/this\.brick\(\s*'([a-z0-9_]+)'/g)) usedLines.add(m[1]);
+for (const m of storySrc.matchAll(/L\('[a-z]+',\s*'([a-z0-9_]+)'/g)) usedLines.add(m[1]);
 const missingLines = [...usedLines].filter((n) => !new RegExp(`\\b${n}\\s*:`).test(voxSrc));
 check(`all ${usedLines.size} announcer lines the game asks for exist in vox.js`,
   missingLines.length === 0, missingLines.join(', '));
 
 const usedTracks = new Set();
 for (const m of gameSrc.matchAll(/music\(\s*'([a-z]+)'/g)) usedTracks.add(m[1]);
+// corridorTrack() returns names as bare strings rather than calling music().
+for (const m of gameSrc.matchAll(/return '([a-z]+)';\s*\n\s*return this\.level\.def\.music/g)) usedTracks.add(m[1]);
+usedTracks.add('hunt');
 for (const m of fs.readFileSync(path.join(ROOT, 'src/game/maps.js'), 'utf8')
   .matchAll(/music:\s*'([a-z]+)'/g)) usedTracks.add(m[1]);
 const missingTracks = [...usedTracks].filter((n) => !new RegExp(`\\n\\s*${n}\\s*:\\s*\\{`).test(synthSrc));
@@ -83,7 +91,52 @@ let r = await page.evaluate(() => {
 });
 check('audio context starts on the first click', r.ready && r.ctx && r.state === 'running',
   `ctx ${r.state}`);
-check('announcer is wired with its script', r.vox && r.lines > 10, `${r.lines} lines`);
+check('announcer is wired with its script', r.vox && r.lines > 40, `${r.lines} lines`);
+
+// Three characters, three vocal tracts. Confirm they are actually different.
+r = await page.evaluate(async () => {
+  const voxMod = await import('/src/audio/vox.js');
+  const g = window.NUKEHAUS.game;
+  const raw = g.sound.raw;
+  const ctx = raw.ctx;
+  const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+  const an = ctx.createAnalyser();
+  an.fftSize = 4096;
+  raw.sfxBus.connect(an);
+  const bins = new Float32Array(an.frequencyBinCount);
+  const hz = ctx.sampleRate / an.fftSize;
+  const out = {};
+  const v = new voxMod.Vox(ctx, raw.sfxBus);
+  v.setVolume(1);
+  for (const voice of ['mutter', 'brick', 'ilsa']) {
+    // Average spectrum over one spoken vowel sweep per voice.
+    const acc = new Float64Array(an.frequencyBinCount);
+    let frames = 0;
+    v.say('{IY1 EH1 AA1 UW1}', { voice });
+    const until = performance.now() + 1600;
+    while (performance.now() < until) {
+      an.getFloatFrequencyData(bins);
+      for (let i = 0; i < bins.length; i++) acc[i] += Math.pow(10, bins[i] / 20);
+      frames++;
+      await sleep(16);
+    }
+    // Spectral centroid: a compact proxy for where the formants sit.
+    let num = 0, den = 0, peak = 0, peakHz = 0;
+    for (let i = 2; i < 400; i++) {
+      const m = acc[i] / Math.max(1, frames);
+      num += m * i * hz; den += m;
+      if (m > peak) { peak = m; peakHz = i * hz; }
+    }
+    out[voice] = { centroid: Math.round(den ? num / den : 0), peakHz: Math.round(peakHz) };
+    v.cancel();
+    await sleep(220);
+  }
+  raw.sfxBus.disconnect(an);
+  return out;
+});
+check('the three voices sit in different registers',
+  r.brick.centroid > 0 && r.ilsa.centroid > r.brick.centroid * 1.12,
+  `centroid Hz — brick ${r.brick.centroid}, mutter ${r.mutter.centroid}, ilsa ${r.ilsa.centroid}`);
 
 // Fire every sfx name the game can call and make sure none of them throws.
 r = await page.evaluate(async (names) => {

@@ -50,9 +50,26 @@ export function renderWorld(game, W, H) {
   }
   game.particles.collectLights(lights);
   for (const e of game.enemies) {
-    if (e.alive && e.state === ST.WINDUP && e.kind === 'sparker') {
+    if (!e.alive) continue;
+    if (e.state === ST.WINDUP && e.kind === 'sparker') {
       lights.push({ x: e.x, y: e.y, r: 0.5, g: 0.8, b: 1.0, intensity: 0.8, radius: 4.5 });
     }
+    // Whatever is boiling inside them shows through, and brighter when they open.
+    if (e.def.mutant) {
+      const open = (e.state === ST.WINDUP || e.state === ST.ATTACK) ? 1.9 : 1;
+      lights.push({
+        x: e.x, y: e.y, r: 0.30, g: 0.95, b: 0.40,
+        intensity: (e.kind === 'gorger' ? 0.34 : e.kind === 'howler' ? 0.26 : 0.16) * open,
+        radius: e.kind === 'maw' ? 8 : 4.6,
+      });
+    }
+  }
+  for (const b of game.bombs) {
+    const urgent = b.fuse < 1.6 ? 1.8 : 1;
+    lights.push({ x: b.x, y: b.y, r: 1.0, g: 0.4, b: 0.25, intensity: 0.30 * urgent, radius: 3.4 });
+  }
+  for (const a of game.acids) {
+    lights.push({ x: a.x, y: a.y, r: 0.35, g: 1.0, b: 0.45, intensity: 0.5, radius: 3.6 });
   }
   for (const b of game.bolts) {
     lights.push({ x: b.x, y: b.y, r: 0.5, g: 0.85, b: 1.0, intensity: 0.5, radius: 3.4 });
@@ -158,6 +175,38 @@ export function renderWorld(game, W, H) {
     });
   }
 
+  for (const a of game.acids) {
+    S.push({
+      x: a.x, y: a.y, z: a.z, frame: game.particles.dotSoft, h: 0.34,
+      tint: rgba(140, 255, 160, 255), alpha: 1, additive: true, emissive: true,
+    });
+  }
+
+  for (const b of game.bombs) {
+    // The indicator brightens as the fuse runs out; a settled bomb stops spinning.
+    const urgency = clamp(1 - b.fuse / b.spec.fuse, 0, 1);
+    const blink = b.fuse < 1.6 ? (Math.floor(game.time * 12) % 2) : (Math.floor(game.time * 4) % 2);
+    const key = blink ? `pipebomb_lit${clamp(Math.floor(urgency * 3), 0, 2)}` : 'pipebomb_prop';
+    const f = art.vm[key] || art.vm.pipebomb_prop;
+    if (f) S.push({ x: b.x, y: b.y, z: b.z, frame: f, h: 0.24 });
+    if (blink) {
+      S.push({
+        x: b.x, y: b.y, z: b.z + 0.14, frame: game.particles.dotSoft,
+        h: 0.28 + urgency * 0.25, tint: rgba(255, 90, 50, 255),
+        alpha: 0.5 + urgency * 0.5, additive: true, emissive: true,
+      });
+    }
+  }
+
+  for (const h of game.hazards || []) {
+    // A faint sick glow marks the cloud's footprint even through the smoke.
+    const k = 1 - h.t / h.life;
+    S.push({
+      x: h.x, y: h.y, z: 0.35, frame: game.particles.dotSoft, h: h.r * 1.8,
+      tint: rgba(110, 220, 120, 255), alpha: 0.16 * k, additive: true, emissive: true,
+    });
+  }
+
   game.particles.collect(S, art.vm);
 
   const palette = game.skyDome.palette;
@@ -181,6 +230,22 @@ export function drawViewmodel(game, buf, W, H) {
   const spec = p.spec;
   const s = H / 450;
 
+  // The Boot overrides whatever is in his hands, then hands it back.
+  if (p.kickAnim > 0) {
+    const k = 1 - p.kickAnim / 0.34;
+    const bf = art.vm[k < 0.35 ? 'boot_fire0' : k < 0.68 ? 'boot_fire1' : 'boot_fire2'] || art.vm.boot_idle;
+    if (bf) {
+      const bs = (H * 0.72) / bf.h;
+      const bx = W / 2 - (bf.w * bs) / 2 + Math.sin(p.bobPhase) * 6 * s;
+      const by = H - bf.h * bs + (1 - Math.sin(Math.min(1, k) * Math.PI)) * H * 0.30;
+      const L0 = game.lights.sample(p.x, p.y);
+      blitFrame(buf, W, H, bf, bx, by, {
+        scale: bs, lum: clamp(0.7 + (L0[0] + L0[1] + L0[2]) / 3 * 0.5, 0.6, 1.6),
+      });
+    }
+    return;
+  }
+
   let stateKey = 'idle';
   if (p.fireAnim > 0) {
     const k = 1 - p.fireAnim / Math.max(0.001, Math.min(0.22, spec.refire * 0.85));
@@ -200,8 +265,8 @@ export function drawViewmodel(game, buf, W, H) {
 
   const scale = (H * 0.52) / f.h;
   const bobX = Math.sin(p.bobPhase) * 9 * s * p.bob;
-  const bobY = Math.abs(Math.cos(p.bobPhase)) * 7 * s * p.bob;
-  const x = W / 2 - (f.w * scale) / 2 + bobX + game.shakeX * 40;
+  const bobY = Math.abs(Math.cos(p.bobPhase)) * 7 * s * p.bob + p.swayY * s;
+  const x = W / 2 - (f.w * scale) / 2 + bobX + p.swayX * s + game.shakeX * 40;
   // Sit the weapon low enough that the crosshair stays clear; the art is
   // composed for the lower two-thirds of its frame, so push the rest off-screen.
   const y = H - f.h * scale + bobY + p.kick * 1.4 * s + swapOff + f.h * scale * 0.13;

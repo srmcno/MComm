@@ -746,6 +746,8 @@ const GRIP_PRESETS = {
   pinch: { curl: 1.02, spread: 0.0, thumb: 'pinch', palm: [18, 20], reach: 20 },
   // finger on a trigger, rest wrapped
   trigger: { curl: 0.90, spread: 0.02, thumb: 'over', palm: [20, 22], reach: 21 },
+  // fingers thrown open - the instant a thrown thing leaves the hand
+  open: { curl: 0.10, spread: 0.16, thumb: 'side', palm: [20, 22], reach: 23 },
 };
 
 /**
@@ -1982,6 +1984,8 @@ const MUZZLE = {
       + (WIDOW.muzY - WIDOW.hingeY) * cos(WIDOW.ang),
   ],
   splitter: [98, 44], nailer: [100, 40], halo: [100, 60], deadman: [104, 30],
+  // neither of these has a muzzle; the anchor is just where their light lives
+  boot: [100, 58], pipebomb: [104, 44],
 };
 
 /**
@@ -1995,6 +1999,8 @@ const WEAPON_FIT = {
   nailer: { s: 1.24, cx: 100, cy: 100, tx: 100, ty: 95 },
   halo: { s: 1.16, cx: 100, cy: 92, tx: 100, ty: 86 },
   deadman: { s: 1.24, cx: 104, cy: 118, tx: 100, ty: 108 },
+  boot: { s: 1.06, cx: 100, cy: 100, tx: 100, ty: 100 },
+  pipebomb: { s: 1.06, cx: 100, cy: 100, tx: 100, ty: 98 },
 };
 
 const WEAPON_POSES = {
@@ -2044,10 +2050,34 @@ const WEAPON_POSES = {
     reload0: { dx: 3, dy: 6, rot: -0.06, flash: 0, P: { cover: 0.55, plunge: 0, count: '05', lamp: 0.25 } },
     reload1: { dx: 1, dy: 3, rot: -0.02, flash: 0, P: { cover: 0.12, plunge: 0, count: '09', lamp: 0.15 } },
   },
+  // The kick: at rest it is almost entirely below the frame, then the leg
+  // straightens into the middle distance and retracts. `ext` is the whole
+  // animation - it scales the leg about a pivot off the bottom of the frame.
+  boot: {
+    idle: { dx: 0, dy: 0, rot: 0, flash: 0, P: { rest: 1, lift: 0 } },
+    fire0: {
+      dx: -2, dy: 0, rot: 0.03, flash: 0.42, flashR: 150, flashCol: [1.0, 0.92, 0.80],
+      P: { ext: 1.0, mud: 0.6, blood: 0.75, dust: 0.5 },
+    },
+    fire1: { dx: 3, dy: 8, rot: -0.05, flash: 0.10, P: { ext: 0.86, mud: 0.6, blood: 0.6, dust: 0.9 } },
+    fire2: { dx: 1, dy: 12, rot: 0.02, flash: 0, P: { ext: 0.84, mud: 0.55, blood: 0.4, dust: 0.45 } },
+    reload0: { dx: -3, dy: 4, rot: -0.04, flash: 0, P: { ext: 0.86, mud: 0.55, blood: 0.25, dust: 0.22 } },
+    reload1: { dx: 0, dy: 0, rot: 0, flash: 0, P: { rest: 1, lift: 20 } },
+  },
+  // The pipe bomb: held cocked back, thrown, then the off hand fetches another.
+  pipebomb: {
+    idle: { dx: 0, dy: 0, rot: 0, flash: 0, P: { stage: 'hold', dial: 0.35 } },
+    fire0: { dx: -4, dy: 7, rot: -0.09, flash: 0, P: { stage: 'throw', dial: 0.06 } },
+    fire1: { dx: 2, dy: 5, rot: 0.03, flash: 0, P: { stage: 'empty', spare: 0.0, close: 0.1 } },
+    fire2: { dx: 1, dy: 2, rot: 0.01, flash: 0, P: { stage: 'empty', spare: 0.8, close: 0.4 } },
+    reload0: { dx: 4, dy: 8, rot: -0.06, flash: 0, P: { stage: 'wind', dial: 0.12 } },
+    reload1: { dx: 2, dy: 4, rot: -0.02, flash: 0, P: { stage: 'wind', dial: 0.64 } },
+  },
 };
 
 const WEAPON_DRAW = {
   pistol: drawWidow, splitter: drawSplitter, nailer: drawNailer, halo: drawHalo, deadman: drawDeadman,
+  boot: drawBoot, pipebomb: drawPipebomb,
 };
 
 const VM_W = 200, VM_H = 150;
@@ -2619,6 +2649,19 @@ export function buildViewmodels() {
   for (let i = 0; i < 4; i++) frames['cloud' + i] = drawCloud(i);
   frames.moon = drawMoon();
   frames.contrail = drawContrail();
+
+  // --- expansion: the kick and the pipe bomb ---
+  for (const name of ['boot', 'pipebomb']) buildWeapon(frames, name);
+  setModel();
+
+  // --- expansion: radio portraits ---
+  for (let i = 0; i < 4; i++) {
+    frames[`portrait_brick_${i}`] = buildPortrait('brick', i);
+    frames[`portrait_ilsa_${i}`] = buildPortrait('ilsa', i);
+  }
+  frames.portrait_frame = drawPortraitFrame();
+  for (let i = 0; i < 3; i++) frames['portrait_static' + i] = drawPortraitStatic(i);
+  setModel();
 
   return { frames };
 }
@@ -3799,6 +3842,1305 @@ function drawContrail() {
       const a = pow(1 - d, 1.2) * (0.94 - t * 0.72) * (0.62 + puff * 0.7);
       if (a < 0.01) continue;
       blend(f, x, y, mix(rgba(255, 232, 208, 255), rgba(200, 192, 212, 255), t), min(a, 0.92));
+    }
+  }
+  return f;
+}
+
+// ===========================================================================
+// EXPANSION: the kick, the pipe bomb, the radio portraits, and their FX.
+// Everything below is additive - it introduces no change to any painter,
+// constant or light rig the original 114 frames depend on.
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// WEAPON 6 - THE BOOT: a kick, so a leg rather than a gun
+// ---------------------------------------------------------------------------
+
+const BOOT_SOLE = rgba(116, 109, 103, 255);   // worn rubber
+const BOOT_SOLE_HI = rgba(182, 173, 162, 255);
+const BOOT_LEATHER = rgba(134, 100, 70, 255);
+const BOOT_TOECAP = rgba(178, 180, 188, 255); // bare steel through the toe
+const TROUSER = rgba(142, 144, 112, 255);
+const MUD = rgba(84, 66, 44, 255);
+
+/** Rubber shader: matte, blotchy, with worn-pale high points. */
+function rubberShader(seed, wear = 0.5) {
+  return (t, u, x, y) => {
+    const n = fbm(seed, x / 5.5, y / 5.5, 2, 8);
+    let c = mix(shade(BOOT_SOLE, 0.72), BOOT_SOLE, clamp(0.25 + n * 1.2, 0, 1));
+    const crest = pow(max(0, 1 - abs(u + 0.25) * 1.6), 2.0);
+    c = mix(c, BOOT_SOLE_HI, crest * wear * 0.45);
+    if (hash2(x, y, seed) > 0.965) c = shade(c, 0.8);
+    return c;
+  };
+}
+
+/**
+ * The boot at full extension: sole toward the viewer, foreshortened, with the
+ * upper, ankle, shin guard and trouser stacked behind it. `k` scales the whole
+ * leg about the bottom of the frame so retraction is one number.
+ */
+function bootKick(cv, P) {
+  const k = clamp(P.ext === undefined ? 1 : P.ext, 0.2, 1.2);
+  const px_ = 100, py_ = 156;                       // the pivot everything shrinks toward
+  const X = (x) => px_ + (x - px_) * k;
+  const Y = (y) => py_ + (y - py_) * k;
+  const R = (r) => r * k;
+  const seed = P.seed || 8101;
+  const mud = P.mud === undefined ? 0.55 : P.mud;
+
+  // ---- trouser leg running off the bottom of the frame ----
+  capsule(cv, X(140), Y(190), X(116), Y(128), R(32), R(27), {
+    gloss: 0.12, grain: 0, seed: seed + 1, aoEdge: 0.60,
+    shader: (t, u, x, y) => {
+      const n = fbm(seed + 3, x / 6, y / 9, 3, 8);
+      let c = mix(shade(TROUSER, 0.74), TROUSER, clamp(0.28 + n * 1.15, 0, 1));
+      // canvas weave plus a couple of soft creases
+      if (((x + y) | 0) % 3 === 0) c = shade(c, 1.06);
+      const crease = pow(max(0, 1 - abs(sin(t * 9.5 + u * 1.4)) * 2.4), 3);
+      c = shade(c, 1 - crease * 0.22);
+      return c;
+    },
+  });
+  // trouser hem, bloused over the boot
+  capsule(cv, X(96), Y(132), X(136), Y(126), R(11), R(11), {
+    gloss: 0.12, grain: 0.05, seed: seed + 5,
+    shader: (t, u) => shade(mix(shade(TROUSER, 0.55), TROUSER, clamp(0.5 - u * 0.8, 0, 1)), 0.94),
+  });
+
+  // ---- shin guard: a scuffed plate on two straps ----
+  metalPanelRot(cv, X(126), Y(140), R(46), R(34), 0.20, { col: rgba(134, 136, 142, 255), gloss: 0.46, seed: seed + 7 });
+  for (const sy of [-12, 12]) {
+    capsule(cv, X(100), Y(140 + sy), X(152), Y(140 + sy + 9), R(3.8), R(3.8), {
+      col: rgba(64, 56, 48, 255), gloss: 0.18, grain: 0.08, seed: seed + 9,
+    });
+  }
+  metalPanelRot(cv, X(148), Y(155), R(11), R(9), 0.20, { col: rgba(178, 172, 158, 255), gloss: 0.62, seed: seed + 11 });
+  scuff(cv, X(104), Y(124), R(48), R(34), seed + 13, 20, 0.42);
+
+  // ---- ankle / boot shaft behind the sole ----
+  const lth = leatherShader(seed + 21, { wear: 0.75, dark: 0.10 });
+  capsule(cv, X(104), Y(116), X(96), Y(92), R(23), R(26), { shader: lth, gloss: 0.24, grain: 0, seed: seed + 23 });
+  // collar padding roll
+  capsule(cv, X(80), Y(110), X(122), Y(114), R(8), R(8), {
+    shader: leatherShader(seed + 25, { wear: 0.5, dark: 0.18 }), gloss: 0.2, grain: 0, seed: seed + 27,
+  });
+
+  // ---- the upper: leather welt showing all round the sole, widest at the toe
+  const soleShapes = [
+    ['blob', 94, 98, 21.0, 0.96],           // heel
+    ['cap', 94, 94, 94, 56, 16.5, 21.5],    // waist -> ball
+    ['blob', 94, 46, 23.5, 0.96],           // ball
+    ['blob', 94, 28, 19.0, 0.94],           // toe
+  ];
+  const drawSoleMass = (grow, yOff, shader, gloss) => {
+    for (const sh of soleShapes) {
+      if (sh[0] === 'blob') {
+        blob(cv, X(sh[1]), Y(sh[2] + yOff), R(sh[3] + grow),
+          { shader, gloss, grain: 0, seed: seed + 31, squashY: sh[4] });
+      } else {
+        capsule(cv, X(sh[1]), Y(sh[2] + yOff), X(sh[3]), Y(sh[4] + yOff),
+          R(sh[5] + grow), R(sh[6] + grow), { shader, gloss, grain: 0, seed: seed + 33, aoEdge: 0.5 });
+      }
+    }
+  };
+  drawSoleMass(4.5, -7, leatherShader(seed + 35, { wear: 0.8, dark: 0.0 }), 0.26);
+  // steel toe cap, worn bare where the leather has gone
+  blob(cv, X(94), Y(13), R(21), {
+    gloss: 0.64, grain: 0.06, seed: seed + 37, squashY: 0.62,
+    shader: (u, v, x, y) => {
+      const n = fbm(seed + 39, x / 4, y / 4, 2, 8);
+      // leather survives at the edges; the crown is bare, bright, scratched steel
+      const bare = clamp(1 - hypot(u * 1.15, (v + 0.25) * 1.5), 0, 1);
+      const worn = smoothstep(0.18, 0.62, bare + (n - 0.5) * 0.5);
+      const lea = mix(shade(BOOT_LEATHER, 0.6), BOOT_LEATHER, clamp(0.3 + n, 0, 1));
+      return mix(lea, shade(BOOT_TOECAP, 0.78 + n * 0.5), worn);
+    },
+  });
+
+  // ---- the sole itself, sitting proud of the upper ----
+  drawSoleMass(0, 0, rubberShader(seed + 41, 0.55), 0.16);
+
+  // ---- tread: heel block, arch bar, and lugs across the ball and toe ----
+  const LUG = rgba(152, 144, 135, 255);
+  const lug = (lx, ly, lw, lh, rot) => {
+    metalPanelRot(cv, X(lx), Y(ly), R(lw), R(lh), rot, { col: LUG, gloss: 0.22, seed: seed + 43 });
+  };
+  // heel block, separated from the forefoot by the arch gap
+  for (let r2 = 0; r2 < 4; r2++) {
+    for (let c2 = 0; c2 < 2; c2++) {
+      const lx = 94 + (c2 - 0.5) * 17, ly = 84 + r2 * 8.5;
+      if (hypot((lx - 94) / 20, (ly - 98) / 20) > 1.04) continue;
+      lug(lx, ly, 13, 6, 0);
+    }
+  }
+  // arch: a narrow waist with a maker's bar across it
+  lug(94, 70, 22, 4.5, 0.02);
+  lug(94, 64, 19, 3.5, 0.02);
+  // forefoot chevrons
+  for (let r2 = 0; r2 < 6; r2++) {
+    const ly = 55 - r2 * 7.0;
+    const half = 21 * sqrt(max(0.05, 1 - pow((ly - 44) / 26, 2)));
+    for (const sgn of [-1, 1]) {
+      lug(94 + sgn * half * 0.50, ly, half * 0.88, 4.6, sgn * 0.34);
+    }
+  }
+  // worn-smooth patch on the outer ball: this boot lands the same way every time
+  for (let j = -12; j <= 12; j++) {
+    for (let i = -11; i <= 11; i++) {
+      const d = hypot(i / 11, j / 12);
+      if (d > 1) continue;
+      tint(cv, X(102 + i), Y(46 + j), BOOT_SOLE_HI, pow(1 - d, 1.5) * 0.40);
+    }
+  }
+  // stitched welt line all the way round
+  for (let a = 0; a < TAU; a += 0.035) {
+    const rr = 20.5 + 2.5 * cos(a * 2);
+    const wx = 94 + cos(a) * rr, wy = 63 + sin(a) * 38;
+    tint(cv, X(wx), Y(wy), rgba(178, 156, 116, 255), 0.55);
+  }
+
+  // ---- mud, and something darker, worked into the tread ----
+  soot(cv, X(70), Y(0), R(50), R(120), seed + 51, 0.26 * mud, 9);
+  for (let i = 0; i < 22; i++) {
+    const a = hash2(i, 1, seed + 53) * TAU, rr = sqrt(hash2(i, 2, seed + 55)) * 20;
+    const mx = 94 + cos(a) * rr, my = 62 + sin(a) * 36;
+    const r2 = 2 + hash2(i, 3, seed + 57) * 5;
+    for (let j = -r2; j <= r2; j++) for (let ii = -r2; ii <= r2; ii++) {
+      const d = hypot(ii, j) / r2;
+      if (d > 1) continue;
+      tint(cv, X(mx + ii), Y(my + j), MUD, pow(1 - d, 1.4) * 0.6 * mud);
+    }
+  }
+  if (P.blood) {
+    for (let i = 0; i < 10; i++) {
+      const a = hash2(i, 7, seed + 61) * TAU, rr = sqrt(hash2(i, 8, seed + 63)) * 17;
+      const bx = 94 + cos(a) * rr, by = 52 + sin(a) * 30;
+      const r2 = 1.4 + hash2(i, 9, seed + 65) * 3;
+      for (let j = -r2; j <= r2; j++) for (let ii = -r2; ii <= r2; ii++) {
+        if (hypot(ii, j) > r2) continue;
+        tint(cv, X(bx + ii), Y(by + j), i % 3 ? rgba(112, 22, 20, 255) : rgba(64, 16, 18, 255),
+          0.75 * P.blood);
+      }
+    }
+  }
+  scuff(cv, X(72), Y(10), R(46), R(106), seed + 71, 30, 0.32);
+}
+
+/** The boot at rest: barely in frame, seen down the shin from above. */
+function bootRest(cv, P) {
+  const seed = 8201;
+  const lift = P.lift || 0;
+  const yb = 150 - lift;
+  // trouser filling the bottom corner
+  capsule(cv, 118, yb + 42, 100, yb - 14, 36, 31, {
+    gloss: 0.10, grain: 0, seed: seed + 1, aoEdge: 0.44,
+    shader: (t, u, x, y) => {
+      const n = fbm(seed + 3, x / 6, y / 9, 3, 8);
+      let c = mix(shade(TROUSER, 0.6), TROUSER, clamp(0.28 + n * 1.15, 0, 1));
+      if (((x + y) | 0) % 3 === 0) c = shade(c, 1.06);
+      return c;
+    },
+  });
+  // boot mouth and tongue, foreshortened almost to an edge
+  const lth = leatherShader(seed + 11, { wear: 0.78, dark: 0.08 });
+  blob(cv, 98, yb - 18, 35, { shader: lth, gloss: 0.24, grain: 0, seed: seed + 13, squashY: 0.46 });
+  blob(cv, 98, yb - 25, 25, {
+    gloss: 0.2, grain: 0, seed: seed + 15, squashY: 0.40,
+    shader: leatherShader(seed + 17, { wear: 0.5, dark: 0.24 }),
+  });
+  // laces
+  for (let i = 0; i < 4; i++) {
+    const ly = yb - 21 - i * 5.5;
+    const hw = 20 - i * 2.6;
+    capsule(cv, 98 - hw, ly, 98 + hw, ly - 2.5, 1.8, 1.8,
+      { col: rgba(176, 158, 118, 255), gloss: 0.2, grain: 0.1, seed: seed + 19 + i });
+    capsule(cv, 98 - hw, ly - 2.5, 98 + hw, ly, 1.8, 1.8,
+      { col: rgba(142, 126, 94, 255), gloss: 0.2, grain: 0.1, seed: seed + 29 + i });
+  }
+  // toe cap catching the light beyond the laces
+  blob(cv, 97, yb - 41, 27, {
+    gloss: 0.62, grain: 0.06, seed: seed + 41, squashY: 0.38,
+    shader: (u, v, x, y) => {
+      const n = fbm(seed + 43, x / 4, y / 4, 2, 8);
+      const bare = clamp(1 - hypot(u * 1.1, (v + 0.2) * 1.5), 0, 1);
+      const lea = mix(shade(BOOT_LEATHER, 0.62), BOOT_LEATHER, clamp(0.3 + n, 0, 1));
+      return mix(lea, shade(BOOT_TOECAP, 0.86 + n * 0.4), smoothstep(0.14, 0.58, bare + (n - 0.5) * 0.5));
+    },
+  });
+  // a sliver of the sole edge under the toe, so it reads as a boot on the floor
+  capsule(cv, 80, yb - 30, 116, yb - 30, 6, 6, {
+    shader: rubberShader(seed + 61, 0.6), gloss: 0.16, grain: 0, seed: seed + 63,
+  });
+  soot(cv, 62, yb - 50, 72, 66, seed + 51, 0.28, 9);
+  scuff(cv, 66, yb - 46, 64, 60, seed + 53, 22, 0.34);
+}
+
+/** Kicked-up dust, dithered so the frame stays strictly alpha 0/255. */
+function bootDust(cv, cx, cy, amt, seed) {
+  if (amt <= 0.01) return;
+  const rng = makeRng(seed);
+  for (let i = 0; i < 5 + (amt * 5 | 0); i++) {
+    const a = rng() * PI;                            // thrown outward and down
+    const dist = 26 + rng() * 38 * amt;
+    const x = cx + (rng() < 0.5 ? -1 : 1) * (24 + rng() * 44) * amt;
+    const y = cy + 8 + sin(a) * dist * 0.55;
+    const r = (10 + rng() * 12) * (0.55 + amt * 0.6);
+    for (let j = -r; j <= r; j++) {
+      for (let ii = -r; ii <= r; ii++) {
+        const d = hypot(ii, j) / r;
+        if (d > 1) continue;
+        const n = fbm(seed + i * 7, (x + ii) / 5, (y + j) / 5, 2, 8);
+        const dens = pow(1 - d, 0.95) * (0.85 + n * 0.9) * amt;
+        const ix = (x + ii) | 0, iy = (y + j) | 0;
+        if (dens < hash2(ix, iy, seed) * 0.92) continue;
+        const g = 118 + n * 48;
+        put(cv, x + ii, y + j, rgba(g, g * 0.96, g * 0.88, 255), 0, -0.15, 1, 0.9, 0.02, 0);
+      }
+    }
+  }
+}
+
+function drawBoot(cv, P) {
+  if (P.rest) { bootRest(cv, P); return; }
+  bootKick(cv, P);
+  if (P.dust) bootDust(cv, 96, 100, P.dust, 8301);
+}
+
+// ---------------------------------------------------------------------------
+// WEAPON 7 - THE PIPE BOMB
+// ---------------------------------------------------------------------------
+
+const PIPE = rgba(160, 164, 174, 255);        // galvanised steel
+const PIPE_D = rgba(104, 108, 118, 255);
+const TAPE = rgba(46, 44, 50, 255);
+const DIAL_FACE = rgba(228, 220, 198, 255);
+const SATCHEL = rgba(122, 112, 80, 255);
+
+/** Galvanised pipe: cool grey with zinc spangle and lengthwise scoring. */
+function pipeShader(seed) {
+  return (t, u, x, y) => {
+    const n = fbm(seed, x / 7, y / 7, 2, 8);
+    const spangle = fbm(seed + 5, x / 2.6, y / 2.6, 2, 8);
+    let c = mix(PIPE_D, PIPE, clamp(0.42 - u * 0.75, 0, 1));
+    c = shade(c, 0.88 + n * 0.26 + (spangle > 0.72 ? 0.16 : 0));
+    if (hash2(x, y, seed) > 0.972) c = shade(c, 1.22);
+    if (fbm(seed + 11, x / 9, y / 3, 2, 8) > 0.76) c = mix(c, RUST, 0.22);
+    return c;
+  };
+}
+
+/** A wrap of electrical tape: near-black, slightly glossy, frayed at one edge. */
+function tapeWrap(cv, x0, y0, x1, y1, r, seed) {
+  capsule(cv, x0, y0, x1, y1, r, r, {
+    gloss: 0.34, grain: 0.05, seed,
+    shader: (t, u, x, y) => {
+      let c = mix(shade(TAPE, 0.7), mix(TAPE, rgba(72, 68, 78, 255), 0.6), clamp(0.5 - u * 0.9, 0, 1));
+      if (fbm(seed + 3, x / 3, y / 6, 2, 8) > 0.70) c = shade(c, 1.18);   // wrinkles in the wrap
+      return c;
+    },
+  });
+}
+
+/**
+ * The bomb itself, drawn along an arbitrary axis so the same painter serves the
+ * held pose, the one leaving frame, and the spare coming out of the satchel.
+ */
+function pipeBody(cv, ax, ay, bx, by, r, o = {}) {
+  const { seed = 8401, dial = 0.35, showDial = true, fuse = 1, tapeSeed = 8411 } = o;
+  const dx = bx - ax, dy = by - ay;
+  const L = hypot(dx, dy) || 1;
+  const ux = dx / L, uy = dy / L;
+  const at = (t, off = 0) => [ax + dx * t - uy * off, ay + dy * t + ux * off];
+
+  // pipe barrel
+  capsule(cv, ax, ay, bx, by, r, r, { shader: pipeShader(seed), gloss: 0.5, grain: 0, seed, aoEdge: 0.46 });
+  // threaded end caps
+  for (const [t, s2] of [[0.0, -1], [1.0, 1]]) {
+    const c0 = at(t), c1 = at(t + s2 * 0.11);
+    capsule(cv, c0[0], c0[1], c1[0], c1[1], r * 1.09, r * 1.05, {
+      gloss: 0.56, grain: 0.06, seed: seed + 7,
+      shader: (tt, u) => {
+        const flat = 0.5 + 0.5 * cos(u * 7);          // hex flats on the cap
+        return shade(mix(shade(PIPE_D, 0.72), STEEL_B, clamp(0.48 - u * 0.8, 0, 1)), 0.9 + flat * 0.22);
+      },
+    });
+    const rim = at(t + s2 * 0.035);
+    capsule(cv, c0[0], c0[1], rim[0], rim[1], r * 1.16, r * 1.13, {
+      col: shade(PIPE_D, 0.85), gloss: 0.4, grain: 0.08, seed: seed + 9,
+    });
+  }
+  // tape wraps
+  for (const t of [0.20, 0.78]) {
+    const a2 = at(t - 0.065), b2 = at(t + 0.065);
+    tapeWrap(cv, a2[0], a2[1], b2[0], b2[1], r * 1.03, tapeSeed + (t * 100 | 0));
+  }
+  // fuse stub out of the far cap
+  if (fuse) {
+    const f0 = at(-0.06), f1 = at(-0.20, r * 0.5), f2 = at(-0.30, r * 1.5);
+    capsule(cv, f0[0], f0[1], f1[0], f1[1], 2.6, 2.2,
+      { col: rgba(148, 132, 96, 255), gloss: 0.14, grain: 0.12, seed: seed + 13 });
+    capsule(cv, f1[0], f1[1], f2[0], f2[1], 2.2, 1.4,
+      { col: rgba(118, 104, 74, 255), gloss: 0.14, grain: 0.14, seed: seed + 15 });
+  }
+
+  // ---- the kitchen timer, taped on ----
+  if (showDial) {
+    const d0 = at(0.46, -r * 1.30);
+    const dcx = d0[0], dcy = d0[1], dr = r * 1.34;
+    // body of the timer behind the face
+    blob(cv, dcx, dcy, dr * 1.12, { col: rgba(196, 190, 176, 255), gloss: 0.3, grain: 0.08, seed: seed + 21 });
+    ringTube(cv, dcx, dcy, dr * 0.98, dr * 0.22, {
+      gloss: 0.55, grain: 0.07, seed: seed + 23,
+      shader: (a2, u) => mix(shade(STEEL_D, 0.6), STEEL_B, clamp(0.55 - cos(a2 + 0.5) * 0.5 - u * 0.4, 0, 1)),
+    });
+    blob(cv, dcx, dcy, dr * 0.80, {
+      gloss: 0.24, grain: 0.05, seed: seed + 25,
+      shader: (u, v, x, y) => {
+        const n = fbm(seed + 27, x / 4, y / 4, 2, 8);
+        return shade(mix(DIAL_FACE, shade(DIAL_FACE, 0.82), clamp(hypot(u, v) * 0.7, 0, 1)), 0.94 + n * 0.16);
+      },
+    });
+    // minute ticks, longer every quarter
+    for (let i = 0; i < 24; i++) {
+      const a2 = (i / 24) * TAU - PI / 2;
+      const long = i % 6 === 0;
+      for (let rr = dr * (long ? 0.50 : 0.62); rr <= dr * 0.74; rr += 0.5) {
+        tint(cv, dcx + cos(a2) * rr, dcy + sin(a2) * rr, rgba(46, 40, 34, 255), 0.85);
+      }
+    }
+    stencil(cv, '60', dcx - 4, dcy - dr * 0.54, rgba(40, 34, 28, 255), 0.9);
+    stencil(cv, '30', dcx - 4, dcy + dr * 0.22, rgba(40, 34, 28, 255), 0.9);
+    stencil(cv, '45', dcx - dr * 0.62, dcy - dr * 0.16, rgba(40, 34, 28, 255), 0.9);
+    stencil(cv, '15', dcx + dr * 0.34, dcy - dr * 0.16, rgba(40, 34, 28, 255), 0.9);
+    // the hand, and the winding knob
+    const ha = dial * TAU - PI / 2;
+    for (let rr = -dr * 0.12; rr <= dr * 0.68; rr += 0.4) {
+      tint(cv, dcx + cos(ha) * rr, dcy + sin(ha) * rr, rgba(186, 44, 34, 255), 0.95);
+      tint(cv, dcx + cos(ha) * rr + 1, dcy + sin(ha) * rr, rgba(120, 26, 22, 255), 0.6);
+    }
+    blob(cv, dcx, dcy, dr * 0.13, { col: rgba(70, 66, 62, 255), gloss: 0.5, grain: 0.05, seed: seed + 29 });
+    const ka = at(0.62, -r * 2.35);
+    blob(cv, ka[0], ka[1], dr * 0.34, {
+      gloss: 0.4, grain: 0.08, seed: seed + 31,
+      shader: (u, v) => {
+        const knurl2 = 0.5 + 0.5 * sin(atan2(v, u) * 14);
+        return shade(mix(rgba(96, 92, 86, 255), rgba(158, 152, 142, 255), clamp(0.5 - v * 0.8, 0, 1)),
+          0.88 + knurl2 * 0.28);
+      },
+    });
+    // two strips of tape holding the timer to the pipe
+    for (const s2 of [-1, 1]) {
+      const t0 = at(0.46 + s2 * 0.15, r * 0.3), t1 = at(0.46 + s2 * 0.07, -r * 2.1);
+      tapeWrap(cv, t0[0], t0[1], t1[0], t1[1], 3.6, tapeSeed + 40 + s2);
+    }
+  }
+  scuff(cv, min(ax, bx) - r * 2, min(ay, by) - r * 2, abs(dx) + r * 4, abs(dy) + r * 4, seed + 51, 22, 0.34);
+}
+
+/** The canvas satchel the spares come out of. */
+function drawSatchel(cv, x, y, seed, spare = 0) {
+  const bagSh = (t, u, x2, y2) => {
+    const n = fbm(seed, x2 / 6, y2 / 6, 2, 8);
+    let c = mix(shade(SATCHEL, 0.58), SATCHEL, clamp(0.28 + n * 1.2, 0, 1));
+    if (((x2 + y2) | 0) % 3 === 0) c = shade(c, 1.05);
+    return c;
+  };
+  capsule(cv, x - 20, y + 40, x + 20, y + 40, 22, 22, { shader: bagSh, gloss: 0.10, grain: 0, seed: seed + 1 });
+  capsule(cv, x - 20, y + 18, x + 20, y + 18, 14, 14, { shader: bagSh, gloss: 0.10, grain: 0, seed: seed + 2 });
+  // spare pipes standing in the bag
+  if (spare > 0) {
+    for (const [ox, oy] of [[-9, -12], [7, -9]]) {
+      capsule(cv, x + ox, y + oy + 20, x + ox - 2, y + oy - 6, 6.5, 6.5,
+        { shader: pipeShader(seed + 5), gloss: 0.45, grain: 0, seed: seed + 7 });
+      blob(cv, x + ox - 2, y + oy - 6, 7.4, { col: shade(PIPE_D, 0.9), gloss: 0.5, grain: 0.08, seed: seed + 9 });
+    }
+  }
+  // flap and buckle
+  capsule(cv, x - 21, y + 20, x + 21, y + 20, 13, 13, {
+    gloss: 0.12, grain: 0, seed: seed + 11,
+    shader: (t, u, x2, y2) => shade(bagSh(t, u, x2, y2), 1.14),
+  });
+  for (let i = -22; i <= 22; i += 3.5) tint(cv, x + i, y + 31, rgba(196, 178, 128, 255), 0.5);
+  capsule(cv, x - 3, y + 8, x - 3, y + 36, 4.4, 4.4,
+    { col: rgba(66, 54, 42, 255), gloss: 0.22, grain: 0.1, seed: seed + 13 });
+  metalPanelRot(cv, x - 3, y + 28, 10, 8, 0, { col: rgba(176, 164, 130, 255), gloss: 0.58, seed: seed + 15 });
+  soot(cv, x - 30, y + 6, 60, 56, seed + 21, 0.26, 10);
+}
+
+function drawPipebomb(cv, P) {
+  const stage = P.stage || 'hold';
+  const dial = P.dial === undefined ? 0.35 : P.dial;
+
+  if (stage === 'hold' || stage === 'wind') {
+    // ---- bomb held across the view, timer toward the player ----
+    pipeBody(cv, 44, 96, 148, 74, 16.0, { seed: 8401, dial, tapeSeed: 8411 });
+    drawGlove(cv, {
+      x: 156, y: 100, ang: 0.20, flip: -1, scale: 1.04, grip: 'wrap',
+      seed: 8501, wear: 0.6,
+    });
+    if (stage === 'wind') {
+      // second hand up on the winding knob
+      drawGlove(cv, {
+        x: 138, y: 32, ang: 0.24, flip: -1, scale: 0.92, grip: 'pinch',
+        seed: 8511, wear: 0.5, sleeve: 1,
+      });
+    }
+  } else if (stage === 'throw') {
+    // ---- release: hand thrown open, bomb already tumbling out of frame ----
+    // speed lines first, so the bomb sits in front of its own trail
+    for (let i = 0; i < 9; i++) {
+      const t = i / 9;
+      const sx = 62 + t * 58 + hash2(i, 1, 8601) * 12;
+      const sy = 46 + t * 46 + hash2(i, 2, 8603) * 12;
+      capsule(cv, sx, sy, sx + 15, sy + 11, 1.9, 0.7,
+        { col: rgba(186, 188, 196, 255), gloss: 0.3, grain: 0.1, seed: 8605 + i });
+    }
+    pipeBody(cv, 4, 44, 78, 20, 15.0, { seed: 8401, dial, tapeSeed: 8411, fuse: 1 });
+    drawGlove(cv, {
+      x: 142, y: 104, ang: 0.26, flip: -1, scale: 1.14, grip: 'open',
+      seed: 8501, wear: 0.6,
+    });
+  } else {
+    // ---- empty hand, and the next one coming out of the satchel ----
+    drawSatchel(cv, 42, 96, 8701, P.spare || 0);
+    if (P.spare > 0.4) {
+      pipeBody(cv, 16, 96 - 40 * P.spare, 74, 78 - 34 * P.spare, 13.5,
+        { seed: 8421, dial: 0.05, tapeSeed: 8431, showDial: P.spare > 0.65, fuse: 0 });
+    }
+    drawGlove(cv, {
+      x: 74, y: 128, ang: -0.34, flip: 1, scale: 1.0, grip: P.spare > 0.4 ? 'pinch' : 'open',
+      seed: 8511, wear: 0.5,
+    });
+    drawGlove(cv, {
+      x: 152, y: 116, ang: 0.34, flip: -1, scale: 1.06, grip: 'open',
+      seed: 8501, wear: 0.6, curlBias: P.close || 0,
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// RADIO PORTRAITS - 128x128, chest-up, transparent surround
+// ---------------------------------------------------------------------------
+// Same idea as the warden face but at four times the area: the big organic
+// masses (skull, jaw, neck, chest, hair) go into a height field whose gradient
+// becomes the normals, then the hard-surface parts - shades, headset, dog tags,
+// a cigar - are laid over the top with the analytic painters. These are
+// separate helpers from the 64x72 warden's on purpose: that art has shipped and
+// must not move.
+
+const PW = 128;
+
+function makeHF(w, h) {
+  return { w, h, z: new Float32Array(w * h), m: new Uint8Array(w * h) };
+}
+
+/** Ellipsoid cap into a height field. `taper` narrows it toward the bottom. */
+function hfEllipsoid(H, cx, cy, rx, ry, amp, mat, o = {}) {
+  const { taper = 0, bias = 0, over = false, squareness = 0 } = o;
+  for (let y = 0; y < H.h; y++) {
+    for (let x = 0; x < H.w; x++) {
+      const v = (y - cy) / ry;
+      const rr = rx * (1 - taper * max(0, v) * max(0, v));
+      const u = (x - cx) / rr;
+      // squareness bends the profile toward a rounded box - a heavy jaw
+      const d = squareness > 0
+        ? pow(pow(abs(u), 2 + squareness * 4) + pow(abs(v), 2 + squareness * 4), 1 / (2 + squareness * 4))
+        : hypot(u, v);
+      if (d > 1) continue;
+      const z = sqrt(max(0, 1 - d * d)) * amp + bias;
+      const i = y * H.w + x;
+      if (over || z > H.z[i]) { H.z[i] = z; H.m[i] = mat; }
+    }
+  }
+}
+
+/** Rounded box into a height field: flat-tops, visors, collars. */
+function hfBox(H, x0, y0, x1, y1, amp, mat, o = {}) {
+  const { round = 4, dome = 0.25, over = false } = o;
+  for (let y = floor(y0); y <= ceil(y1); y++) {
+    for (let x = floor(x0); x <= ceil(x1); x++) {
+      if (x < 0 || y < 0 || x >= H.w || y >= H.h) continue;
+      const dx = min(x - x0, x1 - x), dy = min(y - y0, y1 - y);
+      if (dx < 0 || dy < 0) continue;
+      if (dx < round && dy < round) {
+        const ox = round - dx, oy = round - dy;
+        if (ox * ox + oy * oy > round * round) continue;
+      }
+      const u = ((x - x0) / max(1, x1 - x0)) * 2 - 1;
+      const v = ((y - y0) / max(1, y1 - y0)) * 2 - 1;
+      const z = amp * (1 - dome * (u * u * 0.5 + v * v * 0.5));
+      const i = y * H.w + x;
+      if (over || z > H.z[i]) { H.z[i] = z; H.m[i] = mat; }
+    }
+  }
+}
+
+/** Soft additive bump restricted to one material (brow ridge, cheek, chin). */
+function hfBump(H, cx, cy, rx, ry, amp, o = {}) {
+  const { p = 1.6, only = 0 } = o;
+  for (let y = max(0, floor(cy - ry - 1)); y <= min(H.h - 1, ceil(cy + ry + 1)); y++) {
+    for (let x = max(0, floor(cx - rx - 1)); x <= min(H.w - 1, ceil(cx + rx + 1)); x++) {
+      const u = (x - cx) / rx, v = (y - cy) / ry;
+      const d = hypot(u, v);
+      if (d > 1) continue;
+      const i = y * H.w + x;
+      if (!H.m[i]) continue;
+      if (only && H.m[i] !== only) continue;
+      H.z[i] += pow(1 - d, p) * amp;
+    }
+  }
+}
+
+function hfNormals(cv, H, strength = 1) {
+  for (let y = 0; y < H.h; y++) {
+    for (let x = 0; x < H.w; x++) {
+      const i = y * H.w + x;
+      if (!H.m[i]) continue;
+      const l = (x > 0 && H.m[i - 1]) ? H.z[i - 1] : H.z[i];
+      const r = (x < H.w - 1 && H.m[i + 1]) ? H.z[i + 1] : H.z[i];
+      const u = (y > 0 && H.m[i - H.w]) ? H.z[i - H.w] : H.z[i];
+      const d = (y < H.h - 1 && H.m[i + H.w]) ? H.z[i + H.w] : H.z[i];
+      const nx = (l - r) * strength, ny = (u - d) * strength;
+      const nl = sqrt(nx * nx + ny * ny + 1);
+      cv.nx[i] = nx / nl; cv.ny[i] = ny / nl; cv.nz[i] = 1 / nl;
+    }
+  }
+}
+
+/** Occlude a run of points once each (see occludePath) but in portrait space. */
+function pOcclude(cv, pts, amt) { occludePath(cv, pts, amt); }
+
+/**
+ * Portrait eye. `open` 0..1.2, `look` shifts the iris, `squint` raises the
+ * lower lid, `bagged` adds the pouch that says this person has not slept.
+ */
+function pEye(cv, x, y, o = {}) {
+  const {
+    open = 1, look = 0, lookY = 0, w = 8.0, iris = rgba(84, 66, 44, 255),
+    squint = 0, sclera = rgba(226, 220, 210, 255), shade: shadeC = rgba(128, 88, 70, 255),
+    deep = rgba(78, 48, 40, 255), skin = rgba(198, 152, 122, 255), lash = 0,
+  } = o;
+  const h = w * 0.58 * clamp(open, 0, 1.3);
+  // socket
+  ellipseFill(cv, x, y + 0.6, w * 1.30, w * 0.92, {
+    bulge: 0, gloss: 0.06, grain: 0,
+    shader: (u, v) => mix(mix(shadeC, deep, 0.5), mix(shadeC, skin, 0.4), clamp(hypot(u, v * 0.85), 0, 1)),
+  });
+  if (h < 1.1) {
+    for (let i = -w; i <= w; i += 0.5) {
+      const u = i / w;
+      tint(cv, x + i, y + 0.4 - u * u * 1.6, deep, 0.9);
+      tint(cv, x + i, y - 0.8 - u * u * 1.6, shadeC, 0.6);
+    }
+    return;
+  }
+  ellipseFill(cv, x, y, w * 0.86, h, {
+    bulge: 0.7, gloss: 0.45, grain: 0,
+    shader: (u, v) => mix(sclera, shade(sclera, 0.62), clamp(abs(u) * 0.6 + (0.4 - v) * 0.85, 0, 1)),
+  });
+  const ir = w * 0.42 * clamp(open * 1.2, 0, 1);
+  const ix = x + look * w * 0.34, iy = y + lookY * h * 0.5 + 0.3;
+  ellipseFill(cv, ix, iy, ir, min(ir, h * 0.95), {
+    bulge: 0.85, gloss: 0.6, grain: 0,
+    shader: (u, v) => {
+      const d = hypot(u, v);
+      let c = mix(iris, shade(iris, 0.5), clamp(d * 1.15, 0, 1));
+      if (d > 0.78) c = shade(iris, 0.34);
+      if (((atan2(v, u) * 9) | 0) % 2 === 0) c = shade(c, 1.12);   // iris fibres
+      return c;
+    },
+  });
+  const pr = ir * 0.46;
+  fillEllipseFlat(cv, ix, iy, pr, min(pr, h * 0.9), rgba(14, 11, 12, 255));
+  tint(cv, ix - ir * 0.36, iy - ir * 0.40, rgba(246, 250, 255, 255), 0.95);
+  tint(cv, ix - ir * 0.36 + 1, iy - ir * 0.40, rgba(230, 236, 244, 255), 0.6);
+  // upper lid, dropped by (1-open); lower lid raised by squint
+  for (let i = -w * 1.05; i <= w * 1.05; i += 0.5) {
+    const u = i / (w * 1.05);
+    const ly = y - h * (1 - u * u * 0.34) - 0.5 + (1 - clamp(open, 0, 1)) * h * 1.9;
+    for (let d2 = 0; d2 < 2.8; d2 += 0.5) tint(cv, x + i, ly - d2, mix(shadeC, skin, 0.35 + d2 * 0.16), 0.92);
+    if (lash) for (let d2 = 0; d2 < 1.4; d2 += 0.5) tint(cv, x + i, ly + d2 - 0.4, deep, 0.55 * lash);
+    const by = y + h * (1 - u * u * 0.30) + 0.5 - squint * h * 1.5;
+    tint(cv, x + i, by, mix(shadeC, deep, 0.35), 0.75);
+    tint(cv, x + i, by + 1.2, mix(skin, shadeC, 0.45), 0.5);
+  }
+}
+
+/** Portrait brow. `tilt` positive = inner end down (angry), `lift` raises it. */
+function pBrow(cv, x, y, o = {}) {
+  const { w = 11, tilt = 0, lift = 0, side = -1, col = rgba(70, 52, 34, 255), thick = 3.4, arch = 1.2 } = o;
+  for (let i = -w; i <= w; i += 0.5) {
+    const u = i / w;
+    const by = y - lift + u * tilt * side * 3.4 - (1 - u * u) * arch;
+    for (let d = 0; d < thick; d += 0.5) {
+      const k = hash2((x + i) | 0, d | 0, 991);
+      tint(cv, x + i, by + d, mix(col, shade(col, 0.6), k), 0.9 - abs(u) * 0.25);
+    }
+  }
+}
+
+/** Portrait mouth at 128px scale. */
+function pMouth(cv, x, y, kind, o = {}) {
+  const {
+    w = 15, skin = rgba(198, 152, 122, 255), lip = rgba(158, 96, 84, 255),
+    dark = rgba(44, 20, 20, 255), teeth = rgba(230, 224, 208, 255), skew = 0, shade: shadeC = rgba(128, 88, 70, 255),
+  } = o;
+  const T = (xx, yy, c, a = 1) => tint(cv, xx, yy, c, a);
+  if (kind === 'flat' || kind === 'smirk') {
+    const sk = kind === 'smirk' ? -2.6 : 0;
+    for (let i = -w; i <= w; i += 0.5) {
+      const u = i / w;
+      const yy = y + u * u * 2.2 + u * sk + skew * u;
+      const end = pow(abs(u), 2.4);
+      T(x + i, yy, mix(dark, mix(lip, shadeC, 0.5), end), 1);
+      T(x + i, yy + 1, mix(mix(dark, lip, 0.5), skin, end), 0.9);
+      T(x + i, yy + 2.4, mix(lip, rgba(226, 186, 152, 255), 0.35 - abs(u) * 0.3), 0.85 * (1 - end * 0.6));
+      T(x + i, yy + 4.0, shadeC, 0.45 * (1 - end));
+      T(x + i, yy - 1.8, mix(lip, shadeC, 0.55), 0.6 * (1 - end * 0.5));
+    }
+    if (kind === 'smirk') {
+      T(x + w + 1.5, y - sk - 3.5, shadeC, 0.8); T(x + w + 1.5, y - sk - 2.2, shadeC, 0.6);
+    }
+  } else if (kind === 'open' || kind === 'shout') {
+    const oh = kind === 'shout' ? 13 : 6.5;
+    const ow = kind === 'shout' ? w * 0.86 : w * 0.78;
+    for (let j = -oh; j <= oh; j += 0.5) {
+      for (let i = -ow; i <= ow; i += 0.5) {
+        const u = i / ow, v = j / oh;
+        if (u * u + v * v > 1) continue;
+        T(x + i, y + j, j < -oh * 0.52 ? mix(dark, teeth, 0.5) : j > oh * 0.62 ? mix(dark, rgba(120, 52, 52, 255), 0.5) : dark, 1);
+      }
+    }
+    // upper teeth
+    for (let i = -ow + 1; i <= ow - 1; i += 0.5) {
+      const u = i / ow;
+      const top = y - oh * sqrt(max(0, 1 - u * u)) + 0.8;
+      for (let d = 0; d < 3.4; d += 0.5) T(x + i, top + d, ((i + 40) % 4 < 0.6) ? mix(teeth, dark, 0.55) : teeth, 1);
+    }
+    if (kind === 'shout') {
+      for (let i = -ow + 2; i <= ow - 2; i += 0.5) {
+        const u = i / ow;
+        const bot = y + oh * sqrt(max(0, 1 - u * u)) - 1.0;
+        for (let d = 0; d < 2.4; d += 0.5) T(x + i, bot - d, mix(teeth, dark, 0.25), 1);
+      }
+    }
+    for (let i = -ow - 1; i <= ow + 1; i += 0.5) {
+      const u = clamp(i / ow, -1, 1);
+      T(x + i, y - oh * sqrt(max(0, 1 - u * u)) - 1.4, mix(lip, shadeC, 0.4), 0.9);
+      T(x + i, y + oh * sqrt(max(0, 1 - u * u)) + 1.4, mix(lip, rgba(216, 170, 140, 255), 0.25), 0.9);
+    }
+  } else if (kind === 'bare') {
+    for (let j = -7; j <= 7; j += 0.5) {
+      for (let i = -w; i <= w; i += 0.5) {
+        const u = i / w, v = (j + u * skew) / 7;
+        if (u * u + v * v > 1) continue;
+        T(x + i, y + j, dark, 1);
+      }
+    }
+    for (let i = -w + 1; i <= w - 1; i += 0.5) {
+      const u = i / w;
+      const top = y - 7 * sqrt(max(0, 1 - u * u)) + 0.8 - u * skew;
+      for (let d = 0; d < 4.0; d += 0.5) T(x + i, top + d, ((i + 40) % 4 < 0.6) ? mix(teeth, dark, 0.6) : teeth, 1);
+      const bot = y + 7 * sqrt(max(0, 1 - u * u)) - 0.8 - u * skew;
+      for (let d = 0; d < 3.0; d += 0.5) T(x + i, bot - d, ((i + 41) % 4 < 0.6) ? mix(teeth, dark, 0.5) : mix(teeth, dark, 0.2), 1);
+    }
+  } else { // smile
+    for (let i = -w; i <= w; i += 0.5) {
+      const u = i / w;
+      const yy = y - (1 - u * u) * 3.4 + skew * u;
+      T(x + i, yy, mix(dark, lip, 0.25), 1);
+      T(x + i, yy + 1.1, mix(dark, teeth, 0.75), 0.95);
+      T(x + i, yy + 2.3, mix(teeth, dark, 0.35), 0.9);
+      T(x + i, yy + 3.6, mix(lip, rgba(226, 186, 152, 255), 0.4), 0.85);
+      T(x + i, yy - 1.6, mix(lip, shadeC, 0.5), 0.6);
+    }
+    // the crease at each corner that makes a smile read as one
+    for (const sgn of [-1, 1]) {
+      for (let d = 0; d < 5; d += 0.5) {
+        T(x + sgn * (w + 1.2), y - 3.0 - d * 0.7, shadeC, 0.7 - d * 0.09);
+      }
+    }
+  }
+}
+
+const BRICK = {
+  skin: rgba(198, 156, 122, 255),
+  lit: rgba(228, 190, 152, 255),
+  shade: rgba(140, 94, 70, 255),
+  deep: rgba(88, 52, 42, 255),
+  stubble: rgba(104, 88, 82, 255),
+  hair: rgba(178, 150, 84, 255),
+  hairD: rgba(104, 84, 40, 255),
+  lens: rgba(22, 25, 34, 255),
+  vest: rgba(188, 182, 164, 255),
+  vestD: rgba(112, 106, 92, 255),
+  cigar: rgba(96, 66, 40, 255),
+};
+
+const BRICK_MODES = [
+  // 0 smug: it is going well and he knows it
+  { browL: { lift: 0.4, tilt: -0.15 }, browR: { lift: 4.6, tilt: -0.5 }, open: 0.70, look: 0.16, mouth: 'smirk', cig: 0.0 },
+  // 1 shouting a line nobody asked for
+  { browL: { lift: -2.2, tilt: 1.0 }, browR: { lift: -2.2, tilt: 1.0 }, open: 1.16, look: 0, mouth: 'shout', cig: -0.5, vein: 1 },
+  // 2 hurt and furious
+  { browL: { lift: -3.0, tilt: 1.25 }, browR: { lift: -1.6, tilt: 1.1 }, open: 0.92, openL: 0.10, look: -0.1, mouth: 'bare', cig: 0.35, blood: 1, vein: 1 },
+  // 3 gone somewhere else entirely
+  { browL: { lift: 2.6, tilt: -0.45 }, browR: { lift: 3.0, tilt: -0.5 }, open: 0.86, look: -0.55, lookY: -0.4, mouth: 'open', cig: 0.9, soft: 1 },
+];
+
+function drawBrick(cv, idx) {
+  const M = BRICK_MODES[idx] || BRICK_MODES[0];
+  const H = makeHF(PW, PW);
+  const seed = 9101 + idx;
+
+  // ---- masses ----
+  hfEllipsoid(H, 64, 152, 56, 42, 18, 4);                       // chest
+  hfEllipsoid(H, 28, 128, 26, 20, 15, 4);                       // traps
+  hfEllipsoid(H, 100, 128, 26, 20, 15, 4);
+  hfEllipsoid(H, 64, 100, 22, 24, 24, 1);                       // a frankly excessive neck
+  hfEllipsoid(H, 37, 56, 5, 11, 12, 1);                         // ears
+  hfEllipsoid(H, 91, 56, 5, 11, 12, 1);
+  hfEllipsoid(H, 64, 46, 27, 31, 28, 1, { taper: 0.06 });       // skull
+  hfEllipsoid(H, 64, 68, 27, 20, 26, 1, { squareness: 0.9 });   // and a frankly excessive jaw
+  hfBump(H, 64, 84, 12, 9, 3.6, { only: 1 });                   // chin
+  hfBump(H, 64, 86, 3.4, 4.0, -2.2, { only: 1, p: 1.2 });       // cleft
+  hfBump(H, 45, 60, 13, 10, 3.0, { only: 1 });
+  hfBump(H, 83, 60, 13, 10, 3.0, { only: 1 });
+  hfBump(H, 50, 45, 14, 6, 4.4, { only: 1 });                   // brow ridge
+  hfBump(H, 78, 45, 14, 6, 4.4, { only: 1 });
+  hfBump(H, 64, 52, 5.4, 15, 7.4, { only: 1, p: 1.15 });        // nose bridge
+  hfBump(H, 64, 64, 7.5, 5.5, 4.2, { only: 1, p: 1.3 });        // nose tip
+  hfBump(H, 51, 51, 9.5, 6.5, -3.8, { only: 1, p: 1.3 });
+  hfBump(H, 77, 51, 9.5, 6.5, -3.8, { only: 1, p: 1.3 });
+  hfEllipsoid(H, 64, 108, 8, 15, 26, 1);                        // sternocleidomastoid, showing off
+  hfBox(H, 36, 26, 45, 52, 27, 2, { round: 4 });                // high and tight sides
+  hfBox(H, 83, 26, 92, 52, 27, 2, { round: 4 });
+  hfBox(H, 38, 11, 90, 33, 33, 2, { round: 5, dome: 0.14 });    // the flat-top: absolutely flat
+  hfBox(H, 32, 25, 96, 40, 37, 3, { round: 7, dome: 0.55 });    // shades pushed up on the brow
+
+  // ---- albedo ----
+  for (let y = 0; y < PW; y++) {
+    for (let x = 0; x < PW; x++) {
+      const i = y * PW + x;
+      const m = H.m[i];
+      if (!m) continue;
+      const n = fbm(seed, x / 7, y / 7, 2, 8);
+      let c, gl = 0.12;
+      if (m === 1) {
+        c = mix(BRICK.skin, BRICK.lit, clamp(n * 1.25 - 0.15, 0, 1));
+        // five o'clock shadow across the jaw, chin and upper lip
+        const jaw = smoothstep(60, 76, y) * (1 - smoothstep(19, 27, abs(x - 64)));
+        const tache = (abs(y - 71) < 4 && abs(x - 64) < 11) ? 1 : 0;
+        const st = clamp(jaw * 1.0 + tache * 0.85, 0, 1);
+        if (st > 0.03) {
+          const dot = hash2(x, y, 331) < 0.52 ? 1 : 0;
+          c = mix(c, BRICK.stubble, st * (0.24 + dot * 0.32));
+        }
+        const flush = pow(max(0, 1 - hypot((x - 64) / 26, (y - 58) / 18)), 2) * 0.20;
+        c = mix(c, rgba(214, 112, 88, 255), flush);
+        gl = 0.20;
+      } else if (m === 2) {
+        // blond flat-top: bristle running straight up
+        const bristle = 0.5 + 0.5 * sin(x * 1.4 + fbm(seed + 3, x / 4, y / 12, 2, 8) * 9);
+        c = mix(BRICK.hairD, BRICK.hair, clamp(0.12 + n * 1.15, 0, 1));
+        c = shade(c, 0.86 + bristle * 0.24);
+        // roots go dark where the flat-top meets the skull
+        c = shade(c, 0.72 + 0.34 * clamp((32 - y) / 16 + 0.6, 0, 1));
+        gl = 0.16;
+      } else if (m === 3) {
+        c = mix(BRICK.lens, rgba(78, 96, 120, 255), clamp(0.1 + n * 0.7, 0, 1));
+        gl = 0.86;
+      } else {
+        // bare chest under the vest, falling off toward the bottom of the frame
+        const k = clamp((y - 96) / 34, 0, 1);
+        c = mix(BRICK.skin, BRICK.lit, clamp(n * 1.05 - 0.1, 0, 1));
+        c = mix(c, BRICK.shade, k * 0.42);
+        gl = 0.14;
+      }
+      put(cv, x, y, c, 0, 0, 1, 1, gl, 0);
+    }
+  }
+  hfNormals(cv, H, 0.60);
+
+  // ---- shades: a hard highlight streak so they read as glass ----
+  for (let x = 33; x <= 95; x++) {
+    const u = (x - 64) / 31;
+    // a hard sky reflection along the top of the lens, cut by the brow line
+    tint(cv, x, 28.4 + u * u * 3.0, rgba(210, 232, 255, 255), 0.85 - abs(u) * 0.5);
+    tint(cv, x, 29.8 + u * u * 3.0, rgba(132, 170, 212, 255), 0.5 - abs(u) * 0.32);
+    tint(cv, x, 39.0 + u * u * 1.8, rgba(10, 12, 18, 255), 0.7);
+    // the lens itself, darkest in the middle of each eye
+    const lensK = pow(max(0, 1 - abs(abs(u) - 0.52) / 0.44), 1.6);
+    for (let y = 31; y <= 38; y++) tint(cv, x, y + u * u * 2.4, BRICK.lens, 0.45 * lensK);
+  }
+  // bridge over the nose, and the temple arms going back over the ears
+  metalPanelRot(cv, 64, 34.5, 9, 5, 0, { col: rgba(46, 50, 60, 255), gloss: 0.7, seed: 9111 });
+  for (const sx of [-1, 1]) {
+    capsule(cv, 64 + sx * 30, 33, 64 + sx * 40, 44, 2.4, 2.0,
+      { col: rgba(38, 42, 52, 255), gloss: 0.62, grain: 0.06, seed: 9113 });
+  }
+  // brow shadow under the pushed-up shades
+  pOcclude(cv, Array.from({ length: 190 }, (_, i) => [34 + (i % 62), 40 + ((i / 62) | 0)]), 0.72);
+
+  // ---- eyes and brows ----
+  const eyeY = 51;
+  pEye(cv, 51, eyeY, {
+    open: M.openL !== undefined ? M.openL : M.open, look: M.look || 0, lookY: M.lookY || 0,
+    w: 8.6, iris: rgba(76, 118, 152, 255), skin: BRICK.skin, shade: BRICK.shade, deep: BRICK.deep,
+  });
+  pEye(cv, 77, eyeY, {
+    open: M.open, look: M.look || 0, lookY: M.lookY || 0,
+    w: 8.6, iris: rgba(76, 118, 152, 255), skin: BRICK.skin, shade: BRICK.shade, deep: BRICK.deep,
+  });
+  pBrow(cv, 50, eyeY - 8.6, { w: 12, tilt: M.browL.tilt, lift: M.browL.lift, side: -1, col: rgba(150, 118, 58, 255), thick: 4.2 });
+  pBrow(cv, 78, eyeY - 8.6, { w: 12, tilt: M.browR.tilt, lift: M.browR.lift, side: 1, col: rgba(150, 118, 58, 255), thick: 4.2 });
+
+  // ---- nose ----
+  for (let y = 44; y <= 68; y++) {
+    const k = clamp((y - 44) / 24, 0, 1);
+    for (let i2 = 0; i2 < 1 + k * 3.4; i2 += 0.5) {
+      tint(cv, 64 + 3.6 + k * 2.6 + i2, y, BRICK.shade, 0.30 + k * 0.34);
+    }
+    tint(cv, 64 - 1.4, y, mix(BRICK.skin, BRICK.lit, 0.55), 0.28);
+  }
+  for (const sx of [-1, 1]) ellipseFill(cv, 64 + sx * 4.4, 67, 2.2, 1.5, { bulge: 0, gloss: 0, grain: 0, shader: () => BRICK.deep });
+  for (let x = 58; x <= 70; x += 0.5) tint(cv, x, 69 + pow(abs(x - 64) / 6, 2) * 1.4, BRICK.shade, 0.45);
+
+  // ---- mouth ----
+  const mouthY = 78;
+  pMouth(cv, 64, mouthY, M.mouth, {
+    w: 16, skin: BRICK.skin, lip: rgba(168, 104, 88, 255), shade: BRICK.shade,
+    dark: rgba(42, 18, 18, 255), skew: M.mouth === 'bare' ? -1.6 : 0,
+  });
+
+  // ---- the cigar, and its consequences ----
+  const ca = -0.34 + (M.cig || 0) * 0.9;
+  const cx0 = 76, cy0 = mouthY - 1;
+  const cx1 = cx0 + cos(ca) * 30, cy1 = cy0 + sin(ca) * 30;
+  capsule(cv, cx0, cy0, cx1, cy1, 4.6, 4.2, {
+    gloss: 0.22, grain: 0.07, seed: seed + 41,
+    shader: (t, u, x, y) => {
+      const wrap = 0.5 + 0.5 * sin(t * 26 + u * 2);
+      let c = mix(shade(BRICK.cigar, 0.62), rgba(146, 104, 62, 255), clamp(0.5 - u * 0.9, 0, 1));
+      return shade(c, 0.92 + wrap * 0.16);
+    },
+  });
+  blob(cv, cx1, cy1, 4.0, { col: rgba(52, 40, 34, 255), gloss: 0.1, grain: 0.1, seed: seed + 43 });
+  blob(cv, cx1, cy1, 2.6, {
+    gloss: 0, grain: 0, seed: seed + 45, em: 0.95,
+    shader: (u, v) => mix(rgba(255, 176, 70, 255), rgba(186, 48, 20, 255), clamp(hypot(u, v), 0, 1)),
+  });
+
+  // ---- vest, dog tags, and the fact that he is enjoying this ----
+  // pec shading first, so the vest sits on top of a chest
+  for (const sx of [-1, 1]) {
+    for (let t = 0; t <= 1; t += 0.02) {
+      const px2 = 64 + sx * (6 + t * 26), py2 = 112 + sin(t * PI) * 7;
+      tint(cv, px2, py2, BRICK.shade, 0.42 * (1 - abs(t - 0.5)));
+      tint(cv, px2, py2 - 2.2, mix(BRICK.lit, BRICK.skin, 0.4), 0.30);
+    }
+  }
+  for (let y = 100; y < PW; y++) tint(cv, 64, y, BRICK.shade, 0.45);
+  for (let x = 34; x <= 94; x += 0.5) {
+    const u = (x - 64) / 30;
+    for (let d = 0; d < 3; d += 0.5) tint(cv, x, 90 + u * u * 6 + d, BRICK.shade, 0.42 * (1 - abs(u) * 0.4));
+  }
+  for (const sx of [-1, 1]) {
+    capsule(cv, 64 + sx * 21, 102, 64 + sx * 34, 130, 8.6, 10.5, {
+      gloss: 0.10, grain: 0, seed: seed + 51,
+      shader: (t, u, x, y) => {
+        const n = fbm(seed + 53, x / 6, y / 6, 2, 8);
+        let c = mix(BRICK.vestD, BRICK.vest, clamp(0.28 + n * 1.2, 0, 1));
+        if (((x + y) | 0) % 3 === 0) c = shade(c, 1.05);
+        if (fbm(seed + 55, x / 9, y / 9, 2, 8) > 0.66) c = mix(c, rgba(120, 104, 78, 255), 0.35);
+        return c;
+      },
+    });
+  }
+  capsule(cv, 16, 134, 112, 134, 18, 18, {
+    gloss: 0.10, grain: 0, seed: seed + 57,
+    shader: (t, u, x, y) => {
+      const n = fbm(seed + 53, x / 6, y / 6, 2, 8);
+      let c = mix(BRICK.vestD, BRICK.vest, clamp(0.24 + n * 1.2, 0, 1));
+      if (((x + y) | 0) % 3 === 0) c = shade(c, 1.05);
+      if (fbm(seed + 55, x / 8, y / 8, 2, 8) > 0.62) c = mix(c, rgba(112, 96, 72, 255), 0.4);
+      return c;
+    },
+  });
+  for (const sx of [-1, 1]) {
+    for (let t = 0; t <= 1; t += 0.04) {
+      const bx = 64 + sx * lerp(15, 5, t * t), by = 100 + t * 20;
+      blob(cv, bx, by, 1.4, { col: rgba(186, 186, 194, 255), gloss: 0.72, grain: 0.05, seed: seed + 61 });
+    }
+  }
+  metalPanelRot(cv, 61, 124, 8, 13, 0.10, { col: rgba(176, 178, 186, 255), gloss: 0.68, seed: seed + 63 });
+  metalPanelRot(cv, 68, 127, 8, 13, 0.10, { col: rgba(146, 148, 156, 255), gloss: 0.62, seed: seed + 65 });
+
+  // ---- damage and effort ----
+  if (M.vein) {
+    for (const sx of [-1, 1]) {
+      for (let t = 0; t <= 1; t += 0.04) {
+        const vx = 64 + sx * (10 + t * 9), vy = 96 + t * 22 + sin(t * 8) * 2;
+        tint(cv, vx, vy, BRICK.shade, 0.5);
+        tint(cv, vx, vy - 1, mix(BRICK.lit, BRICK.skin, 0.4), 0.35);
+      }
+    }
+  }
+  if (M.blood) {
+    for (let t = 0; t < 22; t++) {
+      const bx = 44 + sin(t * 0.5) * 2.4, by = 40 + t;
+      for (let i2 = -1.4; i2 <= 1.4; i2 += 0.5) tint(cv, bx + i2, by, t > 14 ? rgba(96, 18, 18, 255) : rgba(158, 30, 26, 255), 0.9);
+    }
+    for (let i2 = 0; i2 < 9; i2++) {
+      const bx = 40 + hash2(i2, 1, seed) * 12, by = 36 + hash2(i2, 2, seed) * 6;
+      fillEllipseFlat(cv, bx, by, 2.4, 1.8, rgba(150, 28, 24, 255));
+    }
+    for (let t = 0; t < 6; t++) tint(cv, 84 + t * 0.6, 74 + t, rgba(150, 28, 24, 255), 0.85);
+  }
+  if (M.soft) {
+    // the eyes have gone somewhere warm; the rest of him has not caught up
+    for (const ex of [51, 77]) for (let i2 = -9; i2 <= 9; i2 += 0.5) tint(cv, ex + i2, 44, mix(BRICK.skin, BRICK.lit, 0.6), 0.3);
+  }
+  scuff(cv, 34, 40, 60, 50, seed + 71, 12, 0.20);
+}
+
+const ILSA = {
+  skin: rgba(198, 156, 128, 255),
+  lit: rgba(230, 192, 160, 255),
+  shade: rgba(140, 96, 76, 255),
+  deep: rgba(88, 54, 46, 255),
+  hair: rgba(72, 52, 44, 255),
+  hairHi: rgba(126, 94, 74, 255),
+  lens: rgba(198, 206, 190, 255),
+  suit: rgba(106, 112, 118, 255),
+  suitD: rgba(66, 72, 80, 255),
+  grease: rgba(74, 66, 62, 255),
+};
+
+const ILSA_MODES = [
+  // 0 level and businesslike
+  { browL: { lift: 0.6, tilt: 0 }, browR: { lift: 0.6, tilt: 0 }, open: 1.0, mouth: 'flat', tilt: 0 },
+  // 1 mid-explanation, slightly urgent
+  { browL: { lift: 3.4, tilt: -0.3 }, browR: { lift: 3.8, tilt: -0.35 }, open: 1.12, mouth: 'open', tilt: -0.02 },
+  // 2 deeply unimpressed - the one the game will use most
+  { browL: { lift: 1.0, tilt: 0.25 }, browR: { lift: 6.0, tilt: -0.55 }, open: 0.52, squint: 0.28, mouth: 'flat', skew: 1.8, tilt: 0.055 },
+  // 3 a real, tired smile
+  { browL: { lift: 1.8, tilt: -0.2 }, browR: { lift: 1.6, tilt: -0.2 }, open: 0.58, squint: 0.42, mouth: 'smile', tilt: -0.02, warm: 1 },
+];
+
+function drawIlsa(cv, idx) {
+  const M = ILSA_MODES[idx] || ILSA_MODES[0];
+  const H = makeHF(PW, PW);
+  const seed = 9301 + idx;
+
+  // ---- masses ----
+  hfEllipsoid(H, 64, 152, 54, 40, 16, 4);                       // chest
+  hfEllipsoid(H, 26, 132, 24, 20, 14, 4);                       // shoulders
+  hfEllipsoid(H, 102, 132, 24, 20, 14, 4);
+  hfEllipsoid(H, 64, 104, 15, 22, 20, 1);                       // neck
+  hfEllipsoid(H, 41, 62, 4.5, 10, 11, 1);                       // ears
+  hfEllipsoid(H, 87, 62, 4.5, 10, 11, 1);
+  hfEllipsoid(H, 64, 52, 25, 30, 26, 1, { taper: 0.30 });       // skull
+  hfBump(H, 64, 76, 13, 11, 3.0, { only: 1 });                  // chin
+  hfBump(H, 47, 62, 11, 9, 2.8, { only: 1 });
+  hfBump(H, 81, 62, 11, 9, 2.8, { only: 1 });
+  hfBump(H, 54, 51, 11, 5, 2.8, { only: 1 });                   // brow ridge
+  hfBump(H, 74, 51, 11, 5, 2.8, { only: 1 });
+  hfBump(H, 64, 57, 4.2, 13, 5.6, { only: 1, p: 1.15 });        // nose bridge
+  hfBump(H, 64, 68, 5.6, 4.6, 3.2, { only: 1, p: 1.3 });        // nose tip
+  hfBump(H, 55, 57, 8, 5.5, -3.0, { only: 1, p: 1.3 });
+  hfBump(H, 73, 57, 8, 5.5, -3.0, { only: 1, p: 1.3 });
+  // hair, pulled back off the face and losing the argument
+  hfEllipsoid(H, 64, 40, 29, 26, 30, 2);
+  hfBox(H, 33, 36, 43, 76, 25, 2, { round: 5 });
+  hfBox(H, 85, 36, 95, 76, 25, 2, { round: 5 });
+  hfEllipsoid(H, 64, 26, 23, 12, 31, 2);                        // the sweep over the crown
+  hfEllipsoid(H, 64, 86, 14, 12, 18, 2);                        // the tail behind the neck
+  // safety glasses pushed up onto the hair
+  hfBox(H, 45, 17, 83, 26, 35, 3, { round: 5, dome: 0.45 });
+
+  // ---- albedo ----
+  for (let y = 0; y < PW; y++) {
+    for (let x = 0; x < PW; x++) {
+      const i = y * PW + x;
+      const m = H.m[i];
+      if (!m) continue;
+      const n = fbm(seed, x / 7, y / 7, 2, 8);
+      let c, gl = 0.12;
+      if (m === 1) {
+        c = mix(ILSA.skin, ILSA.lit, clamp(n * 1.2 - 0.12, 0, 1));
+        const flush = pow(max(0, 1 - hypot((x - 64) / 24, (y - 62) / 14)), 2) * 0.16;
+        c = mix(c, rgba(208, 116, 96, 255), flush);
+        gl = 0.18;
+      } else if (m === 2) {
+        // strands running back off the crown
+        const strand = 0.5 + 0.5 * sin(atan2(y - 44, x - 64) * 22 + n * 5);
+        c = mix(shade(ILSA.hair, 0.7), ILSA.hair, clamp(0.2 + n * 1.2, 0, 1));
+        c = mix(c, ILSA.hairHi, pow(strand, 2.4) * 0.42);
+        gl = 0.30;
+      } else if (m === 3) {
+        c = mix(ILSA.lens, rgba(150, 168, 150, 255), clamp(0.2 + n * 0.8, 0, 1));
+        gl = 0.80;
+      } else {
+        c = mix(ILSA.suitD, ILSA.suit, clamp(0.28 + n * 1.2, 0, 1));
+        if (((x + y) | 0) % 3 === 0) c = shade(c, 1.05);
+        gl = 0.14;
+      }
+      put(cv, x, y, c, 0, 0, 1, 1, gl, 0);
+    }
+  }
+  hfNormals(cv, H, 0.58);
+
+  // ---- safety glasses: a bright lower lip and a raked highlight ----
+  for (let x = 46; x <= 82; x++) {
+    const u = (x - 64) / 18;
+    tint(cv, x, 19.0 + u * u * 1.8, rgba(240, 252, 238, 255), 0.8 - abs(u) * 0.4);
+    tint(cv, x, 25.4 + u * u * 1.2, rgba(96, 116, 100, 255), 0.55);
+  }
+  pOcclude(cv, Array.from({ length: 114 }, (_, i) => [46 + (i % 38), 26 + ((i / 38) | 0)]), 0.80);
+  // loose strands that have escaped the tie
+  for (let k = 0; k < 7; k++) {
+    const sx = k < 4 ? -1 : 1;
+    const x0 = 64 + sx * (16 + hash2(k, 1, seed) * 10);
+    const y0 = 34 + hash2(k, 2, seed) * 10;
+    const len = 16 + hash2(k, 3, seed) * 20;
+    let px2 = x0, py2 = y0;
+    for (let t = 1; t <= 6; t++) {
+      const nx2 = x0 + sx * t * 1.6 + sin(t * 0.9 + k) * 3.0;
+      const ny2 = y0 + (t / 6) * len;
+      capsule(cv, px2, py2, nx2, ny2, 1.7, 1.2, {
+        gloss: 0.34, grain: 0.06, seed: seed + 70 + k,
+        shader: (tt, u) => mix(shade(ILSA.hair, 0.8), ILSA.hairHi, clamp(0.5 - u * 0.9, 0, 1)),
+      });
+      px2 = nx2; py2 = ny2;
+    }
+  }
+
+  // ---- headset ----
+  const bandCol = rgba(52, 54, 60, 255);
+  capsule(cv, 35, 50, 46, 20, 2.8, 2.8, { col: bandCol, gloss: 0.34, grain: 0.08, seed: seed + 81 });
+  capsule(cv, 46, 20, 82, 20, 2.8, 2.8, { col: bandCol, gloss: 0.34, grain: 0.08, seed: seed + 82 });
+  capsule(cv, 82, 20, 93, 50, 2.8, 2.8, { col: bandCol, gloss: 0.34, grain: 0.08, seed: seed + 83 });
+  for (const sx of [-1, 1]) {
+    const ex = 64 + sx * 29;
+    blob(cv, ex, 62, 8, {
+      gloss: 0.42, grain: 0.08, seed: seed + 85,
+      shader: (u, v) => mix(rgba(64, 66, 74, 255), rgba(34, 36, 42, 255), clamp(hypot(u, v) * 1.1, 0, 1)),
+    });
+    ringTube(cv, ex, 62, 8, 2.0, { col: rgba(88, 90, 98, 255), gloss: 0.5, grain: 0.08, seed: seed + 87 });
+  }
+  // boom mic swinging in toward her mouth
+  let mx0 = 35, my0 = 70;
+  for (let t = 1; t <= 5; t++) {
+    const nx2 = 35 + t * 2.8, ny2 = 70 + t * 3.6;
+    capsule(cv, mx0, my0, nx2, ny2, 2.0, 1.9, { col: bandCol, gloss: 0.4, grain: 0.08, seed: seed + 89 });
+    mx0 = nx2; my0 = ny2;
+  }
+  blob(cv, mx0 + 1, my0 + 1, 4.6, {
+    gloss: 0.06, grain: 0.14, seed: seed + 91,
+    shader: (u, v, x, y) => shade(rgba(48, 48, 52, 255), 0.8 + fbm(seed + 93, x / 2, y / 2, 2, 8) * 0.5),
+  });
+  // status LED on the earpiece
+  blob(cv, 95, 57, 2.0, { col: rgba(120, 255, 150, 255), gloss: 0.2, grain: 0, em: 0.9 });
+
+  // ---- eyes, brows ----
+  const eyeY = 57;
+  pEye(cv, 55, eyeY, {
+    open: M.open, squint: M.squint || 0, w: 7.4, iris: rgba(74, 96, 70, 255),
+    skin: ILSA.skin, shade: ILSA.shade, deep: ILSA.deep, lash: 1,
+  });
+  pEye(cv, 73, eyeY, {
+    open: M.open, squint: M.squint || 0, w: 7.4, iris: rgba(74, 96, 70, 255),
+    skin: ILSA.skin, shade: ILSA.shade, deep: ILSA.deep, lash: 1,
+  });
+  pBrow(cv, 54, eyeY - 8.0, { w: 10, tilt: M.browL.tilt, lift: M.browL.lift, side: -1, col: rgba(58, 42, 36, 255), thick: 2.8 });
+  pBrow(cv, 74, eyeY - 8.0, { w: 10, tilt: M.browR.tilt, lift: M.browR.lift, side: 1, col: rgba(58, 42, 36, 255), thick: 2.8 });
+  // shadows of not enough sleep
+  for (const ex of [55, 73]) {
+    for (let i2 = -7; i2 <= 7; i2 += 0.5) {
+      const u = i2 / 7;
+      tint(cv, ex + i2, eyeY + 6.4 + u * u * 1.2, mix(ILSA.shade, rgba(126, 96, 108, 255), 0.5), 0.32);
+      tint(cv, ex + i2, eyeY + 7.6 + u * u * 1.2, ILSA.shade, 0.18);
+    }
+  }
+
+  // ---- nose, mouth ----
+  for (let y = 50; y <= 71; y++) {
+    const k = clamp((y - 50) / 21, 0, 1);
+    for (let i2 = 0; i2 < 0.8 + k * 2.6; i2 += 0.5) tint(cv, 64 + 2.8 + k * 2.0 + i2, y, ILSA.shade, 0.28 + k * 0.30);
+    tint(cv, 64 - 1.2, y, mix(ILSA.skin, ILSA.lit, 0.5), 0.26);
+  }
+  for (const sx of [-1, 1]) ellipseFill(cv, 64 + sx * 3.4, 70, 1.8, 1.2, { bulge: 0, gloss: 0, grain: 0, shader: () => ILSA.deep });
+  for (let x = 59; x <= 69; x += 0.5) tint(cv, x, 72 + pow(abs(x - 64) / 5, 2) * 1.2, ILSA.shade, 0.4);
+  pMouth(cv, 64, 80, M.mouth, {
+    w: 12, skin: ILSA.skin, lip: rgba(164, 106, 94, 255), shade: ILSA.shade,
+    dark: rgba(44, 20, 20, 255), skew: M.skew || 0,
+  });
+
+  // ---- jumpsuit: collar, zip, tool loop, name patch ----
+  for (const sx of [-1, 1]) {
+    capsule(cv, 64 + sx * 6, 112, 64 + sx * 30, 128, 7.0, 9.0, {
+      gloss: 0.12, grain: 0, seed: seed + 101,
+      shader: (t, u, x, y) => {
+        const n = fbm(seed + 103, x / 6, y / 6, 2, 8);
+        let c = mix(ILSA.suitD, mix(ILSA.suit, rgba(126, 132, 138, 255), 0.4), clamp(0.3 + n * 1.2, 0, 1));
+        if (((x + y) | 0) % 3 === 0) c = shade(c, 1.06);
+        return c;
+      },
+    });
+  }
+  for (let y = 112; y < PW; y++) {
+    tint(cv, 64, y, rgba(150, 154, 160, 255), 0.7);
+    tint(cv, 65, y, rgba(70, 74, 80, 255), 0.6);
+    if ((y | 0) % 3 === 0) tint(cv, 64, y, rgba(190, 194, 200, 255), 0.7);
+  }
+  // tool loop and a couple of things hanging in it
+  capsule(cv, 34, 114, 34, 128, 3.0, 3.0, { col: rgba(58, 52, 44, 255), gloss: 0.18, grain: 0.08, seed: seed + 105 });
+  capsule(cv, 30, 118, 28, 128, 2.6, 2.2, { col: rgba(158, 150, 132, 255), gloss: 0.6, grain: 0.08, seed: seed + 107 });
+  capsule(cv, 39, 118, 41, 128, 2.4, 2.0, { col: rgba(126, 96, 60, 255), gloss: 0.4, grain: 0.08, seed: seed + 109 });
+  metalPanelRot(cv, 92, 118, 22, 10, -0.06, { col: rgba(138, 128, 96, 255), gloss: 0.2, seed: seed + 111 });
+  stencil(cv, 'VANCE', 83, 115, rgba(46, 42, 34, 255), 0.85);
+
+  // ---- grease, worn across one cheek with the back of a wrist ----
+  for (let k = 0; k < 4; k++) {
+    const gy = 66 + k * 2.6;
+    for (let x = 78; x < 96; x += 0.5) {
+      const n = fbm(seed + 121, x / 4, gy / 3, 2, 8);
+      if (n < 0.42) continue;
+      tint(cv, x, gy + sin(x * 0.4) * 1.2, ILSA.grease, 0.30 + n * 0.42);
+    }
+  }
+  if (M.warm) {
+    for (const ex of [55, 73]) for (let i2 = -8; i2 <= 8; i2 += 0.5) {
+      tint(cv, ex + i2, eyeY + 8.6, mix(ILSA.shade, ILSA.lit, 0.5), 0.34);   // crow's feet
+    }
+  }
+}
+
+/**
+ * The CRT treatment. She is not in the room; she is a transmission. Scanlines,
+ * a green-phosphor cast and a horizontal bloom, all confined inside the figure
+ * so the surround stays fully transparent.
+ */
+function crtPass(f, seed) {
+  const { w, h, data } = f;
+  const src = data.slice();
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (!(src[i] >>> 24)) continue;
+      let r = src[i] & 255, g = (src[i] >>> 8) & 255, b = (src[i] >>> 16) & 255;
+      // horizontal phosphor bleed from the brighter neighbours
+      let br = 0, bg = 0, bb = 0;
+      for (let k = -3; k <= 3; k++) {
+        const j = i + k;
+        if (k === 0 || x + k < 0 || x + k >= w || !(src[j] >>> 24)) continue;
+        const wgt = (4 - abs(k)) / 16;
+        const lum = ((src[j] & 255) * 0.3 + ((src[j] >>> 8) & 255) * 0.6 + ((src[j] >>> 16) & 255) * 0.1) / 255;
+        const boost = pow(max(0, lum - 0.50), 1.6) * wgt * 1.3;
+        br += (src[j] & 255) * boost; bg += ((src[j] >>> 8) & 255) * boost; bb += ((src[j] >>> 16) & 255) * boost;
+      }
+      r += br; g += bg; b += bb;
+      // phosphor: pull toward green, lift the blacks the way a CRT does
+      const lum = (r * 0.3 + g * 0.6 + b * 0.1);
+      r = lerp(r, lum * 0.80, 0.22) + 3;
+      g = lerp(g, lum * 1.06, 0.22) + 8;
+      b = lerp(b, lum * 0.84, 0.22) + 5;
+      // scanlines, plus a slow horizontal band that is a touch brighter
+      const scan = (y & 1) ? 0.86 : 1.04;
+      const band = 1 + 0.07 * sin((y + (seed % 17)) * 0.10);
+      const jitter = ((y % 5) === 0) ? 1.03 : 1;
+      const k2 = scan * band * jitter;
+      data[i] = rgba(clamp(r * k2, 0, 255), clamp(g * k2, 0, 255), clamp(b * k2, 0, 255), 255);
+    }
+  }
+  return f;
+}
+
+function buildPortrait(who, idx) {
+  const cv = makeCv(PW, PW);
+  setModel();
+  if (who === 'brick') drawBrick(cv, idx); else drawIlsa(cv, idx);
+  const tilt = who === 'ilsa' ? (ILSA_MODES[idx].tilt || 0) : (idx === 1 ? -0.03 : 0);
+  const posed = tilt ? poseCv(cv, tilt, 64, 96, 0, 0) : cv;
+  const f = bake(posed, {
+    key: norm3(-0.42, -0.70, 0.58),
+    keyCol: who === 'brick' ? [1.0, 0.93, 0.84] : [0.94, 0.98, 1.0],
+    fill: 0.42, fillCol: who === 'brick' ? [0.60, 0.58, 0.66] : [0.54, 0.60, 0.70],
+    rim: 0.28, env: 0.34, exposure: 1.03,
+    bounce: 0.30, bounceCol: who === 'brick' ? [1.0, 0.72, 0.52] : [0.72, 0.90, 0.80],
+  });
+  rimOutline(f, rgba(12, 10, 14, 255));
+  if (who === 'ilsa') crtPass(f, 9301 + idx);
+  return f;
+}
+
+/** The bezel the portrait sits inside: chunky, bolted, with a live lamp. */
+function drawPortraitFrame() {
+  const S = 144;
+  const cv = makeCv(S, S);
+  setModel();
+  const t = 14;                                 // bezel thickness
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const dx = min(x, S - 1 - x), dy = min(y, S - 1 - y);
+      const d = min(dx, dy);
+      if (d >= t) continue;                     // the middle is where the portrait goes
+      const e = d / t;
+      // outer lip rises, inner lip falls away into the screen
+      const ny = (dy < dx ? (y < S / 2 ? -1 : 1) : 0) * (1 - e) * 0.9;
+      const nx = (dx <= dy ? (x < S / 2 ? -1 : 1) : 0) * (1 - e) * 0.9;
+      const bevel = e < 0.18 ? 1 : e > 0.82 ? -1 : 0;
+      const n = fbm(9501, x / 7, y / 7, 2, 8);
+      let c = mix(rgba(74, 76, 84, 255), rgba(128, 130, 140, 255), clamp(0.25 + n * 1.2, 0, 1));
+      if (bevel > 0) c = shade(c, 1.22);
+      if (bevel < 0) c = shade(c, 0.72);
+      if (fbm(9503, x / 4, y / 4, 2, 8) > 0.74) c = mix(c, RUST, 0.18);
+      put(cv, x, y, c, nx * (bevel || 1), ny * (bevel || 1),
+        sqrt(max(0.1, 1 - nx * nx - ny * ny)), 1, 0.42, 0);
+    }
+  }
+  for (const [bx, by] of [[10, 10], [S - 11, 10], [10, S - 11], [S - 11, S - 11]]) {
+    blob(cv, bx, by, 4.6, { col: rgba(150, 152, 160, 255), gloss: 0.6, grain: 0.07, seed: 9505 });
+    for (let a = 0; a < TAU; a += 0.5) {
+      // hex head
+      capsule(cv, bx + cos(a) * 3.2, by + sin(a) * 3.2,
+        bx + cos(a + 0.6) * 3.2, by + sin(a + 0.6) * 3.2, 0.9, 0.9,
+        { col: rgba(90, 92, 100, 255), gloss: 0.5, grain: 0.06, seed: 9507 });
+    }
+  }
+  // status lamp, bottom right, lit
+  blob(cv, S - 30, S - 8, 4.2, { col: rgba(255, 140, 70, 255), gloss: 0.3, grain: 0, em: 0.9 });
+  ringTube(cv, S - 30, S - 8, 5.2, 1.8, { col: rgba(64, 66, 72, 255), gloss: 0.55, grain: 0.08, seed: 9509 });
+  stencil(cv, 'COMMS', 14, S - 11, rgba(188, 184, 172, 255), 0.55);
+  scuff(cv, 0, 0, S, S, 9511, 60, 0.30);
+  soot(cv, 0, 0, S, S, 9513, 0.24, 12);
+  const f = bake(cv, { fill: 0.26, rim: 0.34, env: 0.9, botDark: 0.10 });
+  rimOutline(f, rgba(10, 9, 12, 255));
+  return f;
+}
+
+/** Signal dropout: torn bands, snow, and a rolling bar. Partial alpha. */
+function drawPortraitStatic(k) {
+  const f = makeFrame(PW, PW);
+  const seed = 9601 + k * 71;
+  const roll = (k / 3) * PW;
+  for (let y = 0; y < PW; y++) {
+    // a few horizontal tears whose rows are displaced and blown out
+    const tear = fbm(seed, 0.5, y / 3.5, 2, 8);
+    const bandK = smoothstep(0.62, 0.86, tear);
+    const rollK = pow(max(0, 1 - abs(((y - roll) % PW + PW) % PW - 6) / 22), 2.2);
+    for (let x = 0; x < PW; x++) {
+      const n = hash2(x + (bandK * 24 | 0), y, seed);
+      let a = 0;
+      let v = 0;
+      if (bandK > 0.02) { a += bandK * (0.30 + n * 0.55); v = 90 + n * 165; }
+      if (rollK > 0.02) { a += rollK * 0.30; v = max(v, 120 + n * 120); }
+      if (n > 0.985) { a = max(a, 0.55); v = 230; }              // sparse snow everywhere
+      if (a < 0.015) continue;
+      blend(f, x, y, rgba(v * 0.72, v, v * 0.80, 255), min(a, 0.85));
     }
   }
   return f;

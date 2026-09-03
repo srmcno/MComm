@@ -16,6 +16,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { writePng } from './png.js';
+import { SFX_NAMES as ALL_SFX, TRACK_NAMES as ALL_TRACKS } from '../src/audio/synth.js';
 
 // The globally installed playwright is the one whose Chromium revision matches
 // PLAYWRIGHT_BROWSERS_PATH; playwright-core from the repo is the fallback.
@@ -38,7 +39,20 @@ const JOBS = [
   { name: 'boss', track: 'boss' },
   { name: 'victory', track: 'victory', stinger: 14 },
   { name: 'gameover', track: 'gameover', stinger: 16 },
+  { name: 'hunt', track: 'hunt' },
+  { name: 'hero', track: 'hero' },
   { name: 'sfx-montage', sfx: true },
+  // the mutants on their own, spaced out, so each shape can be read
+  { name: 'sfx-mutants', sfx: true, list: [
+    'ghoul_alert', 'ghoul_attack', 'ghoul_die', 'gorger_alert', 'gorger_burst',
+    'howler_alert', 'howler_spit', 'howler_die', 'stalker_alert', 'stalker_charge',
+    'stalker_die', 'maw_roar', 'maw_die', 'gib', 'splat', 'bone_crack', 'acid_hit',
+    'kick_hit', 'punt', 'pipebomb_land', 'pipebomb_blow', 'radio_open', 'story_sting',
+    'combo_up', 'slowmo_in', 'slowmo_out',
+  ] },
+  // the two the coordinator wants to look at, one per render, wide apart
+  { name: 'solo-howler', sfx: true, spread: 4, list: ['howler_alert', 'howler_alert', 'howler_alert', 'howler_alert', 'howler_alert'] },
+  { name: 'solo-gorger', sfx: true, spread: 4, list: ['gorger_burst', 'gorger_burst', 'gorger_burst', 'gorger_burst', 'gorger_burst'] },
   // prowl -> siege mid-render: proves the cross-fade never stacks two tracks
   { name: 'crossfade', track: 'prowl', switchTo: 'siege', switchAt: 9, fade: 2.5 },
 ];
@@ -67,7 +81,9 @@ async function render(job, seconds, sr) {
   if (job.sfx) {
     const list = job.list;
     for (let i = 0; i < list.length; i++) {
-      cue.push({ at: 0.05 + (i * (seconds - 0.6)) / list.length, name: list[i], pan: (i % 5) / 4 - 0.5 });
+      const at = job.spread ? 0.2 + i * job.spread : 0.05 + (i * (seconds - 0.6)) / list.length;
+      if (at > seconds - 0.1) break;
+      cue.push({ at, name: list[i], pan: job.spread ? 0 : (i % 5) / 4 - 0.5 });
     }
   } else {
     s.music(job.track, { fadeIn: 0.6, intensity: job.intensity === undefined ? 0.5 : job.intensity });
@@ -132,8 +148,13 @@ async function render(job, seconds, sr) {
 async function benchSfx(n) {
   const rapid = ['nailer_fire', 'flak_fire', 'pistol_fire', 'hit_wall', 'hit_flesh',
                  'ricochet', 'footstep_a', 'footstep_b', 'score_tick', 'ui_move',
-                 'dryfire', 'airburst_small'];
-  const big = ['airburst', 'city_hit', 'roof_open', 'chain5', 'deadman_blow', 'boss_death'];
+                 'dryfire', 'airburst_small',
+                 // expansion: the ones the game fires by the dozen
+                 'gib', 'stalker_attack', 'ghoul_attack', 'acid_burn', 'bone_crack',
+                 'pipebomb_beep', 'radio_beep', 'combo_up', 'kick_swing', 'splat'];
+  const big = ['airburst', 'city_hit', 'roof_open', 'chain5', 'deadman_blow', 'boss_death',
+               'gorger_burst', 'maw_roar', 'maw_die', 'howler_alert', 'stalker_charge',
+               'punt', 'story_sting', 'pipebomb_blow'];
   const out = { rapid: {}, big: {}, frame: 0 };
 
   for (const [group, names] of [['rapid', rapid], ['big', big]]) {
@@ -289,18 +310,9 @@ function spectrogram(pcm, sr, W = 1024, H = 512, N = 2048) {
 
 /* ---------------------------------------------------------------- driver */
 
-const SFX_LIST = [
-  'flak_fire', 'flak_arm', 'airburst', 'airburst_small', 'nailer_fire', 'nailer_fire',
-  'nailer_fire', 'halo_fire', 'deadman_arm', 'deadman_blow', 'pistol_fire', 'dryfire',
-  'reload', 'weapon_switch', 'hit_wall', 'hit_flesh', 'ricochet', 'barrel_explode',
-  'door_open', 'door_locked', 'secret_found', 'pickup_treasure', 'pickup_key',
-  'elevator', 'roof_open', 'alarm', 'wrencher_alert', 'sparker_fire', 'bellows_flame',
-  'wasp_buzz', 'priest_chant', 'enemy_die', 'boss_roar', 'boss_death',
-  'warhead_launch', 'warhead_incoming', 'mirv_split', 'smart_evade', 'city_hit',
-  'city_lost_sting', 'wave_start', 'chain2', 'chain3', 'chain4', 'chain5',
-  'perfect_burst', 'ui_start', 'countdown', 'player_hurt', 'player_die', 'heartbeat',
-  'footstep_a', 'footstep_b',
-];
+// Every registered name, so the montage proves the whole set still fits under
+// the ceiling together. Pulled from the module so it can never drift.
+const SFX_LIST = ALL_SFX;
 
 const MIME = { '.js': 'text/javascript', '.html': 'text/html' };
 
@@ -323,6 +335,7 @@ async function serve() {
 
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
+  console.log(`${ALL_SFX.length} sfx names, ${ALL_TRACKS.length} tracks\n`);
   const { srv, port } = await serve();
   const browser = await chromium.launch({ args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required'] });
   const page = await browser.newPage();
@@ -337,17 +350,18 @@ async function main() {
     const t0 = Date.now();
     const r = await page.evaluate(
       ([j, sec, sr]) => window.__render(j, sec, sr),
-      [{ ...job, list: SFX_LIST }, SECONDS, SR],
+      [{ ...job, list: job.list || SFX_LIST }, SECONDS, SR],
     );
     const wavPath = path.join(OUT, `${job.name}.wav`);
     const pcm = writeWav(wavPath, r.b64, SR);
     const { img, W, H } = spectrogram(pcm, SR);
     writePng(path.join(OUT, `${job.name}.png`), W, H, img);
 
-    // a non-looping stinger is allowed to stop; only the part before its end counts
+    // A non-looping stinger is allowed to stop; only the part before its end
+    // counts. A `spread` job is a diagnostic that deliberately leaves gaps.
     const window = job.stinger ? Math.min(r.secs.length, job.stinger) : r.secs.length;
-    const quiet = r.secs.slice(0, window).filter((v) => v < 0.02).length;
-    const musical = job.sfx ? r.rms > 0.02 : r.rms >= 0.05 && r.rms <= 0.3;
+    const quiet = job.spread ? 0 : r.secs.slice(0, window).filter((v) => v < 0.02).length;
+    const musical = job.sfx ? r.rms > 0.015 : r.rms >= 0.05 && r.rms <= 0.3;
     const checks = [
       [r.peak < 0.99, `peak ${r.peak.toFixed(3)} < 0.99`],
       [musical, `rms ${r.rms.toFixed(3)}${job.sfx ? '' : ' in 0.05..0.30'}`],

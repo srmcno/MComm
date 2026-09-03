@@ -5,8 +5,12 @@
 // node lifetimes so leaks show up as a rising live-node count.
 //
 //   node tools/vox-check.js
-import { Vox, LINES, pickLine, textToPhonemes, g2pWord, PHONE_SET, seedVox }
-  from '../src/audio/vox.js';
+import {
+  Vox, LINES, pickLine, pickLineAt, textToPhonemes, g2pWord, PHONE_SET,
+  seedVox, VOICE_OF, voiceOf, CITIES, EXES, CAST,
+} from '../src/audio/vox.js';
+
+const VOICES = ['mutter', 'brick', 'ilsa'];
 
 /* ───────────────────────── stub Web Audio ───────────────────────── */
 
@@ -220,7 +224,8 @@ let vox;
 try { vox = new Vox(ctx, ctx.destination); } catch (e) { vox = null; note('constructor threw', String(e)); }
 check('constructs against a stub AudioContext', !!vox);
 const chainNodes = ctx.liveNodes();
-check('persistent chain is small (<= 30 nodes)', chainNodes <= 30, `${chainNodes} nodes`);
+check('persistent chains are small (3 voices, <= 70 nodes)',
+  chainNodes <= 70, `${chainNodes} nodes`);
 
 /* 2. degenerate input is a safe no-op */
 {
@@ -256,19 +261,23 @@ check('persistent chain is small (<= 30 nodes)', chainNodes <= 30, `${chainNodes
   for (const k of keys) {
     const variants = Array.isArray(LINES[k]) ? LINES[k] : [LINES[k]];
     for (let v = 0; v < variants.length; v++) {
-      const mood = moods[(spoke + v) % moods.length];
-      try {
-        const d = vox.sayLine(k, { mood, args: ['Ashgrove', 'Five'], glitch: 0.35, priority: 5 });
-        if (!(typeof d === 'number' && Number.isFinite(d) && d > 0.2 && d < 30)) {
-          note('implausible duration', `${k} -> ${d}`);
-        }
-        spoke++;
-      } catch (e) { threw++; note('sayLine threw', `${k}: ${e && e.message}`); }
-      vox.cancel();
-      ctx.advance(0.1);
+      for (const voice of VOICES) {
+        const mood = moods[(spoke + v) % moods.length];
+        try {
+          const d = vox.sayLine(k, {
+            mood, voice, args: ['Ashgrove', 'Five'], glitch: 0.35, priority: 5,
+          });
+          if (!(typeof d === 'number' && Number.isFinite(d) && d > 0.2 && d < 30)) {
+            note('implausible duration', `${k}/${voice} -> ${d}`);
+          }
+          spoke++;
+        } catch (e) { threw++; note('sayLine threw', `${k}/${voice}: ${e && e.message}`); }
+        vox.cancel();
+        ctx.advance(0.06);
+      }
     }
   }
-  check(`all ${keys.length} LINES keys speak in all 4 moods (${spoke} utterances)`,
+  check(`all ${keys.length} LINES keys speak in 3 voices x 4 moods (${spoke} utterances)`,
     threw === 0 && spoke > 0);
   check('no invalid values while speaking every line',
     badSince(before).length === 0, badSince(before).slice(0, 4).join(' | '));
@@ -276,11 +285,34 @@ check('persistent chain is small (<= 30 nodes)', chainNodes <= 30, `${chainNodes
 
 /* 5. required keys present */
 {
-  const required = ['boot', 'wave_start', 'wave_clear', 'city_lost', 'city_lost_last',
+  const original = ['boot', 'wave_start', 'wave_clear', 'city_lost', 'city_lost_last',
     'all_cities_lost', 'player_hurt_bad', 'player_death', 'level_clear', 'secret_found',
     'key_taken', 'weapon_taken', 'low_ammo', 'chain_praise', 'perfect_burst', 'boss_intro',
     'boss_death', 'idle_taunt', 'elevator', 'roof_opening', 'mirv_warning',
     'buster_warning', 'smart_warning', 'game_over', 'victory', 'title_idle'];
+  const story = [
+    'brick_boot', 'brick_kill', 'brick_kill_mutant', 'brick_chain', 'brick_hurt',
+    'brick_low_health', 'brick_pickup_weapon', 'brick_secret', 'brick_kick',
+    'brick_distracted', 'brick_city_lost', 'brick_wave_start', 'brick_wave_clear',
+    'brick_boss_taunt', 'brick_dry', 'brick_death', 'brick_victory', 'brick_idle',
+    'ilsa_intro', 'ilsa_level1', 'ilsa_level2', 'ilsa_level3', 'ilsa_level4',
+    'ilsa_level5', 'ilsa_fuse_tip', 'ilsa_chain_tip', 'ilsa_mutant_warning',
+    'ilsa_city_lost', 'ilsa_city_burning', 'ilsa_city_rebuilt', 'ilsa_wave_incoming',
+    'ilsa_boss_warning', 'ilsa_low_health', 'ilsa_distracted_reply', 'ilsa_secret',
+    'ilsa_almost_there', 'ilsa_rescued', 'ilsa_victory', 'ilsa_death',
+    'mutter_ex_file', 'mutter_mutant', 'mutter_brick_file', 'mutter_ilsa', 'mutter_kick',
+  ];
+  const missingStory = story.filter((k) => !LINES[k]);
+  check(`all ${story.length} story keys exist`, missingStory.length === 0, missingStory.join(','));
+  const thin = story.filter((k) => !Array.isArray(LINES[k]) || LINES[k].length < 3);
+  check('every story key has at least 3 variants', thin.length === 0, thin.join(','));
+  const distracted = LINES.brick_distracted || [];
+  check('brick_distracted has at least 6 variants', distracted.length >= 6, `${distracted.length}`);
+  const exFile = LINES.mutter_ex_file || [];
+  check('mutter_ex_file has one variant per city',
+    exFile.length >= CITIES.length && exFile.every((l) => l.includes('%s')),
+    `${exFile.length} vs ${CITIES.length} cities`);
+  const required = original;
   const missing = required.filter((k) => !LINES[k]);
   check(`all ${required.length} required LINES keys exist`, missing.length === 0, missing.join(','));
   const idle = LINES.idle_taunt;
@@ -353,6 +385,8 @@ check('persistent chain is small (<= 30 nodes)', chainNodes <= 30, `${chainNodes
   const made = ctx.nodes.slice(mark);
   const sources = made.filter((n) => n.kind === 'oscillator' || n.kind === 'buffersource');
   check('an utterance creates sources', sources.length >= 3, `${sources.length}`);
+  check('one utterance costs a bounded number of nodes (<= 40)',
+    made.length <= 40, `${made.length}`);
   vox.cancel();
   check('cancel() stops every source it created',
     sources.every((n) => n.stopped), sources.filter((n) => !n.stopped).map((n) => n.kind).join(','));
@@ -376,6 +410,7 @@ check('persistent chain is small (<= 30 nodes)', chainNodes <= 30, `${chainNodes
       const d = vox.sayLine(k, {
         args: ['Candlemark', 'Two'],
         mood: ['calm', 'urgent', 'sweet', 'dying'][round % 4],
+        voice: VOICES[round % 3],
         glitch: 0.4, priority: round,
       });
       // let it finish, then let the reaper run
@@ -439,6 +474,131 @@ check('persistent chain is small (<= 30 nodes)', chainNodes <= 30, `${chainNodes
   check('say() on a closed context returns 0', ok2);
 }
 
+/* 13b. three voices */
+{
+  vox.cancel(); ctx.advance(1);
+
+  // VOICE_OF must cover every key and follow the documented prefix rule
+  const wrong = Object.keys(LINES).filter((k) => {
+    const want = k.startsWith('brick_') ? 'brick' : k.startsWith('ilsa_') ? 'ilsa' : 'mutter';
+    return VOICE_OF[k] !== want || voiceOf(k) !== want;
+  });
+  check('VOICE_OF covers every key and matches the prefix rule',
+    wrong.length === 0 && Object.keys(VOICE_OF).length === Object.keys(LINES).length,
+    wrong.slice(0, 5).join(','));
+  check('voiceOf() also resolves keys that are not in LINES',
+    voiceOf('brick_未known') === 'brick' && voiceOf('ilsa_zzz') === 'ilsa'
+    && voiceOf('anything_else') === 'mutter' && voiceOf(null) === 'mutter');
+  check('CAST names all three voices',
+    VOICES.every((v) => typeof CAST[v] === 'string' && CAST[v].length > 2));
+  check('CITIES and EXES are index-matched',
+    CITIES.length === 6 && EXES.length === 6);
+
+  // every voice must build a *different* formant scaling, not just a pitch
+  const seen = {};
+  for (const v of VOICES) {
+    vox.cancel(); ctx.advance(0.6);
+    const mark = ctx.nodes.length;
+    vox.say('The six cities are not people.', { voice: v, priority: 9 });
+    const made = ctx.nodes.slice(mark);
+    const biquads = made.filter((n) => n.kind === 'biquad');
+    // F2 of the first vowel, read straight off the resonator we scheduled
+    seen[v] = biquads.length ? biquads[1].frequency.value : 0;
+    check(`voice "${v}" builds a bounded utterance chain`, made.length <= 40, `${made.length}`);
+  }
+  check('brick sits below mutter and ilsa above it (F2 placement)',
+    seen.brick < seen.mutter && seen.mutter < seen.ilsa,
+    `brick=${seen.brick|0} mutter=${seen.mutter|0} ilsa=${seen.ilsa|0}`);
+  check('the formant shift is substantial, not cosmetic',
+    seen.ilsa / seen.brick > 1.25, `ratio ${(seen.ilsa / seen.brick).toFixed(2)}`);
+
+  // sayLine picks the speaker on its own
+  vox.cancel(); ctx.advance(0.6);
+  const beforeBad = bad.length;
+  for (const k of ['brick_kill', 'ilsa_intro', 'mutter_kick', 'boot']) {
+    const d = vox.sayLine(k, { priority: 9 });
+    if (!(d > 0)) note('auto-voice sayLine returned 0', k);
+    vox.cancel(); ctx.advance(0.1);
+  }
+  check('sayLine auto-selects the voice without opts.voice', badSince(beforeBad).length === 0);
+
+  // an unknown voice must fall back rather than throw, and must not mutate opts
+  const o = { voice: 'nobody', priority: 9 };
+  const d = vox.say('Unknown voice fallback.', o);
+  check('unknown voice falls back to mutter', d > 0 && o.voice === 'nobody');
+  vox.cancel(); ctx.advance(0.5);
+
+  // pickLineAt is deterministic and stays in range
+  let atOk = true;
+  for (let i = -8; i < 20; i++) {
+    const a = pickLineAt('mutter_ex_file', i);
+    if (typeof a !== 'string' || !a.length) atOk = false;
+    if (a !== pickLineAt('mutter_ex_file', i)) atOk = false;
+  }
+  check('pickLineAt is deterministic and wraps safely', atOk);
+  check('pickLineAt matches city order',
+    pickLineAt('mutter_ex_file', 0) === LINES.mutter_ex_file[0]
+    && pickLineAt('mutter_ex_file', 5) === LINES.mutter_ex_file[5]);
+  check('pickLineAt on an unknown key returns ""', pickLineAt('nope', 0) === '');
+
+  // lastLine must report exactly what was spoken, so subtitles can match
+  vox.cancel(); ctx.advance(0.6);
+  vox.sayLine('city_lost', { args: ['Low Sabbath', 'Three'], priority: 9 });
+  const said = vox.lastLine;
+  check('lastLine reports the substituted text that was actually spoken',
+    said.includes('Low Sabbath') && said.includes('Three') && !said.includes('%s'), said);
+  vox.cancel(); ctx.advance(0.6);
+  vox.sayLine('ilsa_intro', { priority: 9 });
+  check('lastVoice reports the auto-selected voice', vox.lastVoice === 'ilsa', vox.lastVoice);
+  vox.cancel(); ctx.advance(0.6);
+
+  // ilsa's squelch must not leak: her utterances still tear down completely
+  vox.cancel(); ctx.advance(1);
+  const mark = ctx.nodes.length;
+  const dur = vox.say('Radio check, warden.', { voice: 'ilsa', priority: 9 });
+  const made = ctx.nodes.slice(mark);
+  ctx.advance(dur + 0.5);
+  vox.busy;
+  check('ilsa utterance (with squelch) disconnects everything',
+    made.every((n) => n.disconnected), `${made.filter((n) => !n.disconnected).length} left`);
+}
+
+/* 13c. MUTTER must be bit-for-bit the voice she was before the story update */
+{
+  vox.cancel(); ctx.advance(1);
+  const sample = ['boot', 'city_lost', 'chain_praise', 'boss_death', 'idle_taunt', 'victory'];
+  let same = true;
+  for (const k of sample) {
+    const text = pickLine(k);   // one text: pickLine deliberately never repeats
+    for (const mood of ['calm', 'urgent', 'sweet', 'dying']) {
+      seedVox(4242);
+      const a = vox.say(text, { mood, priority: 9 });
+      vox.cancel(); ctx.advance(0.4);
+      seedVox(4242);
+      const b = vox.say(text, { mood, voice: 'mutter', priority: 9 });
+      vox.cancel(); ctx.advance(0.4);
+      if (a !== b || !(a > 0)) same = false;
+    }
+  }
+  check('default voice is identical to explicit "mutter"', same);
+
+  // mutter's formant scale must still be exactly 1.0 — read the resonator back
+  vox.cancel(); ctx.advance(0.6);
+  const mark = ctx.nodes.length;
+  vox.say('{EH1}', { voice: 'mutter', priority: 9 });
+  const bq = ctx.nodes.slice(mark).filter((n) => n.kind === 'biquad');
+  const f1 = bq[0] ? bq[0].frequency.value : 0;
+  const f2 = bq[1] ? bq[1].frequency.value : 0;
+  check('mutter formants are unscaled (EH = 530 / 1840)',
+    Math.abs(f1 - 530) < 1 && Math.abs(f2 - 1840) < 1, `${f1|0}/${f2|0}`);
+  vox.cancel(); ctx.advance(0.6);
+
+  // and every original key still resolves to her
+  const originals = ['boot', 'wave_start', 'city_lost', 'player_death', 'victory', 'title_idle'];
+  check('original keys still route to mutter',
+    originals.every((k) => voiceOf(k) === 'mutter'));
+}
+
 /* 14. G2P sanity */
 {
   const spot = {
@@ -446,6 +606,10 @@ check('persistent chain is small (<= 30 nodes)', chainNodes <= 30, `${chainNodes
     CITIES: 'S IH1 T IY Z', THROUGH: 'TH R UW1', PHONE: 'F OW1 N',
     NATION: 'N EY1 SH AH N', KNOCK: 'N AA1 K', WRITE: 'R AY1 T',
     QUICK: 'K W IH1 K', CHURCH: 'CH ER1 CH', PACKED: 'P AE1 K T',
+    HARDIGAN: 'HH AA1 R D IH G AH N', VANCE: 'V AE1 N S', BRICK: 'B R IH1 K',
+    ILSA: 'IH1 L S AH', LORETTA: 'L ER EH1 T AH', CHERYL: 'SH EH1 R AH L',
+    TRUCK: 'T R AH1 K', WOMAN: 'W UH1 M AH N', ABOUT: 'AH B AW1 T',
+    FULL: 'F UH1 L', FITTED: 'F IH1 T IH D', OKAY: 'OW K EY1',
   };
   let g2pBad = [];
   for (const [w, want] of Object.entries(spot)) {

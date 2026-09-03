@@ -33,6 +33,43 @@ export const ENEMY_TYPES = {
     score: 500, alert: 'priest_chant', pain: 0.2, gib: 4,
     z: 0, walkFps: 5, deathFps: 10,
   },
+  // ---- the radiation cases -------------------------------------------------
+  // Everything the leak made out of the day shift. Fast, wet, and wrong.
+  ghoul: {
+    hp: 34, speed: 4.2, radius: 0.28, height: 0.74, eye: 0.42,
+    sight: 18, attack: 'lunge', range: 2.2, damage: 16, windup: 0.30, cooldown: 0.85,
+    score: 180, alert: 'ghoul_alert', die: 'ghoul_die', pain: 0.34, gib: 5, mutant: true,
+    z: 0, walkFps: 12, deathFps: 13, strafes: true, lungeSpeed: 11,
+  },
+  gorger: {
+    hp: 190, speed: 1.25, radius: 0.46, height: 0.92, eye: 0.5,
+    sight: 13, attack: 'chomp', range: 1.7, damage: 30, windup: 0.62, cooldown: 1.35,
+    score: 450, alert: 'gorger_alert', die: 'gorger_burst', pain: 0.06, gib: 9,
+    mutant: true, bursts: true,
+    z: 0, walkFps: 4, deathFps: 7,
+  },
+  howler: {
+    hp: 70, speed: 2.1, radius: 0.30, height: 1.02, eye: 0.72,
+    sight: 24, attack: 'spit', range: 17, damage: 13, windup: 0.72, cooldown: 2.0,
+    score: 380, alert: 'howler_alert', die: 'howler_die', pain: 0.24, gib: 6,
+    mutant: true, acid: true,
+    z: 0, walkFps: 6, deathFps: 10, strafes: true,
+  },
+  stalker: {
+    hp: 46, speed: 5.6, radius: 0.26, height: 0.52, eye: 0.3,
+    sight: 26, attack: 'rend', range: 1.9, damage: 22, windup: 0.22, cooldown: 0.7,
+    score: 300, alert: 'stalker_alert', die: 'stalker_die', pain: 0.18, gib: 5,
+    mutant: true, charger: true,
+    z: 0, walkFps: 16, deathFps: 14, strafes: true, lungeSpeed: 15,
+  },
+  maw: {
+    hp: 1500, speed: 0.9, radius: 0.9, height: 1.9, eye: 1.1,
+    sight: 30, attack: 'maw', range: 12, damage: 26, windup: 0.85, cooldown: 1.7,
+    score: 4000, alert: 'maw_roar', die: 'maw_die', pain: 0.02, gib: 16,
+    mutant: true, miniboss: true,
+    z: 0, walkFps: 4, deathFps: 6,
+  },
+
   boss: {
     // Sits on the deck rather than hovering over it; MUTTER is bolted to the silo.
     hp: 2600, speed: 0, radius: 1.2, height: 2.9, eye: 1.6,
@@ -73,6 +110,21 @@ export class Enemy {
     this.deathFrame = 0;
     this.rng = makeRng((this.id * 2654435761) >>> 0);
     this.spawnGrace = 0.25;
+    this.kvx = 0; this.kvy = 0;      // knockback velocity
+    this.airborne = 0;
+    this.launched = false;
+  }
+
+  /** Shove this thing. A hard enough shove into a wall is fatal by itself. */
+  shove(dx, dy, force, lift = 0) {
+    const L = Math.hypot(dx, dy) || 1;
+    // Heavier things move less. A gorger barely notices; a stalker sails.
+    const mass = Math.max(0.35, this.def.radius * 2.6 + this.maxHp / 120);
+    const f = force / mass;
+    this.kvx += (dx / L) * f;
+    this.kvy += (dy / L) * f;
+    if (lift && this.def.speed > 0) this.airborne = Math.max(this.airborne, lift / mass);
+    if (Math.hypot(this.kvx, this.kvy) > 9) this.launched = true;
   }
 
   get radius() { return this.def.radius; }
@@ -81,6 +133,7 @@ export class Enemy {
   /** Sprite key for the current state, given where the camera is. */
   frameKey(camX, camY) {
     const k = this.kind === 'boss' ? 'mutter' : this.kind;
+    if (this.kind === 'maw') return mawFrame(this, camX, camY);
     if (this.state === ST.DEAD) return `${k}_dead`;
     if (this.state === ST.DYING) {
       const n = this.kind === 'boss' ? 6 : 4;
@@ -141,6 +194,29 @@ export class Enemy {
     this.animT += dt;
     if (this.animT > 1 / d.walkFps) { this.animT = 0; this.animFrame++; }
 
+    // Knockback runs whatever the state, so a corpse still slides.
+    if (this.kvx || this.kvy) {
+      const before = { x: this.x, y: this.y };
+      lv.move(this, this.kvx * dt, this.kvy * dt, this.def.radius);
+      const moved = Math.hypot(this.x - before.x, this.y - before.y);
+      const want = Math.hypot(this.kvx, this.kvy) * dt;
+      if (this.launched && want > 0.02 && moved < want * 0.45) {
+        // Hit a wall while travelling. That is a wall's problem now.
+        this.launched = false;
+        game.onEnemySlammed(this, Math.hypot(this.kvx, this.kvy));
+        this.kvx *= -0.18; this.kvy *= -0.18;
+      }
+      const drag = Math.exp(-6.5 * dt);
+      this.kvx *= drag; this.kvy *= drag;
+      if (Math.abs(this.kvx) < 0.05 && Math.abs(this.kvy) < 0.05) {
+        this.kvx = 0; this.kvy = 0; this.launched = false;
+      }
+    }
+    if (this.airborne > 0) {
+      this.airborne -= dt * 4.5;
+      if (this.airborne < 0) this.airborne = 0;
+    }
+
     if (this.state === ST.DEAD) return;
     if (this.state === ST.DYING) {
       const n = this.kind === 'boss' ? 6 : 4;
@@ -166,6 +242,17 @@ export class Enemy {
       this.turnToward(p.x, p.y, dt, 7);
       if (this.stateT > 0.32) { this.state = ST.CHASE; this.stateT = 0; }
       return;
+    }
+
+    if (this.lungeT > 0) {
+      this.lungeT -= dt;
+      if (this.lungeDamage && toP < this.def.radius + 0.75) {
+        p.hurt(this.lungeDamage, game);
+        game.onPlayerHurt(this, 'lunge');
+        this.lungeDamage = 0;
+        this.kvx *= 0.2; this.kvy *= 0.2;
+      }
+      if (this.lungeT <= 0) this.lungeDamage = 0;
     }
 
     this.cooldown -= dt;
@@ -243,6 +330,8 @@ export class Enemy {
       }
     }
 
+    if (this.airborne > 0 && !d.flying) this.z = d.z + this.airborne * 0.10;
+    else if (!d.flying) this.z = d.z;
     if (d.flying) {
       this.bobPhase += dt * 3.4;
       this.z = d.z + Math.sin(this.bobPhase) * 0.10 + (toP < 6 ? 0.06 : 0);
@@ -282,6 +371,32 @@ export class Enemy {
       case 'bless':
         game.onPriestBless(this);
         break;
+      case 'lunge':
+      case 'rend':
+        // Throws itself at you. Connecting is not guaranteed, which is the point.
+        if (sees) {
+          const a = Math.atan2(p.y - this.y, p.x - this.x);
+          this.kvx += Math.cos(a) * (d.lungeSpeed || 10);
+          this.kvy += Math.sin(a) * (d.lungeSpeed || 10);
+          this.lungeDamage = d.damage * dmgScale;
+          this.lungeT = 0.42;
+        }
+        game.sound.sfx(d.attack === 'rend' ? 'stalker_attack' : 'ghoul_attack', { pan: game.panOf(this) });
+        break;
+      case 'chomp':
+        if (sees && toP <= d.range * 1.25) {
+          p.hurt(d.damage * dmgScale * randRange(this.rng, 0.85, 1.15), game);
+          game.onPlayerHurt(this, 'chomp');
+        }
+        game.sound.sfx('gorger_attack', { pan: game.panOf(this) });
+        break;
+      case 'spit':
+        if (sees) game.spawnAcid(this, p);
+        game.sound.sfx('howler_spit', { pan: game.panOf(this) });
+        break;
+      case 'maw':
+        game.onMawAttack(this);
+        break;
       case 'boss':
         game.onBossAttack(this);
         break;
@@ -317,6 +432,102 @@ export class Bolt {
       p.hurt(this.damage, game);
       game.onPlayerHurt(this.owner, 'bolt');
       game.onBoltImpact(this, p);
+    }
+  }
+}
+
+/**
+ * A pipe bomb. Thrown on an arc, bounces, sits there ticking, and goes off when
+ * you press the button or when it gets bored. Detonating your own is a
+ * legitimate tactic and also a legitimate way to die.
+ */
+export class PipeBomb {
+  constructor(x, y, z, dx, dy, dz, speed, spec, game) {
+    this.x = x; this.y = y; this.z = z;
+    this.vx = dx * speed; this.vy = dy * speed; this.vz = dz * speed + 3.2;
+    this.spec = spec;
+    this.fuse = spec.fuse;
+    this.alive = true;
+    this.settled = false;
+    this.t = 0;
+    this.beepAt = 0;
+    this.spin = 0;
+  }
+
+  update(dt, game) {
+    this.t += dt;
+    this.fuse -= dt;
+    this.spin += dt * (this.settled ? 0 : 9);
+    if (this.fuse <= 0) { this.alive = false; game.detonateBomb(this); return; }
+
+    // Tick faster as it runs out, which is the whole tension of the thing.
+    const period = this.fuse > 3 ? 0.9 : this.fuse > 1.4 ? 0.42 : 0.17;
+    if (this.t >= this.beepAt) {
+      this.beepAt = this.t + period;
+      game.sound.sfx('pipebomb_beep', { pan: game.panAt(this.x, this.y), vol: 0.3 });
+    }
+    if (this.settled) return;
+
+    this.vz -= 16 * dt;
+    const nx = this.x + this.vx * dt, ny = this.y + this.vy * dt;
+    if (game.level.blockedAt(nx, ny, this.z)) {
+      // Bounce off the wall it hit, on whichever axis actually blocked.
+      if (game.level.blockedAt(nx, this.y, this.z)) this.vx *= -0.42; else this.x = nx;
+      if (game.level.blockedAt(this.x, ny, this.z)) this.vy *= -0.42; else this.y = ny;
+      game.sound.sfx('pipebomb_land', { pan: game.panAt(this.x, this.y), vol: 0.5 });
+    } else { this.x = nx; this.y = ny; }
+    this.z += this.vz * dt;
+    if (this.z <= 0.08) {
+      this.z = 0.08;
+      if (Math.abs(this.vz) > 1.4) {
+        this.vz = -this.vz * 0.28;
+        this.vx *= 0.55; this.vy *= 0.55;
+        game.sound.sfx('pipebomb_land', { pan: game.panAt(this.x, this.y), vol: 0.6 });
+      } else {
+        this.vz = 0; this.vx *= 0.4; this.vy *= 0.4;
+        if (Math.hypot(this.vx, this.vy) < 0.3) { this.settled = true; this.vx = 0; this.vy = 0; }
+      }
+    }
+  }
+}
+
+/** The maw reuses the boss frame naming, because it is boss-shaped. */
+function mawFrame(e, camX, camY) {
+  if (e.state === ST.DEAD) return 'maw_dead';
+  if (e.state === ST.DYING) return `maw_die${clamp(e.deathFrame | 0, 0, 5)}`;
+  if (e.painFlash > 0.001 && e.state === ST.PAIN) return 'maw_pain';
+  if (e.state === ST.ATTACK || e.state === ST.WINDUP) return `maw_fire${clamp(e.animFrame % 3, 0, 2)}`;
+  return `maw_idle${e.animFrame % 4}`;
+}
+
+/** An arcing glob of something that should not be inside a living thing. */
+export class Acid {
+  constructor(x, y, z, dx, dy, dz, speed, damage, owner) {
+    this.x = x; this.y = y; this.z = z;
+    this.vx = dx * speed; this.vy = dy * speed; this.vz = dz * speed + 2.6;
+    this.damage = damage;
+    this.owner = owner;
+    this.life = 5;
+    this.alive = true;
+    this.t = 0;
+  }
+  update(dt, game) {
+    this.t += dt;
+    this.life -= dt;
+    this.vz -= 11 * dt;
+    this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
+    const p = game.player;
+    if (this.life <= 0) { this.alive = false; return; }
+    if (Math.hypot(this.x - p.x, this.y - p.y) < 0.42 && Math.abs(this.z - p.z) < 0.7) {
+      this.alive = false;
+      p.hurt(this.damage, game);
+      game.onPlayerHurt(this.owner, 'acid');
+      game.onAcidSplash(this, true);
+      return;
+    }
+    if (this.z < 0.06 || game.level.blockedAt(this.x, this.y, this.z)) {
+      this.alive = false;
+      game.onAcidSplash(this, false);
     }
   }
 }

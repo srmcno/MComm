@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { writePng, writeSheet } from './png.js';
 import { buildViewmodels } from '../src/engine/viewmodels.js';
+import { VM_BASELINE } from './vm-baseline.js';
+import { frameHash } from './vm-hash.js';
 
 const OUT = process.env.VM_OUT
   || '/tmp/claude-0/-home-user-MComm/1d9ae501-9927-5c9d-832d-0ee312d588ac/scratchpad';
@@ -16,7 +18,7 @@ const buildMs = Date.now() - t0;
 // ---------------------------------------------------------------------------
 // expected key list (hardcoded on purpose - this is the contract)
 // ---------------------------------------------------------------------------
-const WEAPONS = ['pistol', 'splitter', 'nailer', 'halo', 'deadman'];
+const WEAPONS = ['pistol', 'splitter', 'nailer', 'halo', 'deadman', 'boot', 'pipebomb'];
 const POSES = ['idle', 'fire0', 'fire1', 'fire2', 'reload0', 'reload1'];
 const EXPECT = {};
 for (const w of WEAPONS) for (const p of POSES) EXPECT[`${w}_${p}`] = [200, 150];
@@ -37,6 +39,19 @@ for (let i = 0; i < 6; i++) {
 for (let i = 0; i < 4; i++) EXPECT['cloud' + i] = [256, 64];
 EXPECT.moon = [48, 48];
 EXPECT.contrail = [64, 8];
+// radio portraits and their furniture
+for (let i = 0; i < 4; i++) {
+  EXPECT[`portrait_brick_${i}`] = [128, 128];
+  EXPECT[`portrait_ilsa_${i}`] = [128, 128];
+}
+EXPECT.portrait_frame = [144, 144];
+for (let i = 0; i < 3; i++) EXPECT['portrait_static' + i] = [128, 128];
+// expansion FX
+for (let i = 0; i < 6; i++) EXPECT['gib_burst' + i] = [96, 96];
+for (let i = 0; i < 4; i++) EXPECT['acid_splash' + i] = [64, 64];
+for (let i = 0; i < 3; i++) EXPECT['kick_impact' + i] = [96, 96];
+EXPECT.pipebomb_prop = [28, 28];
+for (let i = 0; i < 3; i++) EXPECT['pipebomb_lit' + i] = [28, 28];
 
 // ---------------------------------------------------------------------------
 // checks
@@ -73,18 +88,44 @@ for (const [k, [w, h]] of Object.entries(EXPECT)) {
 const extra = Object.keys(frames).filter((k) => !(k in EXPECT));
 if (extra.length) warns.push(`extra keys not in contract: ${extra.join(', ')}`);
 
-// weapon frames: content in the bottom half, strict 0/255 alpha
+// ---------------------------------------------------------------------------
+// REGRESSION GATE: every frame that shipped must still be byte-identical.
+// The expansion is additive; if a shared painter, a light rig constant or the
+// model transform drifted, art already in the game would silently repaint. This
+// catches that rather than letting it through.
+// ---------------------------------------------------------------------------
+let baselineChecked = 0;
+for (const [k, want] of Object.entries(VM_BASELINE)) {
+  const f = frames[k];
+  if (!f) { fails.push(`BASELINE ${k}: frame disappeared`); continue; }
+  const got = `${f.w}x${f.h}:${frameHash(f.data)}`;
+  if (got !== want) fails.push(`BASELINE ${k}: pixels changed (${want} -> ${got})`);
+  else baselineChecked++;
+}
+ok(baselineChecked === Object.keys(VM_BASELINE).length,
+  `BASELINE: only ${baselineChecked}/${Object.keys(VM_BASELINE).length} shipped frames verified identical`);
+
+// weapon frames: content in the bottom half, strict 0/255 alpha.
+// The kick is a leg, not a gun: at rest it is meant to be almost entirely out
+// of frame, so boot_idle carries its own documented floor. Everything else
+// keeps the original thresholds.
+const OPAQUE_FLOOR = { boot_idle: 1800, boot_fire2: 4200, boot_reload1: 2600 };
+const BOTTOM_FLOOR = { boot_fire0: 1400 };   // full extension lifts the boot up-frame
 for (const w of WEAPONS) for (const p of POSES) {
   const k = `${w}_${p}`, s = S[k]; if (!s) continue;
-  ok(s.bottomOpaque > 2500, `${k}: only ${s.bottomOpaque} px in bottom half (want > 2500)`);
+  const bmin = BOTTOM_FLOOR[k] ?? 2500;
+  ok(s.bottomOpaque > bmin, `${k}: only ${s.bottomOpaque} px in bottom half (want > ${bmin})`);
   ok(s.partial === 0, `${k}: weapon frames must be alpha 0 or 255, found ${s.partial} partial`);
-  ok(s.opaque > 6000, `${k}: only ${s.opaque} opaque px, looks empty`);
+  const omin = OPAQUE_FLOOR[k] ?? 6000;
+  ok(s.opaque > omin, `${k}: only ${s.opaque} opaque px, looks empty (want > ${omin})`);
 }
 
 // FX frames must actually use partial alpha
 for (const k of ['flash_small', 'flash_medium', 'flash_large', 'flash_ring', 'flash_plume',
   'smoke0', 'smoke3', 'smoke5', 'boom2', 'boom5', 'boom7', 'nuke3', 'nuke6', 'nuke9',
-  'shockring0', 'shockring2', 'cloud0', 'cloud2', 'contrail']) {
+  'shockring0', 'shockring2', 'cloud0', 'cloud2', 'contrail',
+  'gib_burst0', 'gib_burst3', 'gib_burst5', 'acid_splash0', 'acid_splash3',
+  'kick_impact0', 'kick_impact2', 'portrait_static0', 'portrait_static2']) {
   const s = S[k]; if (!s) continue;
   ok(s.partial > 60, `${k}: expected soft partial-alpha falloff, found ${s.partial} partial px`);
 }
@@ -92,6 +133,30 @@ for (const k of ['flash_small', 'flash_medium', 'flash_large', 'flash_ring', 'fl
 for (const k of ['face_h4_1', 'face_h0_1', 'face_dead', 'city0', 'city3_hit', 'city5_dead']) {
   const s = S[k]; if (!s) continue;
   ok(s.opaque > 400, `${k}: only ${s.opaque} opaque px`);
+}
+// portraits: a solid figure on a genuinely transparent surround
+for (let i = 0; i < 4; i++) for (const who of ['brick', 'ilsa']) {
+  const k = `portrait_${who}_${i}`, s = S[k]; if (!s) continue;
+  ok(s.opaque > 3500, `${k}: only ${s.opaque} opaque px, figure too small`);
+  ok(s.clear > 2500, `${k}: only ${s.clear} transparent px, background not cut out`);
+  // Top corners must be sky: a chest-up figure legitimately fills the bottom
+  // corners with shoulder, so only the upper ones prove the cut-out.
+  const f = frames[k];
+  const corners = [0, f.w - 1, 3 * f.w + 3, 4 * f.w - 4];
+  ok(corners.every((c) => (f.data[c] >>> 24) === 0), `${k}: top corners must be transparent`);
+}
+// the bezel is a ring: its middle has to be see-through
+{
+  const f = frames.portrait_frame;
+  if (f) {
+    const mid = ((f.h >> 1) * f.w + (f.w >> 1));
+    ok((f.data[mid] >>> 24) === 0, 'portrait_frame: centre must be transparent (it frames a portrait)');
+    ok(S.portrait_frame.opaque > 3000, 'portrait_frame: bezel too thin');
+  }
+}
+for (const k of ['pipebomb_prop', 'pipebomb_lit0', 'pipebomb_lit2']) {
+  const s = S[k]; if (!s) continue;
+  ok(s.opaque > 180, `${k}: only ${s.opaque} opaque px`);
 }
 
 // ---------------------------------------------------------------------------

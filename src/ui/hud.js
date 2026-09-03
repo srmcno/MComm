@@ -30,6 +30,14 @@ export class Hud {
     this.faceOverrideT = 0;
     this.damageDirs = [];
     this.tick = 0;
+    this.hit = 0;
+    this.hitKill = false;
+  }
+
+  /** Crosshair confirmation. Reads instantly and costs nothing. */
+  hitMark(killed) {
+    this.hit = killed ? 0.4 : 0.22;
+    this.hitKill = this.hitKill || killed;
   }
 
   popup(str, opts = {}) {
@@ -55,6 +63,10 @@ export class Hud {
 
   update(dt) {
     this.tick += dt;
+    if (this.hit > 0) {
+      this.hit -= dt;
+      if (this.hit <= 0) { this.hit = 0; this.hitKill = false; }
+    }
     for (let i = this.popups.length - 1; i >= 0; i--) {
       const p = this.popups[i];
       p.t += dt;
@@ -86,11 +98,13 @@ export class Hud {
     } else {
       this.drawEmpStatic(buf, W, H, s, game);
     }
+    this.drawObjective(buf, W, H, s, game);
+    this.drawRadio(buf, W, H, s, game);
     this.drawBottom(buf, W, H, s, game);
     this.drawDamageDirs(buf, W, H, s, game);
     this.drawPopups(buf, W, H, s);
     this.drawBanner(buf, W, H, s);
-    this.drawSubtitle(buf, W, H, s);
+    this.drawSubtitle(buf, W, H, s, game);
     if (this.mapOpen) this.drawMap(buf, W, H, s, game);
   }
 
@@ -118,14 +132,15 @@ export class Hud {
     const T = this.text;
     const lock = game.rangeLock;
 
-    if (spec.kind === 'kinetic') {
-      // Simple two-axis cross for the Naildriver; no fuse to think about.
+    if (spec.kind === 'kinetic' || spec.kind === 'throw') {
+      // Simple two-axis cross; nothing to fuse.
       const g = 4 * s + p.kick * 0.6;
       const L = 7 * s;
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         lineBuf(buf, W, H, cx + dx * g, cy + dy * g, cx + dx * (g + L), cy + dy * (g + L), AMBER, 0.9);
       }
       fillRectBuf(buf, W, H, cx - 1, cy - 1, 2, 2, AMBER, 0.85);
+      this.drawHitMark(buf, W, H, s, cx, cy);
       return;
     }
 
@@ -174,6 +189,8 @@ export class Hud {
       }
     }
 
+    this.drawHitMark(buf, W, H, s, cx, cy);
+
     // Numeric fuse readout under the ring.
     T.draw(buf, W, H, cx, cy + R + 13 * s, `${p.fuse.toFixed(0)}m`, {
       size: Math.round(10 * s), color: col, align: 'center', glow: 0.7, glowColor: col, track: 0.5,
@@ -182,6 +199,20 @@ export class Hud {
       size: Math.round(7 * s), color: p.autoFuse ? CYAN : GREEN, align: 'center',
       track: 2, alpha: 0.8,
     });
+  }
+
+  drawHitMark(buf, W, H, s, cx, cy) {
+    if (this.hit <= 0) return;
+    const k = this.hit / (this.hitKill ? 0.4 : 0.22);
+    const col = this.hitKill ? rgba(255, 96, 72, 255) : WHITE;
+    const r = (this.hitKill ? 13 : 9) * s * (1.35 - k * 0.35);
+    for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      lineBuf(buf, W, H, cx + dx * r * 0.45, cy + dy * r * 0.45,
+        cx + dx * r, cy + dy * r, col, k, true);
+    }
+    if (this.hitKill) {
+      circleBuf(buf, W, H, cx, cy, r * 1.35, col, k * 0.45, true, 1);
+    }
   }
 
   // ---------------------------------------------------------- threat ring
@@ -371,6 +402,13 @@ export class Hud {
     T.draw(buf, W, H, W - 14 * s, 12 * s, mmss(game.levelTime), {
       size: Math.round(8 * s), color: AMBER_DIM, align: 'right', track: 2.4,
     });
+    if (p.streak >= 3) {
+      const k = clamp(p.streakTimer / 4.2, 0, 1);
+      T.draw(buf, W, H, W - 14 * s, y - 10 * s, `${p.streak} STREAK`, {
+        size: Math.round(11 * s), color: rgba(255, 208, 72, 255), align: 'right',
+        track: 2, alpha: 0.4 + k * 0.6, glow: k * 0.7, glowColor: rgba(255, 208, 72, 255),
+      });
+    }
     if (game.sky.combo > 1) {
       const c = clamp(game.sky.comboTimer / 2.2, 0, 1);
       T.draw(buf, W, H, W / 2, y - 26 * s, `CHAIN ×${game.sky.combo}`, {
@@ -378,6 +416,106 @@ export class Hud {
         alpha: 0.5 + c * 0.5,
       });
     }
+  }
+
+  /**
+   * Whoever is talking, with their portrait. This is where the story lives, so
+   * it sits high-left, out of the way of the sky and the crosshair.
+   */
+  /** A world-space arrow to the current objective. Only when there is one. */
+  drawObjective(buf, W, H, s, game) {
+    if (!game.rescuePending || !game.level) return;
+    const lv = game.level;
+    if (this._exitCell === undefined || this._exitLevel !== game.levelIndex) {
+      this._exitLevel = game.levelIndex;
+      this._exitCell = null;
+      for (let i = 0; i < lv.exit.length; i++) {
+        if (lv.exit[i]) { this._exitCell = [(i % lv.W) + 0.5, ((i / lv.W) | 0) + 0.5]; break; }
+      }
+    }
+    if (!this._exitCell) return;
+    const [ex, ey] = this._exitCell;
+    const p = game.player;
+    const rel = wrapAngle(Math.atan2(ey - p.y, ex - p.x) - p.ang);
+    const d = Math.hypot(ex - p.x, ey - p.y);
+    const pulse = 0.55 + 0.45 * Math.abs(Math.sin(this.tick * 3.4));
+    const col = rgba(126, 232, 244, 255);
+    const cx = clamp(W / 2 + (rel / 0.7) * (W * 0.42), 24 * s, W - 24 * s);
+    const cy = H * 0.30;
+    for (let i = 0; i < 9; i++) {
+      const t = i / 9;
+      addRectBuf(buf, W, H, cx - 8 * s + t * 16 * s, cy - 4 * s * (1 - Math.abs(t - 0.5) * 2),
+        2, 4 * s, col, pulse * (1 - Math.abs(t - 0.5) * 1.2));
+    }
+    this.text.draw(buf, W, H, cx, cy - 8 * s, `DR. VANCE  ${d.toFixed(0)}m`, {
+      size: Math.round(8 * s), color: col, align: 'center', track: 2, alpha: pulse,
+      glow: 0.5, glowColor: col,
+    });
+  }
+
+  drawRadio(buf, W, H, s, game) {
+    const r = game.radio;
+    if (!r || !r.current) return;
+    const m = r.current;
+    const sp = m.speakerDef;
+    const inT = clamp(m.t / 0.22, 0, 1);
+    const outT = clamp((m.life - m.t) / 0.3, 0, 1);
+    const a = Math.min(inT, outT);
+    if (a <= 0.01) return;
+
+    const size = Math.round(76 * s);
+    const x = Math.round(16 * s), y = Math.round(46 * s + (1 - inT) * 12 * s);
+    const col = rgba(sp.color[0], sp.color[1], sp.color[2], 255);
+    const key = r.portraitKey;
+    const f = key ? game.art.vm[key] : null;
+
+    if (f) {
+      fillRectBuf(buf, W, H, x - 3 * s, y - 3 * s, size + 6 * s, size + 6 * s, INK, 0.75 * a);
+      blitFrame(buf, W, H, f, x, y, { scale: size / f.w, alpha: a });
+      // Bezel: two corner brackets and a live status lamp.
+      for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+        const cx = x - 3 * s + dx * (size + 6 * s), cy = y - 3 * s + dy * (size + 6 * s);
+        fillRectBuf(buf, W, H, cx - (dx ? 9 * s : 0), cy - (dy ? 1.5 * s : 0), 9 * s, 1.5 * s, col, 0.85 * a);
+        fillRectBuf(buf, W, H, cx - (dx ? 1.5 * s : 0), cy - (dy ? 9 * s : 0), 1.5 * s, 9 * s, col, 0.85 * a);
+      }
+      const live = 0.45 + 0.55 * Math.abs(Math.sin(this.tick * 5));
+      addRectBuf(buf, W, H, x + size - 6 * s, y + 3 * s, 4 * s, 4 * s, col, live * a);
+      // Occasional dropout on the transmission.
+      if (m.speaker === 'ilsa' && Math.sin(this.tick * 13.7 + m.t * 3) > 0.93) {
+        for (let i = 0; i < 5; i++) {
+          const ly = y + ((Math.random() * size) | 0);
+          fillRectBuf(buf, W, H, x, ly, size, 1, rgba(200, 240, 255, 255), 0.25 * a);
+        }
+      }
+    }
+
+    const tx = f ? x + size + 10 * s : x;
+    this.text.draw(buf, W, H, tx, y + 10 * s, sp.name, {
+      size: Math.round(9 * s), color: col, track: Math.round(3 * s), alpha: a,
+      glow: 0.5 * a, glowColor: col,
+    });
+    // Word-wrapped line, so long dialogue never runs off the screen.
+    const maxW = W - tx - 22 * s;
+    const words = String(m.text || '').split(' ');
+    const lines = [];
+    let cur = '';
+    for (const w of words) {
+      const test = cur ? cur + ' ' + w : w;
+      if (this.text.measure(test, { size: Math.round(9.5 * s) }).w > maxW && cur) { lines.push(cur); cur = w; }
+      else cur = test;
+    }
+    if (cur) lines.push(cur);
+    // Type the line on rather than dropping it in whole.
+    const chars = Math.floor(m.t * 46);
+    let used = 0;
+    lines.slice(0, 4).forEach((ln, i) => {
+      const take = clamp(chars - used, 0, ln.length);
+      used += ln.length;
+      if (take <= 0) return;
+      this.text.draw(buf, W, H, tx, y + 26 * s + i * 12 * s, ln.slice(0, take), {
+        size: Math.round(9.5 * s), color: rgba(226, 220, 206, 255), track: 0.4, alpha: a,
+      });
+    });
   }
 
   drawDamageDirs(buf, W, H, s, game) {
@@ -429,7 +567,9 @@ export class Hud {
     }
   }
 
-  drawSubtitle(buf, W, H, s) {
+  drawSubtitle(buf, W, H, s, game) {
+    // The radio panel already shows what was said; don't print it twice.
+    if (game && game.radio && game.radio.current) return;
     if (!this.subtitle) return;
     const st = this.subtitle;
     const k = st.t / st.life;

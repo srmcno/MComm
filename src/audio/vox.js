@@ -291,6 +291,77 @@ const DICT = {
   SOMEWHERE: 'S AH1 M W EH R', TOUCH: 'T AH1 CH', USUAL: 'Y UW1 ZH UW AH L',
   YOURSELF: 'Y AO R S EH1 L F', HAPPENED: 'HH AE1 P AH N D',
   HAPPENING: 'HH AE1 P AH N IH NG', WITHOUT: 'W IH TH AW1 T', KIND: 'K AY1 N D', FIND: 'F AY1 N D',
+  // --- vocabulary added by the three-voice story (tools/vox-g2p.js --new) ---
+  ABOUT: 'AH B AW1 T', ACROSS: 'AH K R AO1 S', AGO: 'AH G OW1',
+  ALIVE: 'AH L AY1 V', ANNOYED: 'AH N OY1 D', ANNUAL: 'AE1 N Y UW AH L',
+  ANYBODY: 'EH1 N IY B AA D IY', ANYONE: 'EH1 N IY W AH N',
+  ANYWHERE: 'EH1 N IY W EH R', ANYWAY: 'EH1 N IY W EY',
+  APOLOGISING: 'AH P AA1 L AH JH AY Z IH NG', APPLIED: 'AH P L AY1 D',
+  APPROACH: 'AH P R OW1 CH', ARCHITECTURE: 'AA1 R K IH T EH K CH ER',
+  ARENA: 'AH R IY1 N AH', AROUND: 'AH R AW1 N D', AWAY: 'AH W EY1',
+  BEING: 'B IY1 IH NG', BETTER: 'B EH1 T ER', BETWEEN: 'B IH T W IY1 N',
+  BIOLOGICAL: 'B AY AH L AA1 JH IH K AH L', BREAK: 'B R EY1 K',
+  BREATH: 'B R EH1 TH', BULLET: 'B UH1 L AH T', BULLETS: 'B UH1 L AH T S',
+  CAREER: 'K ER IY1 R', CATHEDRAL: 'K AH TH IY1 D R AH L',
+  CERTAIN: 'S ER1 T AH N', CHERYL: 'SH EH1 R AH L', CLOSE: 'K L OW1 S',
+  COME: 'K AH1 M', COMING: 'K AH1 M IH NG', COMFORTABLE: 'K AH1 M F ER T AH B AH L',
+  COMMENDATIONS: 'K AA M AH N D EY1 SH AH N Z', COMPUTER: 'K AH M P Y UW1 T ER',
+  CONDUIT: 'K AA1 N D UW IH T', CONSIDERABLY: 'K AH N S IH1 D ER AH B L IY',
+  CONTAIN: 'K AH N T EY1 N', CONTAINS: 'K AH N T EY1 N Z',
+  COOLANT: 'K UW1 L AH N T', COUNTDOWN: 'K AW1 N T D AW N', COVER: 'K AH1 V ER',
+  CREATIVE: 'K R IY EY1 T IH V', CURRENTLY: 'K ER1 AH N T L IY',
+  DAMN: 'D AE1 M', DAYS: 'D EY1 Z', DEADLINE: 'D EH1 D L AY N',
+  DECIDE: 'D IH S AY1 D', DECOMMISSIONED: 'D IY K AH M IH1 SH AH N D',
+  DEGREES: 'D IH G R IY1 Z', DENTAL: 'D EH1 N T AH L',
+  DETONATES: 'D EH1 T AH N EY T S', DIVORCE: 'D IH V AO1 R S',
+  EFFICIENT: 'IH F IH1 SH AH N T', EMOTIONAL: 'IH M OW1 SH AH N AH L',
+  EMPLOYEE: 'EH M P L OY IY1', EMPLOYMENT: 'EH M P L OY1 M AH N T',
+  ENCOURAGEMENT: 'EH N K ER1 IH JH M AH N T', ENGINEER: 'EH N JH IH N IY1 R',
+  ENGINEERING: 'EH N JH IH N IY1 R IH NG', ENOUGH: 'IH N AH1 F',
+  EQUIPMENT: 'IH K W IH1 P M AH N T', EXTREMELY: 'EH K S T R IY1 M L IY',
+  FELLA: 'F EH1 L AH', FITTED: 'F IH1 T IH D', FLATLINE: 'F L AE1 T L AY N',
+  FLATTERING: 'F L AE1 T ER IH NG', FRIEND: 'F R EH1 N D', FULL: 'F UH1 L',
+  FURNACE: 'F ER1 N AH S', GALLERIES: 'G AE1 L ER IY Z', GOES: 'G OW1 Z',
+  GOTTEN: 'G AA1 T AH N', HALF: 'HH AE1 F', HAPPEN: 'HH AE1 P AH N',
+  HARDIGAN: 'HH AA1 R D IH G AH N', HEY: 'HH EY1', HONEST: 'AA1 N AH S T',
+  HOUSE: 'HH AW1 S', HOUSES: 'HH AW1 Z IH Z', HUMAN: 'HH Y UW1 M AH N',
+  HUNDRED: 'HH AH1 N D R IH D', HYGIENIST: 'HH AY JH IY1 N IH S T',
+  HYPOTHETICALLY: 'HH AY P AH TH EH1 T IH K AH L IY', IDEA: 'AY D IY1 AH',
+  IDEALLY: 'AY D IY1 AH L IY', ILSA: 'IH1 L S AH',
+  IMPORTANT: 'IH M P AO1 R T AH N T', IMPROVISE: 'IH1 M P R AH V AY Z',
+  INCOMING: 'IH1 N K AH M IH NG', INTELLIGENCE: 'IH N T EH1 L IH JH AH N S',
+  JACKET: 'JH AE1 K IH T', JUST: 'JH AH1 S T', LAWYER: 'L AO1 Y ER',
+  LISTEN: 'L IH1 S AH N', LORETTA: 'L ER EH1 T AH', LOSES: 'L UW1 Z IH Z',
+  LOVE: 'L AH1 V', MACHINE: 'M AH SH IY1 N',
+  MAINTENANCE: 'M EY1 N T AH N AH N S', METRES: 'M IY1 T ER Z',
+  MINUTES: 'M IH1 N IH T S', MISUSE: 'M IH S Y UW1 Z', MONTH: 'M AH1 N TH',
+  MONTHS: 'M AH1 N TH S', NEIGHBOURS: 'N EY1 B ER Z', NINETY: 'N AY1 N T IY',
+  NONE: 'N AH1 N', NUMBER: 'N AH1 M B ER', OBVIOUSLY: 'AA1 B V IY AH S L IY',
+  OKAY: 'OW K EY1', ONTO: 'AA1 N T UW', ORGAN: 'AO1 R G AH N',
+  POLITE: 'P AH L AY1 T', POWER: 'P AW1 ER', PROBLEMS: 'P R AA1 B L AH M Z',
+  PROFESSIONALLY: 'P R AH F EH1 SH AH N AH L IY', PROFOUND: 'P R AH F AW1 N D',
+  PROMOTED: 'P R AH M OW1 T IH D', PROPERTY: 'P R AA1 P ER T IY',
+  PROTOTYPE: 'P R OW1 T AH T AY P', RADIO: 'R EY1 D IY OW',
+  REACTOR: 'R IY AE1 K T ER', READING: 'R IY1 D IH NG', READS: 'R IY1 D Z',
+  REALLY: 'R IY1 L IY', REALLOCATE: 'R IY AE1 L AH K EY T',
+  RECORD: 'R EH1 K ER D', REDOUBT: 'R IH D AW1 T',
+  REGISTERS: 'R EH1 JH IH S T ER Z', RESCUING: 'R EH1 S K Y UW IH NG',
+  RESIDENCE: 'R EH1 Z IH D AH N S', RESTORED: 'R IH S T AO1 R D',
+  RETICLE: 'R EH1 T IH K AH L', RIDICULOUS: 'R IH D IH1 K Y AH L AH S',
+  ROUTES: 'R UW1 T S', RUNNING: 'R AH1 N IH NG', RUNS: 'R AH1 N Z',
+  SAYS: 'S EH1 Z', SCHEMATICS: 'S K IH M AE1 T IH K S',
+  SECOND: 'S EH1 K AH N D', SECRET: 'S IY1 K R AH T',
+  SENTENCE: 'S EH1 N T AH N S', SOLUTION: 'S AH L UW1 SH AH N',
+  SPHERE: 'S F IY1 R', STRATEGY: 'S T R AE1 T AH JH IY',
+  SURVIVE: 'S ER V AY1 V', SYSTEM: 'S IH1 S T AH M',
+  TECHNICIANS: 'T EH K N IH1 SH AH N Z', TELEMETRY: 'T AH L EH1 M AH T R IY',
+  THOUSAND: 'TH AW1 Z AH N D', TIRED: 'T AY1 ER D', TOGETHER: 'T AH G EH1 DH ER',
+  TRUCK: 'T R AH1 K', UNLOCKED: 'AH N L AA1 K T', VANCE: 'V AE1 N S',
+  WALLET: 'W AA1 L AH T', WEARING: 'W EH1 R IH NG', WEATHER: 'W EH1 DH ER',
+  WHATEVER: 'W AH T EH1 V ER', WOMAN: 'W UH1 M AH N', WON: 'W AH1 N',
+  WRITTEN: 'R IH1 T AH N', DEB: 'D EH1 B', BOBBI: 'B AA1 B IY',
+  YVONNE: 'IH V AA1 N', TRISH: 'T R IH1 SH', BRICK: 'B R IH1 K',
+  AREA: 'EH1 R IY AH', ADJUSTS: 'AH JH AH1 S T S',
 };
 
 /* --- NRL-style letter-to-sound rules ------------------------------------- */
@@ -362,6 +433,7 @@ function matchLeft(pat, s, i) {
 const RULES = {
   A: [
     [' ', 'A', ' ', 'AH'],
+    [' ', 'A', '^#', 'AH'],
     [' ', 'ARE', ' ', 'AA R'],
     [' ', 'AR', 'O', 'AH R'],
     ['', 'AR', '#', 'EH R'],
@@ -427,6 +499,8 @@ const RULES = {
   E: [
     ['#:', 'E', ' ', ''],
     [' :', 'E', ' ', 'IY'],
+    ['T', 'ED', ' ', 'IH D'],
+    ['D', 'ED', ' ', 'IH D'],
     ['#', 'ED', ' ', 'D'],
     ['#:', 'E', 'D ', ''],
     ['', 'EV', 'ER', 'EH V'],
@@ -459,7 +533,7 @@ const RULES = {
     ['', 'E', '', 'EH'],
   ],
   F: [
-    ['', 'FUL', '', 'F UH L'],
+    ['#:^', 'FUL', ' ', 'F UH L'],
     ['', 'FF', '', 'F'],
     ['', 'F', '', 'F'],
   ],
@@ -700,7 +774,9 @@ function assignStress(word, phones) {
   const W = word.toUpperCase();
   if (FUNCTION_WORDS.has(W)) return phones;
   let pick = 0;
-  if (vi.length >= 2) {
+  // an initial reduced A- ("about", "around") never takes the stress
+  if (vi.length >= 2 && vi[0] === 0 && phones[0] === 'AH' && W[0] === 'A') pick = 1;
+  else if (vi.length >= 2) {
     if (/(TION|SION|CIAN|ITY|ICAL|IC|ICS|ITION)$/.test(W)) pick = Math.max(0, vi.length - 2);
     else if (/(ATION|ITION)$/.test(W)) pick = Math.max(0, vi.length - 2);
     else if (UNSTRESSED_PREFIX.test(W) && vi.length >= 2) pick = 1;
@@ -735,7 +811,7 @@ export function g2pWord(word) {
  * flags the first phone of a word. `{A B C}` spans are taken literally.
  */
 export function textToPhonemes(text) {
-  const src = String(text == null ? '' : text);
+  const src = String(text == null ? '' : text).replace(/[\u2018\u2019\u02bc]/g, "'");
   const out = [];
   const pushWord = (codes) => {
     let first = true;
@@ -932,6 +1008,36 @@ function buildSegments(phones, opt) {
 /* 4. MOODS                                                                   */
 /* ────────────────────────────────────────────────────────────────────────── */
 
+/**
+ * VOICES — vocal-tract character, layered on top of `mood`.
+ *
+ * `fs` is the per-formant frequency scale, and it is the part that actually
+ * makes these read as different people. A pitch shift alone just sounds like
+ * the same man on a tape machine; moving F1-F5 moves the *tract*. Brick is a
+ * longer tube (everything down ~12%); Ilsa is a shorter one (everything up,
+ * but F1 much less than F2/F3 — that uneven scaling is what separates the
+ * registers, since F1 is set mostly by jaw opening and barely by tract length).
+ *
+ * `f0` is the base pitch at mood `calm`; `moodF0` damps how far a mood is
+ * allowed to drag it. Bandwidths are deliberately NOT scaled, so Q rides along
+ * with the formant and each voice keeps the same relative damping.
+ */
+const VOICES = {
+  mutter: {
+    fs: [1, 1, 1, 1, 1], f0: 104, moodF0: 1, rate: 1,
+    glitchMul: 1, jitMul: 1, vibMul: 1, level: 1, squelch: 0,
+  },
+  brick: {
+    fs: [0.90, 0.87, 0.87, 0.88, 0.88], f0: 90, moodF0: 0.85, rate: 1.06,
+    glitchMul: 0.45, jitMul: 1.35, vibMul: 0.8, level: 0.95, squelch: 0,
+  },
+  ilsa: {
+    fs: [1.07, 1.20, 1.22, 1.18, 1.16], f0: 198, moodF0: 0.7, rate: 0.99,
+    glitchMul: 0.12, jitMul: 0.55, vibMul: 0.7, level: 1.05, squelch: 1,
+  },
+};
+const VOICE_NAMES = Object.keys(VOICES);
+
 const MOODS = {
   calm:   { f0: 104, rate: 0.94, vib: 14, vibHz: 4.6, jit: 5,  decl: 0.80, glitch: 0.04, tilt: 1.00 },
   urgent: { f0: 130, rate: 1.20, vib: 9,  vibHz: 6.4, jit: 11, decl: 0.90, glitch: 0.20, tilt: 1.14 },
@@ -955,6 +1061,8 @@ export class Vox {
     this._queue = [];
     this._vol = 1;
     this._maxHz = 16000;
+    this._lastText = '';
+    this._lastVoice = 'mutter';
     try { this._build(); this._ok = true; } catch (e) { this._ok = false; }
   }
 
@@ -992,6 +1100,12 @@ export class Vox {
       const y = Math.tanh(x * 2.15) / Math.tanh(2.15);
       return y * 0.88 + x * 0.12;
     });
+    // Brick gets driven harder, with a little asymmetry so it grows even
+    // harmonics — that is the "chest" the clean curve does not have.
+    this._tubeHard = this._curve((x) => {
+      const y = Math.tanh(x * 3.6 + 0.12) / Math.tanh(3.72);
+      return y * 0.82 + x * 0.18;
+    });
     this._crush = [];
     for (const bits of [16, 7, 5.2, 4.2, 3.3]) {
       const steps = Math.pow(2, bits - 1);
@@ -1023,39 +1137,12 @@ export class Vox {
       return n;
     };
 
-    this.in = g(1);                                   // utterances connect here
-    const pre = g(1.4);
-    // Lip radiation: real speech gets ~+6 dB/oct on the way out of the mouth.
-    // Without it the glottal source's -12 dB/oct rolloff buries F3 upward and
-    // the whole voice sounds like a man talking into a mattress.
-    const rad1 = bq('highshelf', 900, 0.7, 11);
-    const rad2 = bq('highshelf', 2400, 0.7, 5);
-    const tube = ctx.createWaveShaper();
-    tube.curve = this._tube; tube.oversample = '2x';
-    const hp1 = bq('highpass', 300, 0.7);             // PA horn has no bottom
-    const hp2 = bq('highpass', 300, 0.7);
-    const horn = bq('peaking', 1850, 1.1, 6);         // the PA-horn honk
-    const lp1 = bq('lowpass', 4900, 0.9);
-    const lp2 = bq('lowpass', 5400, 0.6);
-    const crush = ctx.createWaveShaper();
-    crush.curve = this._crush[0]; crush.oversample = 'none';
-    this._crushNode = crush;
-    // Bunker tannoys are mercilessly compressed; this also keeps peaks sane
-    // between a quiet /uw/ and a shouted /aa/.
-    const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -22; comp.knee.value = 14; comp.ratio.value = 5;
-    comp.attack.value = 0.004; comp.release.value = 0.16;
-    this.glitchGain = g(1);
     this.master = g(1.1);
+    this.out = g(1);
+    this._chain = [this.master, this.out];
+    const keep = (...n) => { this._chain.push(...n); return n[n.length - 1]; };
 
-    this.in.connect(pre); pre.connect(rad1); rad1.connect(rad2);
-    rad2.connect(tube); tube.connect(hp1); hp1.connect(hp2);
-    hp2.connect(horn); horn.connect(lp1); lp1.connect(lp2);
-    lp2.connect(crush); crush.connect(comp); comp.connect(this.glitchGain);
-    this.glitchGain.connect(this.master);
-
-    // Dry + slapback + concrete verb.
-    const dry = g(0.86);
+    /* --- shared concrete corridor (slapback + short dark verb) ---------- */
     const dl = ctx.createDelay(0.5); dl.delayTime.value = 0.098;
     const fb = g(0.17);
     const dlDamp = bq('lowpass', 2200, 0.7);
@@ -1063,20 +1150,88 @@ export class Vox {
     const conv = ctx.createConvolver(); conv.buffer = ir; conv.normalize = true;
     const revIn = bq('bandpass', 1100, 0.9);
     const revOut = g(0.10);
-
-    this.master.connect(dry);
-    this.master.connect(dl);
-    dl.connect(dlDamp); dlDamp.connect(fb); fb.connect(dl);
-    dl.connect(dlOut);
-    this.master.connect(revIn); revIn.connect(conv); conv.connect(revOut);
-
-    this.out = g(1);
-    dry.connect(this.out); dlOut.connect(this.out); revOut.connect(this.out);
+    dl.connect(dlDamp); dlDamp.connect(fb); fb.connect(dl); dl.connect(dlOut);
+    revIn.connect(conv); conv.connect(revOut);
+    dlOut.connect(this.master); revOut.connect(this.master);
+    keep(dl, fb, dlDamp, dlOut, conv, revIn, revOut);
+    this.master.connect(this.out);
     if (this.dest) this.out.connect(this.dest);
 
-    this._chain = [pre, rad1, rad2, tube, hp1, hp2, horn, lp1, lp2, crush, comp,
-      this.glitchGain, this.master, dry, dl, fb, dlDamp, dlOut, conv, revIn,
-      revOut, this.in, this.out];
+    /**
+     * One colouration chain per speaking character. Utterances connect to
+     * `chain.in`; `chain.crush` is the bit-crush stage whose curve the current
+     * utterance selects. The corridor sends differ because MUTTER and Brick are
+     * standing in the bunker and Ilsa is on a radio somewhere else entirely.
+     */
+    const build = (name, cfg) => {
+      const cin = g(1);
+      const pre = g(cfg.pre);
+      // Lip radiation: real speech gets ~+6 dB/oct on the way out of the mouth.
+      // Without it the glottal source's -12 dB/oct rolloff buries F3 upward and
+      // the whole voice sounds like a man talking into a mattress.
+      const rad1 = bq('highshelf', 900, 0.7, 11);
+      const rad2 = bq('highshelf', 2400, 0.7, 5);
+      cin.connect(pre); pre.connect(rad1); rad1.connect(rad2);
+      let node = rad2;
+      keep(cin, pre, rad1, rad2);
+
+      if (cfg.tube) {                                  // valve grit
+        const tube = ctx.createWaveShaper();
+        tube.curve = cfg.tube === 2 ? this._tubeHard : this._tube;
+        tube.oversample = '2x';
+        node.connect(tube); node = keep(tube);
+      }
+      for (const [type, f, q, gn] of cfg.eq) {
+        const b = bq(type, f, q, gn);
+        node.connect(b); node = keep(b);
+      }
+      const crush = ctx.createWaveShaper();
+      crush.curve = this._crush[0]; crush.oversample = 'none';
+      node.connect(crush); node = keep(crush);
+
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = cfg.comp[0]; comp.knee.value = cfg.comp[1];
+      comp.ratio.value = cfg.comp[2]; comp.attack.value = cfg.comp[3];
+      comp.release.value = cfg.comp[4];
+      node.connect(comp); node = keep(comp);
+
+      const dry = g(cfg.dry);
+      node.connect(dry); dry.connect(this.master); keep(dry);
+      if (cfg.send > 0) {
+        const send = g(cfg.send);
+        node.connect(send); send.connect(dl); send.connect(revIn); keep(send);
+      }
+      return { in: cin, crush };
+    };
+
+    this.voices = {
+      // MUTTER: unchanged institutional tannoy — 300 Hz to ~5 kHz, honked.
+      mutter: build('mutter', {
+        pre: 1.4, tube: 1, dry: 0.86, send: 1,
+        eq: [['highpass', 300, 0.7], ['highpass', 300, 0.7],
+          ['peaking', 1850, 1.1, 6], ['lowpass', 4900, 0.9], ['lowpass', 5400, 0.6]],
+        comp: [-22, 14, 5, 0.004, 0.16],
+      }),
+      // BRICK: a man in the room, not a loudspeaker. Keeps his chest, keeps
+      // his top end, and is driven harder into the valve stage.
+      brick: build('brick', {
+        pre: 1.9, tube: 2, dry: 0.80, send: 0.62,
+        eq: [['highpass', 105, 0.7], ['peaking', 220, 0.9, 4],
+          ['peaking', 2100, 1.4, 2.5], ['lowpass', 7200, 0.7]],
+        comp: [-19, 10, 3.2, 0.006, 0.20],
+      }),
+      // ILSA: a radio link. Hard 400 Hz-3.2 kHz band, tight compression, no
+      // grit at all. She is meant to be the one you can always understand.
+      ilsa: build('ilsa', {
+        pre: 1.5, tube: 0, dry: 0.94, send: 0.14,
+        eq: [['highpass', 400, 0.8], ['highpass', 420, 0.8],
+          ['peaking', 2000, 1.2, 3.5], ['lowpass', 3200, 0.9], ['lowpass', 3400, 0.6]],
+        comp: [-26, 8, 8, 0.003, 0.10],
+      }),
+    };
+    // `this.in` stays pointed at MUTTER so anything holding the old reference
+    // keeps working.
+    this.in = this.voices.mutter.in;
   }
 
   _curve(fn) {
@@ -1097,6 +1252,16 @@ export class Vox {
     return !!this._active;
   }
 
+  /**
+   * The text of the most recent utterance, after variant selection and token
+   * substitution. Subtitle this rather than re-picking a variant yourself, or
+   * the caption and the voice will disagree.
+   */
+  get lastLine() { return this._lastText || ''; }
+
+  /** The voice the most recent utterance used. */
+  get lastVoice() { return this._lastVoice || 'mutter'; }
+
   setVolume(v) {
     this._vol = clamp(num(v, 1), 0, 4);
     if (!this._ok) return;
@@ -1115,17 +1280,24 @@ export class Vox {
     this._active = null;
   }
 
-  /** Speak a canned line by key. Returns duration in seconds (0 if dropped). */
+  /**
+   * Speak a canned line by key. The speaking character comes from VOICE_OF
+   * unless `opts.voice` overrides it, so the engine never has to know who
+   * says what. `opts.args` fills `%s` tokens left to right; `opts.pick`
+   * selects a specific variant (used for the per-city ex-partner files, whose
+   * variants are in CITY order rather than random).
+   */
   sayLine(key, opts = {}) {
-    let text = pickLine(key);
+    const o = opts && typeof opts === 'object' ? opts : {};
+    let text = isNum(o.pick) ? pickLineAt(key, o.pick) : pickLine(key);
     if (!text) return 0;
-    const args = opts && opts.args;
+    const args = o.args;
     if (args && args.length) {
       let k = 0;
       text = text.replace(/%s/g, () => (k < args.length ? String(args[k++]) : ''));
     }
     text = text.replace(/%s/g, '').replace(/\s{2,}/g, ' ').trim();
-    return this.say(text, opts);
+    return this.say(text, o.voice ? o : { ...o, voice: voiceOf(key) });
   }
 
   /**
@@ -1183,11 +1355,12 @@ export class Vox {
   _estimate(text, o) {
     try {
       const m = MOODS[o.mood] || MOODS.calm;
-      const rate = clamp(num(o.rate, 1) * m.rate, 0.4, 2.6);
+      const V = VOICES[o.voice] || VOICES.mutter;
+      const rate = clamp(num(o.rate, 1) * m.rate * V.rate, 0.4, 2.6);
       const segs = buildSegments(textToPhonemes(text), { rate });
       let d = 0;
       for (const s of segs) d += s.d;
-      return +(d + 0.09).toFixed(4);
+      return +(d + 0.09 + (V.squelch ? 0.20 : 0)).toFixed(4);
     } catch (e) { return 0; }
   }
 
@@ -1209,15 +1382,19 @@ export class Vox {
   _speak(text, o, prio) {
     const ctx = this.ctx;
     const mood = MOODS[o.mood] || MOODS.calm;
-    const rate = clamp(num(o.rate, 1) * mood.rate, 0.4, 2.6);
+    const V = VOICES[o.voice] || VOICES.mutter;
+    const FS = V.fs;
+    const rate = clamp(num(o.rate, 1) * mood.rate * V.rate, 0.4, 2.6);
     const pitch = clamp(num(o.pitch, 1), 0.4, 2.5);
-    const vol = clamp(num(o.vol, 1), 0, 2);
-    const glitch = clamp(num(o.glitch, 0) + mood.glitch, 0, 1);
+    const vol = clamp(num(o.vol, 1), 0, 2) * V.level;
+    const glitch = clamp((num(o.glitch, 0) + mood.glitch) * V.glitchMul, 0, 1);
 
     const phones = textToPhonemes(text);
     if (!phones.length) return 0;
     const segs = buildSegments(phones, { rate });
     if (!segs.length) return 0;
+    this._lastText = text;
+    this._lastVoice = VOICES[o.voice] ? o.voice : 'mutter';
 
     let total = 0;
     for (const s of segs) total += s.d;
@@ -1225,25 +1402,30 @@ export class Vox {
     total = clamp(total, 0.02, 40);
 
     const now = Math.max(0, num(ctx.currentTime, 0));
-    const t0 = now + 0.012;
-    const tail = 0.10;
-    const u = this._makeVoice(glitch);
+    // Radio voices open with a squelch burst, so speech starts a little later
+    // and the utterance runs a little longer at the far end.
+    const pre = V.squelch ? 0.070 : 0;
+    const post = V.squelch ? 0.130 : 0;
+    const t0 = now + 0.012 + pre;
+    const tail = 0.10 + post;
+    const u = this._makeVoice(V);
     u.priority = prio;
     u.endTime = t0 + total + tail;
 
     /* ---- F0 contour ---- */
-    const f0Base = clamp(mood.f0 * pitch, 50, 400);
+    // moods carry an absolute F0 for MUTTER; treat it as a ratio for the rest
+    // so each character keeps their own register while still reacting to mood.
+    const moodRatio = 1 + (mood.f0 / MOODS.calm.f0 - 1) * V.moodF0;
+    const f0Base = clamp(V.f0 * moodRatio * pitch, 50, 400);
     const decl = mood.decl;
     const P = u.osc.frequency;
-    let cur = t0;
-    P.setValueAtTime(f0Base * 1.06, cur);
-    const accentAt = [];
+    P.setValueAtTime(f0Base * 1.06, t0);
 
     /* ---- schedule every segment ---- */
     const F = u.fFreq, Q = u.fQ, A = u.fGain;
     // prime the resonators at the first segment's targets so nothing snaps
     for (let k = 0; k < 5; k++) {
-      this._setP(F[k], clamp(segs[0].F[k], 60, this._maxHz), t0);
+      this._setP(F[k], clamp(segs[0].F[k] * FS[k], 60, this._maxHz), t0);
       this._setP(Q[k], clamp(segs[0].F[k] / segs[0].bw[k], 0.4, 26), t0);
       this._setP(A[k], 0, t0);
     }
@@ -1263,11 +1445,12 @@ export class Vox {
       const tB = Math.max(tA + 0.001, tE - 0.004);
 
       for (let k = 0; k < 5; k++) {
-        const f1 = clamp(num(s.F[k], 500), 60, this._maxHz);
-        const f2 = clamp(num((s.Fe || s.F)[k], f1), 60, this._maxHz);
+        const raw = num(s.F[k], 500);
+        const f1 = clamp(raw * FS[k], 60, this._maxHz);
+        const f2 = clamp(num((s.Fe || s.F)[k], raw) * FS[k], 60, this._maxHz);
         this._ramp(F[k], f1, tA);
         if (f2 !== f1) this._ramp(F[k], f2, tB);
-        const q1 = clamp(f1 / num(s.bw[k], 120), 0.4, 26);
+        const q1 = clamp(raw / num(s.bw[k], 120), 0.4, 26);
         this._ramp(Q[k], q1, tA);
         const on = s.v > 0 || s.asp > 0 ? TRIM[k] : TRIM[k] * 0.001;
         const a0 = clamp(num(s.A[k], 0), 0, 2) * on;
@@ -1300,13 +1483,13 @@ export class Vox {
       if (s.vowel || (vAmp > 0.4 && !s.closure)) {
         const prog = clamp((t - t0) / total, 0, 1);
         let f = f0Base * (1 + (decl - 1) * prog);
-        if (s.st) { f *= 1.13; accentAt.push(t); }
+        if (s.st) f *= 1.13;              // pitch accent on the stressed vowel
         if (s.vowel && s.st) f *= 1 + 0.02 * Math.sin(prog * 6.1);
-        f *= 1 + (rnd() - 0.5) * (mood.jit / 900);
-        f = clamp(f, 40, 500);
+        f *= 1 + (rnd() - 0.5) * (mood.jit * V.jitMul / 900);
+        f = clamp(f, 40, 460);
         this._ramp(P, f, t + Math.min(0.05, s.d * 0.6));
         if (s.vowel) {
-          const fEnd = clamp(f * (s.st ? 0.965 : 0.99), 40, 500);
+          const fEnd = clamp(f * (s.st ? 0.965 : 0.99), 40, 460);
           this._ramp(P, fEnd, tE);
         }
         voiced++;
@@ -1317,7 +1500,7 @@ export class Vox {
     // Terminal fall / question rise on the last voiced stretch.
     const lastTerm = phones.reduce((acc, p) => (p.term ? p.term : acc), 'f');
     const tEnd = t0 + total;
-    this._ramp(P, clamp(f0Base * decl * (lastTerm === 'q' ? 1.30 : 0.74), 40, 500), tEnd);
+    this._ramp(P, clamp(f0Base * decl * (lastTerm === 'q' ? 1.30 : 0.74), 40, 460), tEnd);
 
     // Silence everything at the end, then fade the utterance bus out.
     for (let k = 0; k < 5; k++) this._ramp(A[k], 0, tEnd + 0.03);
@@ -1325,10 +1508,29 @@ export class Vox {
     this._ramp(u.asp.gain, 0, tEnd + 0.02);
     this._ramp(u.fric.gain, 0, tEnd + 0.02);
 
-    this._setP(u.gain.gain, 0, t0 - 0.004 > 0 ? t0 - 0.004 : 0);
-    this._ramp(u.gain.gain, 0.34 * vol, t0 + 0.010);
-    this._ramp(u.gain.gain, 0.34 * vol, tEnd + 0.02);
-    this._ramp(u.gain.gain, 0, tEnd + 0.055);
+    const envStart = Math.max(0, pre ? t0 - pre - 0.006 : t0 - 0.004);
+    const envRise = pre ? envStart + 0.008 : t0 + 0.010;
+    const envEnd = tEnd + post;
+    this._setP(u.gain.gain, 0, envStart);
+    this._ramp(u.gain.gain, 0.34 * vol, envRise);
+    this._ramp(u.gain.gain, 0.34 * vol, envEnd + 0.02);
+    this._ramp(u.gain.gain, 0, envEnd + 0.055);
+
+    /* ---- radio squelch: a clipped burst of the shared noise buffer at each
+       end of the transmission, so Ilsa audibly keys the mic ---- */
+    if (u.squelch) {
+      this._setP(u.squelchBP.frequency, 2200, envStart);
+      this._setP(u.squelchBP.Q, 1.15, envStart);
+      const burst = (at, len, amp) => {
+        if (!(at > 0)) return;
+        this._setP(u.squelch.gain, 0, at);
+        this._ramp(u.squelch.gain, amp, at + 0.004);
+        this._ramp(u.squelch.gain, amp * 0.55, at + len);
+        this._ramp(u.squelch.gain, 0, at + len + 0.014);
+      };
+      burst(t0 - pre + 0.004, 0.026, 0.40);
+      burst(tEnd + 0.030, 0.034, 0.32);
+    }
 
     /* ---- glitch: dropouts + pitch stumbles ---- */
     if (glitch > 0.02) {
@@ -1354,33 +1556,34 @@ export class Vox {
     // Bit-crush level follows the glitch amount (curve is pre-computed).
     try {
       const idx = clamp(Math.round(glitch * (this._crush.length - 1)), 0, this._crush.length - 1);
-      this._crushNode.curve = this._crush[idx];
+      u.chain.crush.curve = this._crush[idx];
     } catch (e) { /* ignore */ }
 
     /* ---- vibrato ---- */
     this._setP(u.vibOsc.frequency, clamp(mood.vibHz, 0.1, 20), t0);
-    this._setP(u.vib.gain, clamp(mood.vib, 0, 200), t0);
+    this._setP(u.vib.gain, clamp(mood.vib * V.vibMul, 0, 200), t0);
     if (o.mood === 'dying') {
       // the phrase sags apart
       this._ramp(u.vibOsc.frequency, clamp(mood.vibHz * 0.55, 0.1, 20), tEnd);
-      this._ramp(P, clamp(f0Base * 0.42, 40, 500), tEnd + 0.05);
+      this._ramp(P, clamp(f0Base * 0.42, 40, 460), tEnd + 0.05);
     }
 
     /* ---- start & schedule teardown ---- */
     const stopAt = u.endTime;
-    try { u.osc.start(t0 - 0.006 > 0 ? t0 - 0.006 : 0); } catch (e) { /* ignore */ }
-    try { u.vibOsc.start(t0 - 0.006 > 0 ? t0 - 0.006 : 0); } catch (e) { /* ignore */ }
-    try { u.noise.start(t0 - 0.006 > 0 ? t0 - 0.006 : 0); } catch (e) { /* ignore */ }
+    const srcStart = Math.max(0, pre ? t0 - pre - 0.008 : t0 - 0.006);
+    try { u.osc.start(srcStart); } catch (e) { /* ignore */ }
+    try { u.vibOsc.start(srcStart); } catch (e) { /* ignore */ }
+    try { u.noise.start(srcStart); } catch (e) { /* ignore */ }
     this._stopAll(u, stopAt);
 
     u.osc.onended = () => this._reap(u);
     this._live.add(u);
     this._active = u;
-    return +(total + 0.09).toFixed(4);
+    return +(total + 0.09 + pre + post).toFixed(4);
   }
 
-  /** Build the fixed ~24-node voice chain for one utterance. */
-  _makeVoice(glitch) {
+  /** Build the fixed ~26-node source chain for one utterance. */
+  _makeVoice(V) {
     const ctx = this.ctx;
     const nodes = [];
     const g = (v) => { const n = ctx.createGain(); n.gain.value = v; nodes.push(n); return n; };
@@ -1431,11 +1634,25 @@ export class Vox {
 
     const drop = g(1);                        // glitch dropouts
     const gain = g(0);                        // utterance envelope
-    sum.connect(drop); drop.connect(gain); gain.connect(this.in);
+    const chain = this.voices[V === VOICES.brick ? 'brick'
+      : V === VOICES.ilsa ? 'ilsa' : 'mutter'];
+    sum.connect(drop); drop.connect(gain); gain.connect(chain.in);
+
+    // Radio squelch taps the same noise source, so it costs two nodes and no
+    // extra buffer, and it is silenced by the same cancel() fade as the voice.
+    let squelch = null, squelchBP = null;
+    if (V.squelch) {
+      squelch = g(0);
+      squelchBP = ctx.createBiquadFilter();
+      squelchBP.type = 'bandpass'; squelchBP.frequency.value = 2200;
+      squelchBP.Q.value = 1.15;
+      nodes.push(squelchBP);
+      noise.connect(squelch); squelch.connect(squelchBP); squelchBP.connect(gain);
+    }
 
     return {
       nodes, osc, vibOsc, vib, noise, voice, asp, src, sum, fric, fricF1,
-      fricF2, fricG2, drop, gain, fFreq, fQ, fGain,
+      fricF2, fricG2, drop, gain, fFreq, fQ, fGain, chain, squelch, squelchBP,
       dead: false, endTime: 0, priority: 0,
     };
   }
@@ -1648,6 +1865,307 @@ export const LINES = {
     'Bunker {S IY1 B AH N}. Press anything. Press me.',
     'Standing by. I have been standing by for a very long time.',
   ],
+
+  /* ══════════════════════════════════════════════════════════════════════
+     BRICK HARDIGAN — the warden. A 1996 action hero who has wandered into
+     2026 and not noticed. Narrates himself in the third person. Certain this
+     is going well. He is the joke; his ego is the target.
+     ══════════════════════════════════════════════════════════════════════ */
+
+  brick_boot: [
+    'Brick Hardigan. Bunker {S IY1 B AH N}. Let us go to work.',
+    'They said one man could not do this. They say a lot of things. Mostly at the hearing.',
+    'Okay. Okay. Deep breath. Big gun. Bad attitude. Brick is back.',
+    'Somewhere in this building is a woman who needs rescuing and a computer that needs shooting. Beautiful.',
+  ],
+
+  brick_kill: [
+    'Sit down.',
+    'That is one for the scrapbook.',
+    'Brick Hardigan does not miss. Brick Hardigan adjusts.',
+    'Consider yourself decommissioned, pal.',
+    'Hell of a thing. Hell of a guy doing it.',
+  ],
+
+  brick_kill_mutant: [
+    'Whatever you were, buddy, you are considerably less of it now.',
+    'Sorry, fella. Somebody had to, and look who was standing here.',
+    'That one screamed in a language I did not care for.',
+  ],
+
+  brick_chain: [
+    'Six for one! They are going to put that on a mug!',
+    'Did you see that? Somebody tell me somebody saw that.',
+    'Boom. Boom. Boom boom boom. That is the Hardigan special.',
+    'One shot, six problems, zero remorse. Write it down.',
+  ],
+
+  brick_hurt: [
+    'That is going to leave a thing.',
+    'Ow. Okay. Brick felt that one in the wallet.',
+    'Still standing. Standing badly, but standing.',
+  ],
+
+  brick_low_health: [
+    'Brick is running on fumes and spite. Mostly spite.',
+    'Doc, if I stop talking, that is bad. That is a bad sign, doc.',
+    'I have had worse. I cannot name one, but I have had worse.',
+  ],
+
+  brick_pickup_weapon: [
+    'Oh, hello. You are coming with me.',
+    'Now that is a piece of equipment. Look at the size of that.',
+    'Somebody left this lying around. Their loss. Really, everybody loses.',
+  ],
+
+  brick_secret: [
+    'Nobody hides a room from Brick Hardigan. Nobody good, anyway.',
+    'A secret door. In my bunker. In my house.',
+    'And they said the wall thing was a waste of time.',
+  ],
+
+  brick_kick: [
+    'Doors are just walls with an attitude problem.',
+    'Boot. Meet door. Door, you are fired.',
+    'That is going in the incident report and I want it spelled right.',
+  ],
+
+  brick_distracted: [
+    'Hey. Hey, doc. You ever been to Hollow Bay? There is a woman there with a boat.',
+    'Question. Hypothetically. If a guy has not called in eleven years, is that still a thing, or.',
+    'You have got a real clear voice, doc. Has anybody ever told you that. Professionally.',
+    'Doc. Doc. Are you seeing anybody. Not for me. For a friend. The friend is me.',
+    'Is it weird I am thinking about Loretta right now. It is the teeth. It is a whole thing.',
+    'So after this, dinner. Not with you. Well. Could be with you.',
+    'Does a restraining order expire. Legally. Asking for the record.',
+    'Doc, real quick, what is your first name. I want to say it once before I die.',
+  ],
+
+  brick_city_lost: [
+    'Aw, hell. Deb lived there. Deb lived right there.',
+    'No. No no no. Not that one. Anything but that one.',
+    'They are going to blame me for this. They always blame me for this.',
+  ],
+
+  brick_wave_start: [
+    'Roof is open. Sky has got a problem. Brick has got a solution.',
+    'Here they come. Good. I was getting bored and that is when I get creative.',
+    'Everybody in the sky, you are about to have a very short career.',
+  ],
+
+  brick_wave_clear: [
+    'Sky is clean. Somebody get this man a sandwich.',
+    'And that, doc, is why they keep me around.',
+    'Nothing left up there but weather. Beautiful, beautiful weather.',
+  ],
+
+  brick_boss_taunt: [
+    'Hey! Toaster! You want to go?',
+    'You have been talking this whole time. Now you get to listen.',
+    'I have killed a lot of things that could not talk back. You are a treat.',
+  ],
+
+  brick_dry: [
+    'Click. That is the worst sound there is.',
+    'Empty. Empty is not a plan, Brick.',
+    'Okay. New strategy. The new strategy is find bullets.',
+  ],
+
+  brick_death: [
+    'Brick. Hardigan. Signing. Aw, hell.',
+    'Doc. Doc, tell them. Tell them I was. Aw.',
+    'This is. Not. My best. Work.',
+  ],
+
+  brick_victory: [
+    'Doc. Doc, we did it. I did it. We did it.',
+    'Six cities, one bunker, one Hardigan. Somebody put that on a poster.',
+    'I would like to say something profound. I have got nothing. I am so tired.',
+  ],
+
+  brick_idle: [
+    'It is quiet. Brick does not love quiet.',
+    'Talking to yourself is fine if the guy is interesting.',
+    'Man walks into a bunker. That is it. That is the whole joke. I am the joke.',
+    'You know what I could go for right now. A sandwich and a divorce lawyer.',
+  ],
+
+  /* ══════════════════════════════════════════════════════════════════════
+     DR. ILSA VANCE — chief engineer, sealed in the reactor core on level
+     five. She designed the interception system he is misusing. She is the
+     straight man, and the clearest voice in the game.
+     ══════════════════════════════════════════════════════════════════════ */
+
+  ilsa_intro: [
+    'Hardigan, this is Doctor Vance. I am sealed in the reactor core on level five. I designed the system you are about to misuse. Please listen to me.',
+    'Warden. Doctor {V AE1 N S}, engineering. I have thirty percent of a radio and one hundred percent of the schematics. Between us that is nearly a plan.',
+    'You are the last warden and I am the last engineer and I would like the record to show neither of us applied for this.',
+  ],
+
+  ilsa_level1: [
+    'Level one is intake. Wide corridors, poor cover, and the flak battery you need. Learn the fuse now, while nothing important is on fire.',
+    'Start here. Nothing on this floor can really hurt you, which makes it the only honest floor in the building.',
+    'Intake deck. Take the battery, take your time, and take me seriously, in that order.',
+  ],
+
+  ilsa_level2: [
+    'Organ loft. The pipe galleries carry sound, so it hears you coming. It hears me too. Say something flattering about the architecture.',
+    'Level two. I ran cable through these galleries for six months. If you break my conduit I will find a way to be annoyed about it from in here.',
+    'Watch the priests on this floor. They were technicians. MUTTER promoted them.',
+  ],
+
+  ilsa_level3: [
+    'Salt Cathedral. MUTTER routes coolant through here. If the floor is warm, I am still alive. Take that as encouragement or as a deadline.',
+    'Level three. Sandbags mean somebody fought here and lost. Do better than they did, ideally by a lot.',
+    'The gold key is behind the redoubt. I know because I signed for it in twenty nineteen and nobody ever asked for it back.',
+  ],
+
+  ilsa_level4: [
+    'The Furnace. My prototype heat exchangers. I am told they are now full of things that used to be maintenance staff. I would like that noted.',
+    'Level four runs at sixty degrees and everything in it used to have a name badge. Be quick and do not be sentimental.',
+    'This floor was my best work. It is currently the worst place either of us has ever been.',
+  ],
+
+  ilsa_level5: [
+    'You are on my floor. Reactor core, blast door, and a launch intelligence between us. Hardigan, the door opens outward. Please stop kicking it.',
+    'Level five. I can hear the arena through the wall. When it goes quiet, that is either very good or very bad and I would rather know which.',
+    'Last floor, warden. Everything MUTTER has left is in that room, and so, in a sense, is MUTTER.',
+  ],
+
+  ilsa_fuse_tip: [
+    'The shell detonates where you set it, not where it hits. Contact does nothing. Range first, then aim. In that order, ideally.',
+    'You are shooting a fuse, not a bullet. Decide how far away you want the explosion and the gun will do the rest.',
+    'Wheel sets range. The reticle grows. When it matches the ladder, fire. I built this to be simple and I stand by that.',
+  ],
+
+  ilsa_chain_tip: [
+    'Warheads cook off their neighbours. One good burst does the work of six bad ones. I did the maths so you would not have to. You are welcome.',
+    'Group them. Wait half a second longer than feels comfortable and let them drift together. Patience is a weapon, Hardigan.',
+    'Every kill throws a second, smaller sphere. Stand near enough to see it and too near to survive it.',
+  ],
+
+  ilsa_mutant_warning: [
+    'That reads as human. It was, twelve hours ago. Do not think about it too hard and do not let it touch you.',
+    'Biological contact. I am not going to tell you what the scan says. You would slow down, and slowing down is how you join them.',
+    'Whatever is coming, it still has a payroll number. Shoot it anyway. I will sign the form.',
+  ],
+
+  ilsa_city_lost: [
+    'We lost it. Hardigan, I need you firing, not apologising.',
+    'That is gone. Grieve later. There are five more and the clock did not stop.',
+    'I watched the telemetry flatline. I am fine. Keep shooting.',
+  ],
+
+  ilsa_city_burning: [
+    '%s is taking fire. Ninety seconds before it stops being a city.',
+    'Hardigan, %s. Right now. I do not care how the shot looks.',
+    'They are walking rounds onto %s. Get the burst high and get it early.',
+  ],
+
+  ilsa_city_rebuilt: [
+    '%s is back on the grid. That is the first good thing to happen all day.',
+    'Power restored to %s. Somebody down there just turned a light on. Hold that thought and keep it alive.',
+    '%s is reading green. I did not think I would get to say that again.',
+  ],
+
+  ilsa_wave_incoming: [
+    'Launch detected. Six inbound. I will call the ranges. Point the gun where I tell you.',
+    'They are coming down the same corridor every time. MUTTER is efficient, not clever. Use that.',
+    'Inbound. Do not panic and do not improvise. One of those you are good at.',
+  ],
+
+  ilsa_boss_warning: [
+    'That is the {M UH1 T ER} core. It is going to talk to you. Everything it says will be true. That is the problem.',
+    'It will be polite. It has always been polite. It has been polite through all of this.',
+    'Hardigan, listen. It knows things about you. Let it talk and shoot it in the middle of a sentence.',
+  ],
+
+  ilsa_low_health: [
+    'Your vitals are a mess. Sit down for eleven seconds. I will wait. I am not going anywhere, obviously.',
+    'You are bleeding into my telemetry. Stop it. Both of those, stop it.',
+    'Hardigan. If you die out there I am still in here. Please weigh that.',
+  ],
+
+  ilsa_distracted_reply: [
+    'Your radio is open, Hardigan. It has been open for four hours. I have heard all of it.',
+    'I am going to answer that once and then we are never doing this again. No. Now shoot the sky.',
+    'There are six cities. All six contain a woman who stopped taking your calls. There is a pattern here and it is not the cities.',
+    'I am flattered, I am sealed in a reactor, and those two facts are not related.',
+    'That is the third time you have asked. The answer has gotten worse each time.',
+    'You are thinking about a boat. There is a warhead at eleven thousand metres. Please reallocate.',
+    'I have your file. Loretta filed a formal complaint about the teeth thing. It runs to four pages.',
+    'Restraining orders do not expire, they lapse. Yours has not. Focus.',
+    'Ask me again when there is no longer a countdown. I am not saying yes. I am saying there is a countdown.',
+  ],
+
+  ilsa_secret: [
+    'Interesting. That wall is not on any plan I signed. Take whatever is in there and do not tell anyone I said so.',
+    'Somebody built that after I left. Somebody with a key and a bad idea.',
+    'Log it, loot it, and keep moving. I am curious, not patient.',
+  ],
+
+  ilsa_almost_there: [
+    'You are two doors away. I can hear you through the bulkhead. You are humming. Please stop humming.',
+    'Close now. Whatever you are about to say when that door opens, consider a shorter version.',
+    'I have been listening to you approach for six minutes. It has been the best six minutes of the year.',
+  ],
+
+  ilsa_rescued: [
+    'Hardigan. You actually did it. Do not say anything. Just let me have three seconds of this.',
+    'The door is open. The door is actually open. Right. Move, before I start being emotional about a door.',
+    'Twenty two days in a reactor core. You were late. You came. I will take late.',
+  ],
+
+  ilsa_victory: [
+    'It is over. Six cities, some of them standing, and one extremely loud man. I will take it.',
+    'MUTTER is down and the sky is empty and I would like to sit on some grass for a year.',
+    'We won, Hardigan. Do not make a speech. You are going to make a speech.',
+  ],
+
+  ilsa_death: [
+    'Hardigan? Hardigan, answer me. Damn it.',
+    'His signal is flat. It is just me and the machine now, and the machine is very chatty.',
+    'No. No, get up. Get up, you ridiculous man.',
+  ],
+
+  /* ══════════════════════════════════════════════════════════════════════
+     MUTTER, on the subject of the personnel                              */
+
+  // Variants are in CITY order — pass `pick: cityIndex` so the ex matches
+  // the city, and `args: [cityName]`.
+  mutter_ex_file: [
+    'Personnel note. %s is the residence of {D EH1 B}, who kept the truck. Warden, she kept the truck.',
+    'Personnel note. %s houses Loretta, now a dental hygienist. She is doing very well. She did not ask about you.',
+    'Personnel note. %s contains Cheryl, and a restraining order which the warden wishes on record is mutual.',
+    'Personnel note. %s is home to {B AA1 B IY}, who still has your jacket and intends to keep it.',
+    'Personnel note. %s is where {IH V AA1 N} lives, with the boat. It is a very good boat. It was always about the boat.',
+    'Personnel note. %s registers one {T R IH1 SH}, who has returned zero of your four hundred and twelve calls. Four hundred and twelve.',
+  ],
+
+  mutter_mutant: [
+    'That was maintenance staff. It is now maintenance. Please do not let it hug you.',
+    'Employee of the month, level four, every month since the incident. It has no competition.',
+    'It is still wearing the badge. I find that very moving.',
+  ],
+
+  mutter_brick_file: [
+    'Employment record. Hardigan, Brick. Commendations, none. Property damage, extensive. Note from personnel, please stop kicking things.',
+    'The Hardigan file lists four hundred and twelve outgoing calls and one incoming. It was a wrong number. He spoke for nine minutes.',
+    'Under next of kin, the warden has written, all of them. Under relationship, he has written, it is complicated, six times.',
+    'His annual review reads, in full, he tried. It is signed by Doctor Vance.',
+  ],
+
+  mutter_ilsa: [
+    'Doctor Vance is safe in the reactor core. Doctor Vance is always safe. I have made certain of it.',
+    'She is the only thing in this building I have not fired at. I want that considered.',
+    'Doctor Vance built my hands. Then she built the thing that stops my hands. She is very thorough.',
+  ],
+
+  mutter_kick: [
+    'The door was unlocked. It is now several doors. Thank you, warden.',
+    'Maintenance request logged. Maintenance is dead. Request closed.',
+    'That door was fitted in nineteen seventy nine. You have made it modern.',
+  ],
 };
 
 const _lastPick = Object.create(null);
@@ -1666,5 +2184,50 @@ export function pickLine(key) {
   _lastPick[key] = i;
   return v[i];
 }
+
+/** Resolve a specific variant — used where the variant must match game state. */
+export function pickLineAt(key, index) {
+  const v = LINES[key];
+  if (typeof v === 'string') return v;
+  if (!Array.isArray(v) || !v.length) return '';
+  const i = ((Math.floor(num(index, 0)) % v.length) + v.length) % v.length;
+  return v[i];
+}
+
+/**
+ * VOICE_OF — who speaks a given line key. The engine should not have to guess,
+ * and `sayLine` consults this automatically whenever `opts.voice` is absent.
+ * Prefix rule: `brick_*` -> brick, `ilsa_*` -> ilsa, everything else -> mutter.
+ */
+export const VOICE_OF = Object.freeze(
+  Object.fromEntries(Object.keys(LINES).map((k) => [
+    k,
+    k.startsWith('brick_') ? 'brick' : k.startsWith('ilsa_') ? 'ilsa' : 'mutter',
+  ]))
+);
+
+/** Voice for a line key, including keys not in LINES (same prefix rule). */
+export function voiceOf(key) {
+  const k = String(key || '');
+  return VOICE_OF[k] || (k.startsWith('brick_') ? 'brick'
+    : k.startsWith('ilsa_') ? 'ilsa' : 'mutter');
+}
+
+/** The six cities, in the order `mutter_ex_file` variants expect. */
+export const CITIES = Object.freeze([
+  'VERITY', 'ASHGROVE', 'LOW SABBATH', 'CANDLEMARK', 'HOLLOW BAY', 'SAINT ERROL',
+]);
+
+/** Who Brick left in each city, index-matched to CITIES. */
+export const EXES = Object.freeze([
+  'Deb', 'Loretta', 'Cheryl', 'Bobbi', 'Yvonne', 'Trish',
+]);
+
+/** The speaking cast, for menus and subtitle attribution. */
+export const CAST = Object.freeze({
+  mutter: 'MUTTER',
+  brick: 'BRICK HARDIGAN',
+  ilsa: 'DR. ILSA VANCE',
+});
 
 export default Vox;

@@ -64,10 +64,12 @@ function fallbackTextures() {
   return { atlas, count, names: TEXTURE_ORDER, emissive };
 }
 
-const ENEMY_IDS = ['wrencher', 'sparker', 'bellows', 'wasp', 'priest'];
+const ENEMY_IDS = ['wrencher', 'sparker', 'bellows', 'wasp', 'priest',
+  'ghoul', 'gorger', 'howler', 'stalker'];
 const ENEMY_TINT = {
   wrencher: [214, 118, 34], sparker: [150, 156, 168], bellows: [188, 92, 48],
   wasp: [120, 140, 160], priest: [96, 84, 122],
+  ghoul: [176, 168, 142], gorger: [132, 158, 118], howler: [150, 128, 138], stalker: [110, 118, 96],
 };
 
 export function requiredSpriteKeys() {
@@ -77,10 +79,15 @@ export function requiredSpriteKeys() {
     keys.push(`${id}_aim`, `${id}_fire`, `${id}_pain`, `${id}_dead`);
     for (let i = 0; i < 4; i++) keys.push(`${id}_die${i}`);
   }
-  for (let i = 0; i < 4; i++) keys.push(`mutter_idle${i}`);
-  for (let i = 0; i < 3; i++) keys.push(`mutter_fire${i}`);
-  keys.push('mutter_pain', 'mutter_dead');
-  for (let i = 0; i < 6; i++) keys.push(`mutter_die${i}`);
+  for (const boss of ['mutter', 'maw']) {
+    for (let i = 0; i < 4; i++) keys.push(`${boss}_idle${i}`);
+    for (let i = 0; i < 3; i++) keys.push(`${boss}_fire${i}`);
+    keys.push(`${boss}_pain`, `${boss}_dead`);
+    for (let i = 0; i < 6; i++) keys.push(`${boss}_die${i}`);
+  }
+  for (let i = 0; i < 8; i++) keys.push(`gib${i}`);
+  for (let i = 0; i < 4; i++) keys.push(`gore_pool${i}`);
+  for (let i = 0; i < 3; i++) keys.push(`viscera${i}`, `acid${i}`);
   keys.push('key_red', 'key_blue', 'key_gold', 'medkit_small', 'medkit_big',
     'ammo_flak', 'ammo_crate', 'barrel', 'barrel_lit', 'pillar', 'lamp',
     'weapon_splitter', 'weapon_nailer', 'weapon_halo', 'weapon_deadman',
@@ -122,7 +129,7 @@ function fallbackSprites() {
 
 export function requiredViewmodelKeys() {
   const keys = [];
-  for (const w of ['pistol', 'splitter', 'nailer', 'halo', 'deadman']) {
+  for (const w of ['pistol', 'splitter', 'nailer', 'halo', 'deadman', 'pipebomb', 'boot']) {
     keys.push(`${w}_idle`, `${w}_fire0`, `${w}_fire1`, `${w}_fire2`, `${w}_reload0`, `${w}_reload1`);
   }
   keys.push('flash_small', 'flash_medium', 'flash_large', 'flash_ring', 'flash_plume');
@@ -135,6 +142,12 @@ export function requiredViewmodelKeys() {
   for (let i = 0; i < 6; i++) keys.push(`city${i}`, `city${i}_hit`, `city${i}_dead`);
   for (let i = 0; i < 4; i++) keys.push(`cloud${i}`);
   keys.push('moon', 'contrail');
+  for (let i = 0; i < 4; i++) keys.push(`portrait_brick_${i}`, `portrait_ilsa_${i}`);
+  keys.push('portrait_frame');
+  for (let i = 0; i < 3; i++) keys.push(`portrait_static${i}`, `kick_impact${i}`, `pipebomb_lit${i}`);
+  for (let i = 0; i < 6; i++) keys.push(`gib_burst${i}`);
+  for (let i = 0; i < 4; i++) keys.push(`acid_splash${i}`);
+  keys.push('pipebomb_prop');
   return keys;
 }
 
@@ -189,6 +202,33 @@ function fallbackViewmodels() {
         }
       }
       frames[key] = f; continue;
+    }
+    if (key.startsWith('portrait_brick') || key.startsWith('portrait_ilsa')) {
+      const f = makeFrame(128, 128);
+      const warm = key.includes('brick');
+      fillCircle(f, 64, 58, 34, rgba(warm ? 196 : 168, warm ? 152 : 140, warm ? 120 : 128, 255));
+      fillRect(f, 30, 92, 68, 36, rgba(warm ? 90 : 64, warm ? 86 : 88, warm ? 76 : 96, 255));
+      fillCircle(f, 52, 54, 5, rgba(28, 24, 22, 255));
+      fillCircle(f, 76, 54, 5, rgba(28, 24, 22, 255));
+      frames[key] = outline(f); continue;
+    }
+    if (key === 'portrait_frame') {
+      const f = makeFrame(144, 144);
+      fillRect(f, 0, 0, 144, 144, rgba(46, 42, 48, 255));
+      fillRect(f, 8, 8, 128, 128, 0);
+      frames[key] = f; continue;
+    }
+    if (key.startsWith('portrait_static')) { frames[key] = radial(128, [[190, 200, 210]], 0.4); continue; }
+    if (key.startsWith('gib_burst')) { frames[key] = radial(96, [[190, 40, 40], [120, 20, 24], [60, 12, 16]], 1.6); continue; }
+    if (key.startsWith('acid_splash')) { frames[key] = radial(64, [[190, 255, 200], [120, 255, 140], [40, 150, 60]], 1.8); continue; }
+    if (key.startsWith('kick_impact')) { frames[key] = radial(96, [[240, 230, 210], [150, 140, 130]], 4); continue; }
+    if (key === 'pipebomb_prop' || key.startsWith('pipebomb_lit')) {
+      const f = makeFrame(28, 28);
+      fillRect(f, 6, 10, 16, 8, rgba(118, 114, 108, 255));
+      fillRect(f, 4, 11, 3, 6, rgba(78, 74, 70, 255));
+      fillRect(f, 21, 11, 3, 6, rgba(78, 74, 70, 255));
+      if (key !== 'pipebomb_prop') fillCircle(f, 14, 8, 2, rgba(255, 60, 40, 255));
+      frames[key] = outline(f); continue;
     }
     if (key.startsWith('face')) {
       const f = makeFrame(64, 72);
@@ -365,6 +405,36 @@ export async function loadAssets(onProgress = () => {}) {
   catch (e) { warn('maps', e); }
   if (!maps) { warn('maps', new Error('no levels found')); maps = fallbackMaps(); }
 
+  // Floor decals: sprite art resampled into a small 64x64 atlas that keeps its
+  // alpha, so the floor pass can blend blood and scorch marks in place with
+  // correct perspective instead of pasting billboards on the ground.
+  const DECAL_SOURCES = [
+    'blood0', 'blood1', 'blood2', 'gore_pool0', 'gore_pool1', 'gore_pool2', 'gore_pool3',
+    'scorch', 'acid0', 'acid1',
+  ].filter((k) => sprites.frames[k]);
+  const decalNames = DECAL_SOURCES.length ? DECAL_SOURCES : ['scorch'];
+  const decalAtlas = new Uint32Array(decalNames.length * TEX * TEX);
+  decalNames.forEach((key, i) => {
+    const f = sprites.frames[key];
+    const base = i * TEX * TEX;
+    if (!f) return;
+    // Fit the frame into the cell with a margin so decals do not tile-seam.
+    const pad = 6;
+    const inner = TEX - pad * 2;
+    const sc = Math.min(inner / f.w, inner / f.h);
+    const dw = Math.max(1, Math.round(f.w * sc)), dh = Math.max(1, Math.round(f.h * sc));
+    const ox = ((TEX - dw) >> 1), oy = ((TEX - dh) >> 1);
+    for (let y = 0; y < dh; y++) {
+      const sy = Math.min(f.h - 1, ((y / sc) | 0));
+      for (let x = 0; x < dw; x++) {
+        const sx = Math.min(f.w - 1, ((x / sc) | 0));
+        decalAtlas[base + (oy + y) * TEX + ox + x] = f.data[sy * f.w + sx];
+      }
+    }
+  });
+  const decalIndex = new Map();
+  decalNames.forEach((n, i) => decalIndex.set(n, i));
+
   const texIndex = new Map();
   (textures.names || TEXTURE_ORDER).forEach((n, i) => texIndex.set(n, i));
   // Anything the level data asks for that art didn't provide falls back to concrete.
@@ -378,6 +448,7 @@ export async function loadAssets(onProgress = () => {}) {
     texIndex,
     sprites: sprites.frames,
     vm: viewmodels.frames,
+    decalAtlas, decalNames, decalIndex, decalCount: decalNames.length,
     maps,
     warnings,
   };

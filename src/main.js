@@ -119,6 +119,10 @@ export async function boot() {
       cancel: () => { try { v.cancel && v.cancel(); } catch { /* ignore */ } },
       setVolume: (x) => { try { v.setVolume && v.setVolume(x); } catch { /* ignore */ } },
       get busy() { return !!v.busy; },
+      // The announcer picks which variant of a line to speak. Forward it so the
+      // subtitle shows the words that were actually said, not a second draw.
+      get lastLine() { return v.lastLine; },
+      get lastVoice() { return v.lastVoice; },
     };
   }
 
@@ -156,6 +160,7 @@ export async function boot() {
 
     const t0 = performance.now();
     sizeCanvas();
+    input.update(dt);          // poll the gamepad before anything reads actions
     // The music sequencer has to be ticked in every state, not just gameplay,
     // or the title theme never advances past its first 150ms of lookahead.
     game.sound.update(dt);

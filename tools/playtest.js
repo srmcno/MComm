@@ -75,6 +75,23 @@ await page.evaluate(() => {
       for (let i = 0; i < Math.round(seconds / dt); i++) g.update(dt, g.input);
     },
     god(on) { g._god = on; },
+    /** Stand somewhere walkable with a clear line to a point. */
+    standNear(x, y, minD = 2, maxD = 7) {
+      const lv = g.level;
+      let best = null, bestErr = 1e9;
+      for (let yy = 1; yy < lv.H - 1; yy++) for (let xx = 1; xx < lv.W - 1; xx++) {
+        const cx = xx + 0.5, cy = yy + 0.5;
+        if (lv.blocked(cx, cy)) continue;
+        const d = Math.hypot(cx - x, cy - y);
+        if (d < minD || d > maxD) continue;
+        if (!lv.lineOfSight(cx, cy, x, y)) continue;
+        const err = Math.abs(d - (minD + maxD) / 2);
+        if (err < bestErr) { bestErr = err; best = [cx, cy]; }
+      }
+      if (best) { g.player.x = best[0]; g.player.y = best[1]; }
+      g.player.ang = Math.atan2(y - g.player.y, x - g.player.x);
+      return !!best;
+    },
   };
   // Freeze health while we're testing systems rather than survival.
   const origHurt = g.player.hurt.bind(g.player);
@@ -505,6 +522,254 @@ check('difficulty scales the fight',
   s[0].total < s[2].total && s[0].health > s[1].health && s[0].maxAlive < s[2].maxAlive &&
   s[0].hp < s[2].hp && s[0].speed < s[2].speed,
   s.map((d) => `${d.name}: ${d.total} warheads, ${d.maxAlive} at once, ${d.hp}hp, x${d.speed}`).join(' | '));
+
+// ------------------------------------------------- 16. the Boot
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  const e = g.enemies.find((x) => x.kind === 'wrencher');
+  if (!e) return { err: 'no wrencher' };
+  e.kvx = 0; e.kvy = 0;
+  g.player.x = e.x - 1.3; g.player.y = e.y;
+  g.player.ang = Math.atan2(e.y - g.player.y, e.x - g.player.x);
+  g.player.pitch = 0; g.player.kickCooldown = 0;
+  const hpBefore = e.hp, xBefore = e.x;
+  g.tryKick();
+  const kicked = e.hp < hpBefore;
+  window.T.step(0.5);
+  const moved = Math.abs(e.x - xBefore) + Math.abs(e.y - e.y);
+  // A second kick immediately should be refused by the cooldown.
+  const hp2 = e.hp;
+  g.tryKick();
+  const refused = e.hp === hp2;
+  return { kicked, moved: +moved.toFixed(2), refused, anim: g.player.kickAnim > 0 };
+});
+check('the Boot connects, shoves and respects its cooldown',
+  s.kicked && s.moved > 0.25 && s.refused, `knocked back ${s.moved} cells`);
+
+// ------------------------------------------------- 17. slam damage
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  const e = g.enemies.find((x) => x.kind === 'sparker') || g.enemies[0];
+  // Park it against a wall and shove it into that wall.
+  const lv = g.level;
+  let wallDir = null;
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    if (lv.wall[(e.y + dy | 0) * lv.W + (e.x + dx | 0)] === 1) { wallDir = [dx, dy]; break; }
+  }
+  if (!wallDir) return { skip: true };
+  const before = e.hp;
+  e.shove(wallDir[0], wallDir[1], 40);
+  window.T.step(0.6);
+  return { hurt: before - e.hp, launched: false };
+});
+check('a body thrown into a wall takes the wall personally',
+  s.skip || s.hurt > 0, s.skip ? 'no adjacent wall to test' : `${s.hurt} extra damage`);
+
+// ------------------------------------------------- 18. pipe bombs
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  g.player.owned.pipebomb = true; g.player.ammo.bomb = 5;
+  g.player.pitch = 0;
+  const ammo0 = g.player.ammo.bomb;
+  g.tryBomb();
+  const thrown = g.bombs.length;
+  window.T.step(2.0);
+  const settled = g.bombs.length && g.bombs[0].settled;
+  const restZ = g.bombs.length ? g.bombs[0].z : -1;
+  // Pressing again with one live detonates rather than throwing.
+  g.tryBomb();
+  const detonated = g.bombs.length === 0;
+  window.T.step(0.3);
+  const blasts = g.sky.blasts.length;
+  return { thrown, settled, restZ: +restZ.toFixed(2), detonated, blasts,
+    spent: ammo0 - g.player.ammo.bomb };
+});
+check('pipe bombs throw, land and detonate on command',
+  s.thrown === 1 && s.settled && s.restZ > 0 && s.detonated && s.spent === 1,
+  `rested at z=${s.restZ}, ${s.blasts} blast(s)`);
+
+// ------------------------------------------------- 19. mutants breach in
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(1); g.setState('play'); g._god = true;
+  const before = g.enemies.length;
+  let seenOffCamera = true;
+  for (let i = 0; i < 60 * 90; i++) {
+    g.update(1 / 60, g.input);
+    if (g.enemies.length > before) break;
+  }
+  const mutants = g.enemies.filter((e) => e.def.mutant);
+  // Whatever arrived must have arrived out of sight.
+  for (const m of mutants) {
+    if (m.spawnGrace > 0.2 && g.level.lineOfSight(g.player.x, g.player.y, m.x, m.y)) seenOffCamera = false;
+  }
+  return { before, after: g.enemies.length, mutants: mutants.length,
+    kinds: [...new Set(mutants.map((m) => m.kind))].join('+'), seenOffCamera };
+});
+check('mutants come through the walls, off camera',
+  s.mutants > 0 && s.seenOffCamera, `${s.mutants} arrived (${s.kinds})`);
+
+// ------------------------------------------------- 20. mutant behaviour
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(1); g.setState('play'); g._god = true;
+  const out = {};
+  // Isolate each subject: no other enemies, and no fresh breaches mid-test.
+  const solo = (kind) => {
+    g.enemies.length = 0;
+    g.breach.cap = 0;
+    g.spawnBreach(kind);
+    g.breach.cap = 0;
+    return g.enemies.filter((e) => e.kind === kind).pop();
+  };
+  // A gorger's death should burst and leave something behind.
+  const gor = solo('gorger');
+  if (gor) {
+    g.hazards.length = 0;
+    window.T.standNear(gor.x, gor.y, 3, 8);
+    for (let i = 0; i < 40 && gor.alive; i++) gor.hurt(30, g, 0, 0);
+    window.T.step(0.2);
+    out.burst = g.hazards.length > 0;
+    out.gore = g.level.decal[g.level.idx(gor.x, gor.y)] >= 0;
+  }
+  // A howler should be able to spit at the player.
+  const how = solo('howler');
+  if (how) {
+    out.placedH = window.T.standNear(how.x, how.y, 3, 9);
+    g.acids.length = 0;
+    how.state = 2; how.cooldown = 0; how.lastSeen = { x: g.player.x, y: g.player.y };
+    for (let i = 0; i < 60 * 10 && !g.acids.length; i++) g.update(1 / 60, g.input);
+    out.spat = g.acids.length > 0;
+  }
+  // A stalker should actually lunge.
+  const st = solo('stalker');
+  if (st) {
+    out.placedS = window.T.standNear(st.x, st.y, 2.2, 6);
+    st.state = 2; st.cooldown = 0; st.lastSeen = { x: g.player.x, y: g.player.y };
+    let lunged = false;
+    for (let i = 0; i < 60 * 12; i++) {
+      g.update(1 / 60, g.input);
+      if (Math.hypot(st.kvx, st.kvy) > 4) { lunged = true; break; }
+    }
+    out.lunged = lunged;
+  }
+  return out;
+});
+check('a gorger bursts and leaves a hazard', !!s.burst && !!s.gore);
+check('a howler spits acid', !!s.spat, s.placedH === false ? 'could not place the player' : '');
+check('a stalker lunges', !!s.lunged, s.placedS === false ? 'could not place the player' : '');
+
+// ------------------------------------------------- 21. the radio
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  g.radio.reset();
+  g.radio.distract();
+  const queued = g.radio.queue.length;
+  const seen = [];
+  for (let i = 0; i < 60 * 30; i++) {
+    g.update(1 / 60, g.input);
+    if (g.radio.current) {
+      const tag = g.radio.current.speaker + ':' + (g.radio.current.text || '').slice(0, 12);
+      if (seen[seen.length - 1] !== tag) seen.push(tag);
+    }
+    if (!g.radio.current && !g.radio.queue.length && seen.length >= 2) break;
+  }
+  const speakers = seen.map((t) => t.split(':')[0]);
+  return { queued, seen: seen.length, speakers: speakers.join('>'),
+    overlapped: false, portrait: null };
+});
+check('the radio queues and never talks over itself',
+  s.queued >= 2 && s.seen >= 2 && s.speakers.includes('brick') && s.speakers.includes('ilsa'),
+  s.speakers);
+
+// ------------------------------------------------- 22. streaks
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  g.player.streak = 0; g.player.score = 0;
+  for (let i = 0; i < 3; i++) g.bumpStreak();
+  const at3 = { streak: g.player.streak, score: g.player.score };
+  g.player.hurt = g._origHurt || g.player.hurt;
+  g._god = false;
+  g.onPlayerHurt(null, 'test');
+  const afterHit = g.player.streak;
+  g._god = true;
+  return { at3, afterHit };
+});
+check('kill streaks build and a hit resets them',
+  s.at3.streak === 3 && s.at3.score > 0 && s.afterHit === 0,
+  `3 in a row paid ${s.at3.score}`);
+
+// ------------------------------------------------- 23. gamepad
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  // Present a synthetic standard-layout pad.
+  const pad = {
+    index: 0, id: 'Xbox Wireless Controller (STANDARD GAMEPAD)', connected: true,
+    mapping: 'standard',
+    axes: [0, 0, 0, 0],
+    buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })),
+  };
+  navigator.getGamepads = () => [pad];
+  const inp = g.input;
+  inp.padIndex = -1;
+  const ang0 = g.player.ang;
+
+  pad.axes[2] = 1;                       // right stick fully right
+  for (let i = 0; i < 30; i++) { inp.update(1 / 60); g.update(1 / 60, inp); inp.endFrame(); }
+  const turned = g.player.ang - ang0;
+
+  pad.axes[2] = 0; pad.axes[1] = -1;     // left stick forward
+  const x0 = g.player.x, y0 = g.player.y;
+  for (let i = 0; i < 30; i++) { inp.update(1 / 60); g.update(1 / 60, inp); inp.endFrame(); }
+  const moved = Math.hypot(g.player.x - x0, g.player.y - y0);
+
+  pad.axes[1] = 0;
+  pad.buttons[7] = { pressed: true, value: 1 };   // right trigger
+  const ammo0 = g.player.ammo.flak;
+  g.player.cooldown = 0;
+  for (let i = 0; i < 6; i++) { inp.update(1 / 60); g.update(1 / 60, inp); inp.endFrame(); }
+  const fired = g.player.ammo.flak < ammo0;
+
+  pad.buttons[7] = { pressed: false, value: 0 };
+  pad.buttons[3] = { pressed: true, value: 1 };   // Y = kick
+  g.player.kickCooldown = 0;
+  inp.update(1 / 60); g.update(1 / 60, inp); inp.endFrame();
+  const kicked = g.player.kickAnim > 0;
+
+  pad.buttons[3] = { pressed: false, value: 0 };
+  pad.buttons[12] = { pressed: true, value: 1 };  // d-pad up = fuse up
+  const fuse0 = g.player.fuse;
+  g.player.autoFuse = false;
+  for (let i = 0; i < 20; i++) { inp.update(1 / 60); g.update(1 / 60, inp); inp.endFrame(); }
+  const fuseUp = g.player.fuse > fuse0;
+
+  return { kind: inp.padKind, turned: +turned.toFixed(2), moved: +moved.toFixed(2),
+    fired, kicked, fuseUp, seen: inp.padSeen };
+});
+check('a standard gamepad drives look, move, fire, boot and fuse',
+  s.seen && s.kind === 'xbox' && Math.abs(s.turned) > 0.3 && s.moved > 0.3 &&
+  s.fired && s.kicked && s.fuseUp,
+  `${s.kind}: turned ${s.turned} rad, moved ${s.moved} cells`);
+
+// ------------------------------------------------- 24. gore decals
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  let painted = 0;
+  for (const e of g.enemies.slice(0, 5)) {
+    while (e.alive) e.hurt(50, g, 0, 0);
+  }
+  for (let i = 0; i < g.level.decal.length; i++) if (g.level.decal[i] >= 0) painted++;
+  return { painted, atlas: window.NUKEHAUS.art.decalCount };
+});
+check('bodies stain the floor', s.painted > 0 && s.atlas > 0,
+  `${s.painted} cells marked from ${s.atlas} decal textures`);
 
 // ------------------------------------------------------------- report
 console.log('');

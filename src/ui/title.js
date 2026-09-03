@@ -5,6 +5,7 @@ import { rgba, mix, clamp as pclamp } from '../core/pixels.js';
 import { clamp, lerp, makeRng, TAU } from '../core/math.js';
 import { fillRectBuf, addRectBuf, lineBuf, blitFrame } from './text.js';
 import { getScores } from '../core/scores.js';
+import { PAD_GLYPHS } from '../core/input.js';
 
 const AMBER = rgba(255, 186, 64, 255);
 const HOT = rgba(255, 236, 190, 255);
@@ -143,10 +144,20 @@ export class TitleScreen {
     }
 
     // Vignette-ish darkening at the very bottom for the footer text.
+    const pad = game.input && game.input.padSeen;
+    const G = PAD_GLYPHS[(game.input && game.input.padKind) || 'generic'];
     T.draw(buf, W, H, W / 2, H - 10 * s,
-      this.page === 'menu' ? 'ARROWS / W S  ·  ENTER SELECT  ·  ESC BACK' : 'ESC BACK', {
+      this.page === 'menu'
+        ? (pad ? `D-PAD  ·  ${G.a} SELECT  ·  ${G.b} BACK` : 'ARROWS / W S  ·  ENTER SELECT  ·  ESC BACK')
+        : (pad ? `${G.b} BACK` : 'ESC BACK'), {
       size: Math.round(7.5 * s), color: DIM, align: 'center', track: 3, alpha: 0.62,
     });
+    if (pad) {
+      T.draw(buf, W, H, W - 14 * s, H - 10 * s, 'CONTROLLER READY', {
+        size: Math.round(7.5 * s), color: rgba(126, 232, 128, 255), align: 'right',
+        track: 2.4, alpha: 0.7,
+      });
+    }
   }
 
   drawSkyBackdrop(buf, W, H, game) {
@@ -303,11 +314,12 @@ export class TitleScreen {
       const band = (Math.floor((x + this.t * 14) / (7 * s)) % 2) === 0;
       fillRectBuf(buf, W, H, px, ry0, 1, 3 * s, band ? AMBER : rgba(24, 20, 18, 255), a * 0.9);
     }
-    T.draw(buf, W, H, W / 2, ry0 + 18 * s, 'THE LAST SIX CITIES', {
+    T.draw(buf, W, H, W / 2, ry0 + 18 * s, 'SIX CITIES.  ONE DOCTOR.  ONE BOOT.', {
       size: Math.round(12 * s), color: BONE, align: 'center', track: Math.round(9 * s),
       alpha: a * 0.92, glow: 0.35, glowColor: AMBER,
     });
-    T.draw(buf, W, H, W / 2, ry0 + 32 * s, 'BUNKER SIEBEN  ·  WARDEN PROGRAM  ·  DO NOT RESUSCITATE', {
+    T.draw(buf, W, H, W / 2, ry0 + 32 * s,
+      'WARDEN B. HARDIGAN  ·  BUNKER SIEBEN  ·  DO NOT RESUSCITATE', {
       size: Math.round(7 * s), color: DIM, align: 'center', track: Math.round(2.4 * s), alpha: a * 0.7,
     });
   }
@@ -383,25 +395,43 @@ export class TitleScreen {
 
   drawHowTo(buf, W, H, s, game) {
     const T = game.text;
-    const p = this.drawPanel(buf, W, H, s, 'THREE AXES, NOT TWO', game);
-    const lines = [
+    const pad = game.input && game.input.padSeen;
+    const G = PAD_GLYPHS[(game.input && game.input.padKind) || 'generic'];
+    const p = this.drawPanel(buf, W, H, s, pad ? 'THREE AXES, NOT TWO' : 'THREE AXES, NOT TWO', game);
+
+    const lines = pad ? [
+      ['STICKS', 'Left moves. Right looks.'],
+      [`${G.rt}`, 'Fire. Contact does nothing — only the airburst kills.'],
+      [`${G.lt}`, 'Fine aim. Halves your look speed for threading a fuse.'],
+      ['D-PAD ↑↓', 'THE FUSE. How far the shell flies before it bursts.'],
+      ['', 'The ring around your crosshair IS that distance.'],
+      [`${G.b}`, 'Auto-ranging on/off. Manual fuses score double.'],
+      [`${G.y} / R3`, 'THE BOOT. No ammo. Ends arguments.'],
+      [`${G.x}`, 'Pipe bomb. Press again to detonate. Timing is your problem.'],
+      [`${G.a}`, 'Open doors, shove suspicious walls.'],
+      [`${G.lb} ${G.rb}`, `Weapons.   ${G.back} map.   ${G.start} pause.`],
+    ] : [
       ['MOUSE', 'Aim. Two axes, like anything else with a trigger.'],
       ['WHEEL / Z X', 'THE FUSE. How far the shell flies before it bursts.'],
       ['', 'The ring around your crosshair IS that distance.'],
       ['C', 'Auto-range on/off. Manual fuses score double on a clean burst.'],
       ['FIRE', 'Contact does nothing. Only the airburst kills.'],
       ['', 'A kill cooks off its payload, which bursts again. Chain them.'],
-      ['WASD', 'Move.   SHIFT run.   SPACE open doors and shove suspicious walls.'],
-      ['1-5', 'Weapons.   TAB map.   ESC pause.'],
+      ['V / MMB', 'THE BOOT. No ammo, no reload. Ends arguments.'],
+      ['B or G', 'Pipe bomb. Press again to detonate. Timing is your problem.'],
+      ['WASD', 'Move.  SHIFT run.  SPACE doors and suspicious walls.'],
+      ['1-6', 'Weapons.   TAB map.   ESC pause.'],
     ];
     lines.forEach(([k, v], i) => {
-      const y = p.y + 42 * s + i * 15 * s;
+      const y = p.y + 38 * s + i * 13.5 * s;
       T.draw(buf, W, H, p.x + 20 * s, y, k, { size: Math.round(8.5 * s), color: AMBER, track: 1.6 });
-      T.draw(buf, W, H, p.x + 108 * s, y, v, { size: Math.round(8.5 * s), color: BONE, track: 0.4 });
+      T.draw(buf, W, H, p.x + 116 * s, y, v, { size: Math.round(8.5 * s), color: BONE, track: 0.4 });
     });
-    T.draw(buf, W, H, p.x + p.w / 2, p.y + p.h - 14 * s,
-      'Six cities on the horizon. Each one dies to a single warhead. They do not come back.', {
-      size: Math.round(8 * s), color: RUST, align: 'center', track: 1,
+    T.draw(buf, W, H, p.x + p.w / 2, p.y + p.h - 14 * s, pad
+      ? `${(game.input.padName || 'controller').slice(0, 34)} detected. Rumble is on.`
+      : 'Plug in an Xbox or PlayStation pad and it will pick it up on its own.', {
+      size: Math.round(8 * s), color: pad ? rgba(126, 232, 128, 255) : RUST,
+      align: 'center', track: 1,
     });
   }
 
@@ -426,22 +456,24 @@ export class TitleScreen {
     const T = game.text;
     const p = this.drawPanel(buf, W, H, s, 'PERSONNEL FILE', game);
     const lines = [
-      'NUKEHAUS runs on nothing but arithmetic.',
+      'WARDEN B. HARDIGAN — a man out of his decade and delighted about it.',
+      'DR. ILSA VANCE — chief engineer. Built the guns. Sealed in the core.',
+      'MUTTER — launch control. Has read his file. Enjoys reading it aloud.',
       '',
-      'Every wall, every face, every warhead and every note of music in this',
-      'bunker is generated at load time from code. There are no image files.',
-      'There are no sound files. The announcer is a formant synthesiser that',
-      'was never taught to sound comforting, and it shows.',
+      'NUKEHAUS runs on nothing but arithmetic. Every wall, every fang, every',
+      'warhead and every note of music is generated at load time from code.',
+      'There are no image files. There are no sound files. All three voices',
+      'are the same formant synthesiser wearing different vocal tracts.',
       '',
       'Raycast renderer, WebGL post chain, procedural texture and sprite',
       'painters, Web Audio sequencer and voice, all built for this cabinet.',
       '',
       'With respect to MISSILE COMMAND (1980) and WOLFENSTEIN 3D (1992),',
-      'which between them worked out most of what makes a game feel like this.',
+      'and to every shareware hero who ever kicked a door for no reason.',
     ];
     lines.forEach((l, i) => {
-      T.draw(buf, W, H, p.x + 20 * s, p.y + 40 * s + i * 12 * s, l, {
-        size: Math.round(8 * s), color: l ? BONE : DIM, track: 0.6, alpha: 0.9,
+      T.draw(buf, W, H, p.x + 20 * s, p.y + 34 * s + i * 11.5 * s, l, {
+        size: Math.round(8 * s), color: l ? (i < 3 ? AMBER : BONE) : DIM, track: 0.6, alpha: 0.9,
       });
     });
   }

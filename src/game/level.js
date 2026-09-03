@@ -44,6 +44,8 @@ export class Level {
     this.visited = new Uint8Array(n);       // for the automap
     this.roofPanel = new Uint8Array(n);     // sky cells that start closed
     this.propBlock = new Uint8Array(n);     // pillars and other standing props
+    this.decal = new Int16Array(n).fill(-1); // floor decal index, -1 for none
+    this.decalAge = new Float32Array(n);
     this.roofOpen = 0;                      // 0..1 how far the roof has ground back
 
     const tex = (name, fallback = 0) => {

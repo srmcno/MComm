@@ -7,6 +7,7 @@
 export const AMMO_FLAK = 'flak';
 export const AMMO_NAIL = 'nail';
 export const AMMO_CHARGE = 'charge';
+export const AMMO_BOMB = 'bomb';
 
 export const WEAPONS = {
   pistol: {
@@ -46,8 +47,17 @@ export const WEAPONS = {
     kick: 11, shakeAmount: 1.6, flash: 'flash_ring', light: [0.42, 0.95, 1.0],
     sfx: 'halo_fire', groundDamage: 30,
   },
+  pipebomb: {
+    id: 'pipebomb', slot: 5, name: 'PIPE BOMBS',
+    blurb: 'Throw it, walk away, press the button. Timing is a personal choice.',
+    kind: 'throw', vm: 'pipebomb',
+    ammo: AMMO_BOMB, cost: 1, refire: 0.55,
+    throwSpeed: 17, blastRadius: 6.2, damage: 130, fuse: 6.5, maxLive: 4,
+    kick: 4.5, shakeAmount: 0.4, flash: 'flash_small', light: [1.0, 0.8, 0.5],
+    sfx: 'pipebomb_throw', groundDamage: 130,
+  },
   deadman: {
-    id: 'deadman', slot: 5, name: "DEADMAN'S SWITCH",
+    id: 'deadman', slot: 6, name: "DEADMAN'S SWITCH",
     blurb: 'Scrubs the sky. Scrubs your instruments too. Use it once and regret it.',
     kind: 'nuke', vm: 'deadman',
     ammo: AMMO_CHARGE, cost: 1, refire: 2.4,
@@ -57,9 +67,19 @@ export const WEAPONS = {
   },
 };
 
-export const WEAPON_ORDER = ['pistol', 'splitter', 'nailer', 'halo', 'deadman'];
+export const WEAPON_ORDER = ['pistol', 'splitter', 'nailer', 'halo', 'pipebomb', 'deadman'];
 
-export const AMMO_MAX = { [AMMO_FLAK]: 180, [AMMO_NAIL]: 320, [AMMO_CHARGE]: 3 };
+/**
+ * The Boot is not in the weapon order because it is never selected — it is
+ * always available, on its own button, and it costs nothing but time.
+ */
+export const BOOT = {
+  id: 'boot', name: 'THE BOOT', vm: 'boot',
+  refire: 0.52, range: 2.35, arc: 0.62, damage: 52,
+  knockback: 13, liftKick: 3.2, shakeAmount: 1.3,
+};
+
+export const AMMO_MAX = { [AMMO_FLAK]: 180, [AMMO_NAIL]: 320, [AMMO_CHARGE]: 3, [AMMO_BOMB]: 12 };
 
 export function weaponBySlot(slot) {
   return WEAPON_ORDER.find((k) => WEAPONS[k].slot === slot);

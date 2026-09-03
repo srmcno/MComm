@@ -1,7 +1,7 @@
 // player.js - the warden: movement, look, the fuse dial, and pulling triggers.
 
 import { clamp, damp, lerp, wrapAngle, TAU } from '../core/math.js';
-import { WEAPONS, WEAPON_ORDER, AMMO_MAX, AMMO_FLAK, AMMO_NAIL, AMMO_CHARGE, weaponBySlot } from './weapons.js';
+import { WEAPONS, WEAPON_ORDER, AMMO_MAX, AMMO_FLAK, AMMO_NAIL, AMMO_CHARGE, AMMO_BOMB, BOOT, weaponBySlot } from './weapons.js';
 
 export const EYE_HEIGHT = 0.56;
 export const FUSE_MIN = 6;
@@ -24,7 +24,7 @@ export class Player {
     this.dead = false;
     this.keys = [false, false, false];
     this.owned = { pistol: true, splitter: false, nailer: false, halo: false, deadman: false };
-    this.ammo = { [AMMO_FLAK]: 60, [AMMO_NAIL]: 0, [AMMO_CHARGE]: 0 };
+    this.ammo = { [AMMO_FLAK]: 60, [AMMO_NAIL]: 0, [AMMO_CHARGE]: 0, [AMMO_BOMB]: 0 };
     this.weapon = 'pistol';
     this.pendingWeapon = null;
     this.cooldown = 0;
@@ -41,6 +41,14 @@ export class Player {
     this.hurtFlash = 0;
     this.emp = 0;                 // Deadman aftermath: instruments dead
     this.regenTimer = 0;
+    this.kickCooldown = 0;
+    this.kickAnim = 0;
+    this.streak = 0;         // kills without being hit
+    this.streakTimer = 0;
+    this.swayX = 0;          // viewmodel lag behind the camera
+    this.swayY = 0;
+    this._lastAng = 0;
+    this._lastPitch = 0;
     this.lastDamageAt = -99;
     this.score = 0;
     this.kills = 0;        // enemies
@@ -64,6 +72,8 @@ export class Player {
     return this.ammo[s.ammo] === undefined ? 0 : this.ammo[s.ammo];
   }
 
+  canKick() { return this.kickCooldown <= 0 && !this.dead; }
+
   canFire() {
     const s = this.spec;
     return this.cooldown <= 0 && this.ammoFor(this.weapon) >= s.cost;
@@ -81,6 +91,7 @@ export class Player {
     const s = WEAPONS[key];
     if (s.ammo === AMMO_NAIL) this.giveAmmo(AMMO_NAIL, 90);
     else if (s.ammo === AMMO_CHARGE) this.giveAmmo(AMMO_CHARGE, 1);
+    else if (s.ammo === AMMO_BOMB) this.giveAmmo(AMMO_BOMB, 5);
     else this.giveAmmo(AMMO_FLAK, 24);
     if (isNew) this.pendingWeapon = key;
     return isNew;
@@ -130,6 +141,10 @@ export class Player {
   update(dt, input, level, game) {
     const s = this.spec;
     this.cooldown = Math.max(0, this.cooldown - dt);
+    this.kickCooldown = Math.max(0, this.kickCooldown - dt);
+    this.kickAnim = Math.max(0, this.kickAnim - dt);
+    this.streakTimer = Math.max(0, this.streakTimer - dt);
+    if (this.streakTimer === 0 && this.streak > 0) this.streak = 0;
     this.flashTimer = Math.max(0, this.flashTimer - dt);
     this.fireAnim = Math.max(0, this.fireAnim - dt);
     this.hurtFlash = damp(this.hurtFlash, 0, 3.4, dt);
@@ -141,6 +156,14 @@ export class Player {
     this.regenTimer += dt;
     if (this.regenTimer > 0.8) {
       this.regenTimer = 0;
+    this.kickCooldown = 0;
+    this.kickAnim = 0;
+    this.streak = 0;         // kills without being hit
+    this.streakTimer = 0;
+    this.swayX = 0;          // viewmodel lag behind the camera
+    this.swayY = 0;
+    this._lastAng = 0;
+    this._lastPitch = 0;
       if (this.ammo[AMMO_FLAK] < 40) this.giveAmmo(AMMO_FLAK, 1);
     }
 
@@ -153,6 +176,17 @@ export class Player {
       }
       if (this.swapT >= 1) { this.swapT = 0; this.pendingWeapon = null; }
     }
+
+    // The weapon lags behind the camera and catches up. Nothing sells weight
+    // in a first-person view like the gun not being nailed to the crosshair.
+    const dAng = wrapAngle(this.ang - this._lastAng);
+    const dPitch = this.pitch - this._lastPitch;
+    this._lastAng = this.ang;
+    this._lastPitch = this.pitch;
+    this.swayX = clamp(this.swayX - dAng * 26, -34, 34);
+    this.swayY = clamp(this.swayY - dPitch * 0.30, -26, 26);
+    this.swayX = damp(this.swayX, 0, 7.5, dt);
+    this.swayY = damp(this.swayY, 0, 8.5, dt);
 
     // Recoil settles with a spring so it feels weighty rather than snapping.
     this.kickVel += -this.kick * 62 * dt - this.kickVel * 11 * dt;
