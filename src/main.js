@@ -1,0 +1,230 @@
+// main.js - boot, canvas, the loop, and the state plumbing that owns them.
+
+import { Input } from './core/input.js';
+import { Post } from './engine/post.js';
+import { loadAssets } from './engine/assets.js';
+import { Text } from './ui/text.js';
+import { TitleScreen } from './ui/title.js';
+import { Game, STATE } from './game/game.js';
+import {
+  renderWorld, drawViewmodel, drawBrief, drawIntermission,
+  drawGameOver, drawVictory, drawPause, drawLoading,
+} from './game/render.js';
+import { clamp, damp } from './core/math.js';
+
+const MIN_W = 428, MAX_W = 1280;
+
+export async function boot() {
+  const canvas = document.getElementById('screen');
+  const overlay = document.getElementById('overlay');
+  const post = new Post(canvas);
+  const text = new Text();
+  const input = new Input(canvas);
+
+  let cssW = 0, cssH = 0, dpr = 1;
+  let iw = 640, ih = 400;
+  let frame = new Uint32Array(iw * ih);
+  let resScale = 1.0;
+
+  function sizeCanvas() {
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    const r = canvas.getBoundingClientRect();
+    cssW = Math.max(320, r.width | 0);
+    cssH = Math.max(200, r.height | 0);
+    const w = Math.round(cssW * dpr), h = Math.round(cssH * dpr);
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  }
+
+  function sizeInternal() {
+    // Internal render resolution: chunky enough to be honest, sharp enough to be
+    // pretty, and adaptive so a heavy frame doesn't tank the framerate.
+    const aspect = cssW / cssH;
+    let w = clamp(Math.round(cssW * 0.72 * resScale), MIN_W, MAX_W);
+    w -= w % 2;
+    let h = Math.round(w / aspect);
+    h -= h % 2;
+    if (h < 260) { h = 260; w = Math.round(h * aspect); w -= w % 2; }
+    if (w !== iw || h !== ih) {
+      iw = w; ih = h;
+      frame = new Uint32Array(iw * ih);
+    }
+  }
+
+  sizeCanvas(); sizeInternal();
+  addEventListener('resize', () => { sizeCanvas(); sizeInternal(); });
+
+  // ------------------------------------------------------------ loading
+
+  let progress = 0, progressLabel = 'WARMING THE CATHODES';
+  let booted = false;
+  const loadStart = performance.now();
+
+  function loadingFrame() {
+    if (booted) return;
+    sizeCanvas(); sizeInternal();
+    drawLoading(frame, iw, ih, text, progress, progressLabel, performance.now() / 1000);
+    post.present(frame, iw, ih, (performance.now() - loadStart) / 1000);
+    requestAnimationFrame(loadingFrame);
+  }
+  requestAnimationFrame(loadingFrame);
+
+  const art = await loadAssets((p, label) => { progress = p; progressLabel = label; });
+  progress = 0.95; progressLabel = 'CLEARING THE STAIRWELL';
+
+  // Audio modules are optional; the game runs mute if they fail.
+  let sound = null, vox = null, VoxLines = {};
+  try {
+    const m = await import('./audio/synth.js');
+    if (m && m.Sound) sound = new m.Sound();
+  } catch (e) { console.warn('[audio] synth unavailable', e); }
+  try {
+    const m = await import('./audio/vox.js');
+    if (m && m.Vox) { vox = { ctor: m.Vox, LINES: m.LINES || {} }; VoxLines = m.LINES || {}; }
+  } catch (e) { console.warn('[audio] vox unavailable', e); }
+
+  const game = new Game(art, sound, null, input, post, text);
+  game.voxLines = VoxLines;
+  const title = new TitleScreen();
+  game.titleScreen = title;
+  game.skyDome.rebuild(game.sky.cities);
+
+  if (art.warnings.length) console.warn('[assets]', art.warnings);
+
+  // Audio can only start inside a gesture, so wire it to the first real input.
+  let audioStarted = false;
+  const startAudio = async () => {
+    if (audioStarted) return;
+    audioStarted = true;
+    try {
+      if (sound) {
+        await sound.init();
+        sound.setMaster(game.volMaster);
+        sound.setMusicVol(game.volMusic);
+        sound.setSfxVol(0.95);
+        if (vox && sound.ctx) {
+          const v = new vox.ctor(sound.ctx, sound.sfxBus || sound.ctx.destination);
+          game.vox = wrapVox(v);
+          game.vox.setVolume(game.volVox);
+        }
+        if (game.state === STATE.TITLE) sound.music('title', { fadeIn: 2.0 });
+      }
+    } catch (e) { console.warn('[audio] init failed', e); }
+    hideGate();
+  };
+  function wrapVox(v) {
+    return {
+      say: (...a) => { try { return v.say(...a) || 0; } catch { return 0; } },
+      sayLine: (...a) => { try { return (v.sayLine ? v.sayLine(...a) : v.say(...a)) || 0; } catch { return 0; } },
+      cancel: () => { try { v.cancel && v.cancel(); } catch { /* ignore */ } },
+      setVolume: (x) => { try { v.setVolume && v.setVolume(x); } catch { /* ignore */ } },
+      get busy() { return !!v.busy; },
+    };
+  }
+
+  const gate = document.createElement('div');
+  gate.id = 'click-to-play';
+  gate.textContent = 'Click to wake Bunker Sieben';
+  overlay.appendChild(gate);
+  const hideGate = () => { if (gate.parentNode) gate.remove(); };
+  gate.addEventListener('click', startAudio);
+  addEventListener('keydown', startAudio, { once: false });
+  canvas.addEventListener('mousedown', startAudio);
+
+  booted = true;
+  progress = 1;
+
+  input.onUnlock = () => {
+    if (game.state === STATE.PLAY) {
+      game.setState(STATE.PAUSE);
+    }
+  };
+
+  // ------------------------------------------------------------- the loop
+
+  let last = performance.now();
+  let smoothedCpu = 16.7;
+  let smoothedFrame = 16.7;
+  let resCooldown = 2;
+
+  function loop(now) {
+    requestAnimationFrame(loop);
+    let dt = (now - last) / 1000;
+    last = now;
+    if (dt > 0.1) dt = 0.1;      // a tab that was backgrounded must not teleport anyone
+    if (dt <= 0) dt = 1 / 240;
+
+    const t0 = performance.now();
+    sizeCanvas();
+
+    // --------------------------------------------------------- update
+    if (game.state === STATE.TITLE) {
+      const r = title.update(dt, input, game);
+      if (r) {
+        if (r.action === 'move') game.sound.sfx('ui_move');
+        else if (r.action === 'select') game.sound.sfx('ui_select');
+        else if (r.action === 'back') game.sound.sfx('ui_back');
+        else if (r.action === 'start') {
+          game.sound.sfx('ui_start');
+          game.sound.stopMusic(0.7);
+          game.newGame(r.difficulty);
+          input.requestLock();
+        }
+      }
+    } else {
+      game.update(dt, input);
+      if (game.pendingState === 'title') {
+        game.pendingState = null;
+        game.setState(STATE.TITLE);
+        title.reset();
+        input.releaseLock();
+        game.sound.stopMusic(0.5);
+        game.sound.music('title', { fadeIn: 1.6 });
+      }
+      if (game.state === STATE.PLAY && !input.locked && input.mousePressed & 1) input.requestLock();
+    }
+
+    // --------------------------------------------------------- render
+    sizeInternal();
+    if (game.state === STATE.TITLE) {
+      title.draw(frame, iw, ih, game);
+    } else {
+      game.rc.resize(iw, ih);
+      renderWorld(game, iw, ih);
+      frame.set(game.rc.buf);
+      if (game.state !== STATE.GAMEOVER || game.overT < 0.8) drawViewmodel(game, frame, iw, ih);
+      game.hud.draw(frame, iw, ih, game);
+      if (game.state === STATE.BRIEF) drawBrief(game, frame, iw, ih);
+      else if (game.state === STATE.PAUSE) drawPause(game, frame, iw, ih);
+      else if (game.state === STATE.INTERMISSION) drawIntermission(game, frame, iw, ih);
+      else if (game.state === STATE.GAMEOVER) drawGameOver(game, frame, iw, ih);
+      else if (game.state === STATE.VICTORY) drawVictory(game, frame, iw, ih);
+    }
+    post.present(frame, iw, ih, now / 1000);
+    input.endFrame();
+
+    // ------------------------------------------------ adaptive resolution
+    const spent = performance.now() - t0;
+    smoothedCpu = smoothedCpu * 0.92 + spent * 0.08;
+    smoothedFrame = smoothedFrame * 0.9 + dt * 1000 * 0.1;
+    resCooldown -= dt;
+    if (!game.resLocked && resCooldown <= 0) {
+      // Adapt on the real frame interval, not just our own CPU slice, so a slow
+      // GPU pushes the resolution down too. Above vsync means we're missing.
+      if (smoothedFrame > 21 && resScale > 0.55) {
+        resScale = Math.max(0.55, resScale - 0.12); resCooldown = 1.8;
+      } else if (smoothedFrame < 17.6 && smoothedCpu < 9 && resScale < 1.3) {
+        resScale = Math.min(1.3, resScale + 0.06); resCooldown = 2.4;
+      }
+      game.resScale = resScale;
+    } else if (game.resLocked) {
+      resScale = game.resScale;
+    }
+    game.frameMs = smoothedCpu;
+    game.frameDelta = smoothedFrame;
+  }
+  requestAnimationFrame(loop);
+
+  // Handy for poking at the game from the console or a test harness.
+  window.NUKEHAUS = { game, title, input, post, art,
+    get frame() { return frame; }, get size() { return [iw, ih]; } };
+}
