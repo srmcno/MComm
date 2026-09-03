@@ -5,6 +5,13 @@
 // keeps a single bad module from turning into a black screen.
 
 import { TEX, rgba, mix, shade, makeFrame, fillRect, fillCircle, outline, makeRng, fbm, clamp } from '../core/pixels.js';
+// Static imports so a bundler can see them. Each generator is still called
+// defensively below, and any frame a generator misses is patched from the
+// procedural stand-ins in this file, so one bad module cannot black the screen.
+import { buildTextures } from './textures.js';
+import { buildSprites } from './sprites.js';
+import { buildViewmodels } from './viewmodels.js';
+import * as MAPS_MODULE from '../game/maps.js';
 
 export const TEXTURE_ORDER = [
   'CONCRETE', 'CONCRETE_CRACKED', 'STEEL_PLATE', 'STEEL_RIVET',
@@ -314,16 +321,6 @@ export function parseLevelDef(def, index) {
   return out;
 }
 
-async function tryImport(path, label, onWarn) {
-  try {
-    const m = await import(path);
-    return m;
-  } catch (e) {
-    onWarn && onWarn(label, e);
-    return null;
-  }
-}
-
 export async function loadAssets(onProgress = () => {}) {
   const warnings = [];
   const warn = (label, e) => {
@@ -332,23 +329,20 @@ export async function loadAssets(onProgress = () => {}) {
   };
 
   onProgress(0.05, 'CALIBRATING SURFACES');
-  const texMod = await tryImport('./textures.js', 'textures', warn);
   let textures = null;
-  try { textures = texMod && texMod.buildTextures ? texMod.buildTextures() : null; }
+  try { textures = buildTextures(); }
   catch (e) { warn('textures.build', e); }
   if (!textures || !textures.atlas || textures.atlas.length < TEX * TEX) textures = fallbackTextures();
 
   onProgress(0.28, 'WAKING THE STAFF');
-  const sprMod = await tryImport('./sprites.js', 'sprites', warn);
   let sprites = null;
-  try { sprites = sprMod && sprMod.buildSprites ? sprMod.buildSprites() : null; }
+  try { sprites = buildSprites(); }
   catch (e) { warn('sprites.build', e); }
   if (!sprites || !sprites.frames) sprites = fallbackSprites();
 
   onProgress(0.52, 'ISSUING ORDNANCE');
-  const vmMod = await tryImport('./viewmodels.js', 'viewmodels', warn);
   let viewmodels = null;
-  try { viewmodels = vmMod && vmMod.buildViewmodels ? vmMod.buildViewmodels() : null; }
+  try { viewmodels = buildViewmodels(); }
   catch (e) { warn('viewmodels.build', e); }
   if (!viewmodels || !viewmodels.frames) viewmodels = fallbackViewmodels();
 
@@ -366,9 +360,10 @@ export async function loadAssets(onProgress = () => {}) {
   ensure(viewmodels, requiredViewmodelKeys(), fallbackViewmodels);
 
   onProgress(0.72, 'SURVEYING THE BUNKER');
-  const mapMod = await tryImport('../game/maps.js', 'maps', warn);
-  let maps = mapMod && mapMod.MAPS && mapMod.MAPS.length ? mapMod : null;
-  if (!maps) maps = fallbackMaps();
+  let maps = null;
+  try { maps = MAPS_MODULE.MAPS && MAPS_MODULE.MAPS.length ? MAPS_MODULE : null; }
+  catch (e) { warn('maps', e); }
+  if (!maps) { warn('maps', new Error('no levels found')); maps = fallbackMaps(); }
 
   const texIndex = new Map();
   (textures.names || TEXTURE_ORDER).forEach((n, i) => texIndex.set(n, i));

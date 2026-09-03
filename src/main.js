@@ -11,6 +11,10 @@ import {
   drawGameOver, drawVictory, drawPause, drawLoading,
 } from './game/render.js';
 import { clamp, damp } from './core/math.js';
+// Static so the single-file build can see them; both are still optional at
+// runtime and the game plays silently if either fails to construct.
+import { Sound } from './audio/synth.js';
+import { Vox, LINES as VOX_LINES } from './audio/vox.js';
 
 // Internal render width bounds. The ceiling is generous so a fast machine gets
 // a crisp image; the adaptive controller pulls it back down on anything slower.
@@ -73,16 +77,11 @@ export async function boot() {
   const art = await loadAssets((p, label) => { progress = p; progressLabel = label; });
   progress = 0.95; progressLabel = 'CLEARING THE STAIRWELL';
 
-  // Audio modules are optional; the game runs mute if they fail.
+  // Audio is optional; the game runs mute if either module fails to construct.
   let sound = null, vox = null, VoxLines = {};
-  try {
-    const m = await import('./audio/synth.js');
-    if (m && m.Sound) sound = new m.Sound();
-  } catch (e) { console.warn('[audio] synth unavailable', e); }
-  try {
-    const m = await import('./audio/vox.js');
-    if (m && m.Vox) { vox = { ctor: m.Vox, LINES: m.LINES || {} }; VoxLines = m.LINES || {}; }
-  } catch (e) { console.warn('[audio] vox unavailable', e); }
+  try { sound = new Sound(); } catch (e) { console.warn('[audio] synth unavailable', e); }
+  try { vox = { ctor: Vox, LINES: VOX_LINES || {} }; VoxLines = VOX_LINES || {}; }
+  catch (e) { console.warn('[audio] vox unavailable', e); }
 
   const game = new Game(art, sound, null, input, post, text);
   game.voxLines = VoxLines;

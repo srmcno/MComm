@@ -26,8 +26,11 @@ export class Input {
     this.wheel = 0;
     this.mouseButtons = 0;
     this.mousePressed = 0;
-    this.mouseX = 0;
-    this.mouseY = 0;
+    // Centre, not the corner: cursor steering reads these before the mouse has
+    // moved, and a default of (0,0) is a hard left-and-up deflection.
+    this.mouseX = 0.5;
+    this.mouseY = 0.5;
+    this.mouseMoved = false;
     this.locked = false;
     this.sensitivity = 1.0;
     this.invertY = false;
@@ -71,6 +74,7 @@ export class Input {
       const r = this.canvas.getBoundingClientRect();
       this.mouseX = (e.clientX - r.left) / r.width;
       this.mouseY = (e.clientY - r.top) / r.height;
+      this.mouseMoved = true;
       if (this.locked) {
         this.mouseDX += e.movementX || 0;
         this.mouseDY += e.movementY || 0;

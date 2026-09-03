@@ -99,6 +99,21 @@ export class Hud {
   drawReticle(buf, W, H, s, game) {
     const p = game.player;
     const cx = W / 2, cy = H / 2;
+    if (!game.input.locked && game.input.mouseMoved) {
+      // Cursor steering: show where the cursor is and which way it is pushing.
+      const mx = clamp(game.input.mouseX, 0, 1) * W;
+      const my = clamp(game.input.mouseY, 0, 1) * H;
+      circleBuf(buf, W, H, cx, cy, 9 * s, rgba(120, 110, 96, 255), 0.30, true, 1);
+      lineBuf(buf, W, H, cx, cy, mx, my, rgba(150, 200, 220, 255), 0.20, true);
+      for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        lineBuf(buf, W, H, mx + dx * 3 * s, my + dy * 3 * s, mx + dx * 8 * s, my + dy * 8 * s,
+          rgba(190, 230, 250, 255), 0.6, true);
+      }
+      this.text.draw(buf, W, H, W / 2, H * 0.16, 'CLICK TO CAPTURE THE MOUSE', {
+        size: Math.round(8 * s), color: rgba(150, 200, 220, 255), align: 'center',
+        track: Math.round(3 * s), alpha: 0.35 + 0.25 * Math.abs(Math.sin(this.tick * 2.2)),
+      });
+    }
     const spec = p.spec;
     const T = this.text;
     const lock = game.rangeLock;

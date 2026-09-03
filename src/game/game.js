@@ -383,8 +383,21 @@ export class Game {
     if (input.justPressed('map')) { this.hud.mapOpen = !this.hud.mapOpen; this.sound.sfx('ui_select'); }
 
     if (!p.dead) {
-      p.applyLook(input.mouseDX + (input.padLookX || 0) * 14, input.mouseDY + (input.padLookY || 0) * 12,
-        this.sens, this.invertY, this.rc.projY, this.rc.h);
+      let lx = input.mouseDX + (input.padLookX || 0) * 14;
+      let ly = input.mouseDY + (input.padLookY || 0) * 12;
+      if (!input.locked && input.mouseMoved) {
+        // Pointer lock can be refused — an embedded frame, a browser setting, a
+        // user who said no. Steer from the cursor's offset from centre instead,
+        // so the game is playable either way.
+        const dz = 0.07;
+        const shape = (v) => {
+          const a = Math.abs(v);
+          return a < dz ? 0 : Math.sign(v) * Math.pow((a - dz) / (1 - dz), 1.7);
+        };
+        lx += shape(clamp((input.mouseX - 0.5) * 2, -1, 1)) * 1150 * dt;
+        ly += shape(clamp((input.mouseY - 0.5) * 2, -1, 1)) * 620 * dt;
+      }
+      p.applyLook(lx, ly, this.sens, this.invertY, this.rc.projY, this.rc.h);
       const axes = input.axes();
       p.moveWith(dt, axes, lv, this);
 

@@ -17,11 +17,24 @@ Any modern browser. It needs to be served over HTTP (it uses ES modules), not
 opened as a `file://` URL.
 
 ```
-cd nukehaus
 python3 -m http.server 8080
 ```
 
 Then open <http://localhost:8080>. Click once to wake the audio, and go.
+
+### Or as one file
+
+```
+npm install && node tools/bundle.js
+```
+
+writes `dist/nukehaus.html`: the entire game — engine, art, levels, music,
+voice — in a single ~865 KB HTML file that makes no external requests. Open it
+directly, mail it to someone, put it anywhere.
+
+Mouse look uses pointer lock where the browser allows it. Where it doesn't (an
+embedded frame, a browser setting, a user who said no) the cursor steers the
+view instead, so the game plays either way.
 
 Tested in Chromium. Runs comfortably at 60fps on Apple silicon; the renderer
 adapts its internal resolution to whatever hardware it lands on.
@@ -135,6 +148,7 @@ node tools/audio-integration.js   # static coverage + live audio graph measureme
 node tools/campaign.js [0|1|2]    # a bot plays the whole game and reports balance
 node tools/smoke.js               # boots, drives the UI, screenshots, frame cost
 node tools/beauty.js              # composes specific scenes and photographs them
+node tools/verify-bundle.js       # boots dist/nukehaus.html and plays it
 node tools/preview-textures.js / preview-sprites.js / preview-vm.js / preview-maps.js
 ```
 
