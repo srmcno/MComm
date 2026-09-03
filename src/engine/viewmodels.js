@@ -164,6 +164,9 @@ function bake(cv, opts = {}) {
     exposure = 1,
     botDark = 0,          // viewmodels fall off toward the player's hands
     env = 1,              // strength of the sky/floor environment reflection
+    bounce = 0,           // dim warm light coming back up off the floor
+    bounceDir = norm3(0.30, 0.90, 0.34),
+    bounceCol = [1.0, 0.76, 0.56],
   } = opts;
 
   const out = makeFrame(cv.w, cv.h);
@@ -188,6 +191,13 @@ function bake(cv, opts = {}) {
       let dr = fill * fillCol[0] * aov + wrap * keyCol[0] * aov;
       let dg = fill * fillCol[1] * aov + wrap * keyCol[1] * aov;
       let db = fill * fillCol[2] * aov + wrap * keyCol[2] * aov;
+
+      // --- bounce light off the floor, lifting chins and undersides ---
+      if (bounce > 0.001) {
+        const bd = max(0, nx * bounceDir[0] + ny * bounceDir[1] + nz * bounceDir[2]);
+        const k = bounce * pow(bd, 0.85) * aov;
+        dr += k * bounceCol[0]; dg += k * bounceCol[1]; db += k * bounceCol[2];
+      }
 
       // --- cool rim on grazing angles (bunker bounce) ---
       const fres = pow(1 - clamp(nz, 0, 1), 3);
@@ -580,6 +590,17 @@ function soot(cv, x, y, w, h, seed, amt = 0.45, scale = 11) {
   }
 }
 
+/** Occlude a list of points once each - repeated hits would crush to black. */
+function occludePath(cv, pts, amt) {
+  const seen = new Set();
+  for (const [x, y] of pts) {
+    const k = MPY(y) * cv.w + MPX(x);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    occlude(cv, x, y, amt);
+  }
+}
+
 /** Dark contact line under a shape - cheap, very effective for depth. */
 function underShadow(cv, x0, x1, y, depth = 3, strength = 0.55) {
   for (let x = x0; x <= x1; x += ST) {
@@ -822,11 +843,13 @@ function drawGlove(cv, pose) {
     const J = joints[i];
     for (let k = 1; k <= 2; k++) {
       const [jx, jy] = J.pts[k];
+      const crease = [];
       for (let t = -1; t <= 1; t += 0.10) {
         const A = T(jx, jy + t * J.r * 0.92);
         tint(cv, A[0], A[1], LEATHER.deep, 0.42);
-        occlude(cv, A[0], A[1], 0.74);
+        crease.push(A);
       }
+      occludePath(cv, crease, 0.76);
     }
     // highlight along the top (light side) of the proximal segment
     const [ax, ay] = J.pts[0], [bx2, by2] = J.pts[1];
@@ -840,13 +863,15 @@ function drawGlove(cv, pose) {
     // shadow groove down to the next finger
     if (i < 3) {
       const gy = (FING[i].y + FING[i + 1].y) * 0.5 * (1 + G.spread * 1.5);
+      const groove = [];
       for (let t = 0; t <= 1; t += 0.045) {
         const gx = lerp(3.5, J.pts[2][0], t);
         const yy = lerp(gy, (J.pts[2][1] + joints[i + 1].pts[2][1]) * 0.5, t);
         const A = T(gx, yy);
         tint(cv, A[0], A[1], LEATHER.deep, 0.5);
-        occlude(cv, A[0], A[1], 0.6);
+        groove.push(A);
       }
+      occludePath(cv, groove, 0.62);
     }
   }
 
@@ -1164,7 +1189,7 @@ const WIDOW = {
   brlCx: 93, brlTop: 40, brlBot: 102, brlR: 13.8, brlTilt: 0, brlTaper: 0.90,
   muzX: 93, muzY: 41,
   dialY: 66, dialX: 93,
-  ang: -0.34,
+  ang: -0.27,
 };
 
 /** The barrel assembly, drawn alone so the break-action can pivot it. */
@@ -1301,7 +1326,6 @@ function drawWidow(cv, P) {
   });
   knurl(cv, 110, 116, 32, 40, 3, 0.20);
   capsule(cv, 130, 110, 145, 158, 3.6, 4.2, { col: shade(BLUED_D, 1.1), gloss: 0.6, grain: 0.09, seed: 219 });
-  metalPanel(cv, 112, 99, 27, 8, { col: BLUED_D, gloss: 0.5, bevel: 2, round: 2, seed: 218 });
   screwHead(cv, 122, 124, 2.8, 0.9, rgba(168, 160, 148, 255));
 
   // ---- markings + wear ----
@@ -1952,8 +1976,10 @@ function muzzleSmoke(frame, cx, cy, amt, seed, o = {}) {
 const MUZZLE = {
   // the Widow's bore end after the barrel is swung to WIDOW.ang about the hinge
   pistol: [
-    96 + (93 - 96) * cos(-0.34) - (41 - 100) * sin(-0.34),
-    100 + (93 - 96) * sin(-0.34) + (41 - 100) * cos(-0.34),
+    WIDOW.hingeX + (WIDOW.muzX - WIDOW.hingeX) * cos(WIDOW.ang)
+      - (WIDOW.muzY - WIDOW.hingeY) * sin(WIDOW.ang),
+    WIDOW.hingeY + (WIDOW.muzX - WIDOW.hingeX) * sin(WIDOW.ang)
+      + (WIDOW.muzY - WIDOW.hingeY) * cos(WIDOW.ang),
   ],
   splitter: [98, 44], nailer: [100, 40], halo: [100, 60], deadman: [104, 30],
 };
@@ -1964,7 +1990,7 @@ const MUZZLE = {
  * composition - the models themselves never move.
  */
 const WEAPON_FIT = {
-  pistol: { s: 1.36, cx: 100, cy: 106, tx: 97, ty: 100 },
+  pistol: { s: 1.34, cx: 100, cy: 106, tx: 102, ty: 100 },
   splitter: { s: 1.26, cx: 99, cy: 100, tx: 100, ty: 94 },
   nailer: { s: 1.24, cx: 100, cy: 100, tx: 100, ty: 95 },
   halo: { s: 1.16, cx: 100, cy: 92, tx: 100, ty: 86 },
@@ -2051,7 +2077,7 @@ function buildWeapon(out, name) {
       fx, fy: fy - 6, fz: 30,
       flashCol: pose.flashCol || [1.0, 0.78, 0.46],
       flashR: pose.flashR || 130,
-      fill: 0.20, rim: 0.32, botDark: 0.34,
+      fill: 0.20, rim: 0.32, botDark: 0.34, bounce: 0.13,
     });
     rimOutline(f, rgba(15, 12, 18, 255));
     if (pose.smoke) muzzleSmoke(f, fx, fy - 2, pose.smoke, (seed += 137), { spread: name === 'splitter' ? 1.5 : 1 });
@@ -2752,12 +2778,12 @@ function drawWarden(cv, o = {}) {
       if (m === 1) {
         c = mix(skinBase, skinLit, clamp(n * 1.2 - 0.15, 0, 1));
         // stubble over the jaw, chin and upper lip
-        const jaw = smoothstep(cy + 4, cy + 16, y) * (1 - smoothstep(16, 22, abs(x - cx)));
-        const tache = smoothstep(6, 9, abs(y - (cy + 11))) < 0.5 && abs(x - cx) < 7 ? 1 : 0;
-        const st = clamp(jaw * 0.95 + tache * 0.5, 0, 1);
+        const jaw = smoothstep(cy + 6, cy + 15, y) * (1 - smoothstep(12, 19, abs(x - cx)));
+        const tache = (abs(y - (cy + 11)) < 2.6 && abs(x - cx) < 6.5) ? 1 : 0;
+        const st = clamp(jaw * 1.0 + tache * 0.8, 0, 1);
         if (st > 0.03) {
-          const dot = hash2(x, y, 77) < 0.42 + st * 0.3 ? 1 : 0;
-          c = mix(c, SKIN.stubble, st * (0.32 + dot * 0.30));
+          const dot = hash2(x, y, 77) < 0.5 ? 1 : 0;
+          c = mix(c, SKIN.stubble, st * (0.20 + dot * 0.34));
         }
         // warmth in the cheeks and nose
         const flush = pow(max(0, 1 - hypot((x - cx) / 12, (y - cy - 5) / 8)), 2) * (0.22 + (mode.flush || 0));
@@ -2834,7 +2860,10 @@ function drawWarden(cv, o = {}) {
       shader: (u, v) => mix(mix(SKIN.shade, SKIN.deep, 0.55), mix(SKIN.shade, skinBase, 0.35),
         clamp(hypot(u, v * 0.8), 0, 1)),
     });
-    for (let a2 = 0; a2 < TAU; a2 += 0.12) occlude(cv, e.x + cos(a2) * 6.6, e.y + 0.5 + sin(a2) * 4.8, 0.82);
+    occludePath(cv, Array.from({ length: 60 }, (_, i2) => {
+      const a2 = (i2 / 60) * TAU;
+      return [e.x + cos(a2) * 6.6, e.y + 0.5 + sin(a2) * 4.8];
+    }), 0.80);
     if (puffy) {
       ellipseFill(cv, e.x, e.y + 1.2, 6.8, 4.8, {
         bulge: 0.5, gloss: 0.12, grain: 0.05,
@@ -2896,11 +2925,31 @@ function drawWarden(cv, o = {}) {
 
   // ---------------- nose + mouth ----------------
   const nx2 = cx - look * 1.8, ny2 = cy + 6;
+  // shadow side of the nose: a wedge widening toward the nostril
+  for (let y = ny2 - 9; y <= ny2 + 3; y++) {
+    const k = clamp((y - (ny2 - 9)) / 12, 0, 1);
+    const w2 = 0.8 + k * 2.6;
+    for (let i2 = 0; i2 < w2; i2 += 0.5) {
+      tint(cv, nx2 + 2.6 + k * 1.6 + i2, y, SKIN.shade, 0.34 + k * 0.34);
+      occlude(cv, nx2 + 2.6 + k * 1.6 + i2, y, 0.90);
+    }
+  }
+  // lit bridge
+  for (let y = ny2 - 9; y <= ny2 + 1; y++) {
+    tint(cv, nx2 - 0.6, y, mix(skinBase, SKIN.lit, 0.5), 0.34);
+  }
+  // tip and nostrils
+  ellipseFill(cv, nx2, ny2 + 1.6, 3.6, 2.4, {
+    bulge: 0.9, gloss: 0.22, grain: 0,
+    shader: (u, v) => mix(mix(skinBase, SKIN.lit, 0.45), SKIN.shade, clamp(hypot(u, v * 0.8) * 0.9, 0, 1)),
+  });
   for (const sx of [-1, 1]) {
-    ellipseFill(cv, nx2 + sx * 3.0, ny2 + 2.2, 1.5, 1.1,
+    ellipseFill(cv, nx2 + sx * 3.1, ny2 + 2.6, 1.5, 1.1,
       { bulge: 0, gloss: 0, grain: 0, shader: () => SKIN.deep });
   }
-  for (let y = ny2 - 6; y <= ny2 + 2; y++) tint(cv, nx2 + 4.4 + (y - ny2) * 0.12, y, SKIN.shade, 0.45);
+  for (let x = nx2 - 4.4; x <= nx2 + 4.4; x += 0.5) {
+    tint(cv, x, ny2 + 4.0 + pow(abs(x - nx2) / 4.4, 2) * 1.2, SKIN.shade, 0.42);
+  }
 
   const my = cy + 14;
   // shadow under the nose and along the jaw, plus the philtrum groove
@@ -2911,9 +2960,12 @@ function drawWarden(cv, o = {}) {
   for (let y = ny2 + 4; y < my - 2.6; y += 0.5) {
     tint(cv, nx2 - 1, y, SKIN.shade, 0.28); tint(cv, nx2 + 1, y, mix(SKIN.lit, skinBase, 0.5), 0.22);
   }
-  for (let a = 0.35; a < PI - 0.35; a += 0.03) {
-    const jx = cx + cos(a) * -17.5, jy = cy + sin(a) * 20.5;
-    for (let d = 0; d < 3; d += 0.5) occlude(cv, jx, jy - d, 0.80);
+  {
+    const jaw = [];
+    for (let a = 0.35; a < PI - 0.35; a += 0.03) {
+      for (let d = 0; d < 3; d += 0.5) jaw.push([cx + cos(a) * -17.5, cy + sin(a) * 20.5 - d]);
+    }
+    occludePath(cv, jaw, 0.84);
   }
   drawMouth(cv, nx2, my, mouth, skinBase, tier, dead);
 
@@ -2988,22 +3040,22 @@ function fillEllipseFlat(cv, cx, cy, rx, ry, col) {
 }
 
 function drawMouth(cv, mx, my, kind, skinBase, tier, dead) {
-  const dark = rgba(58, 26, 26, 255);
+  const dark = rgba(40, 17, 18, 255);
   const teeth = rgba(226, 218, 200, 255);
   const lipC = SKIN.lip;
   const put2 = (x, y, c, a = 1) => tint(cv, x, y, c, a);
   if (kind === 'flat') {
-    for (let x = mx - 9; x <= mx + 9; x += 0.5) {
-      const u = (x - mx) / 9;
-      const y = my + u * u * 2.0 + (tier <= 2 ? 0.6 : 0);
-      const end = pow(abs(u), 3);
-      put2(x, y - 0.5, mix(dark, rgba(30, 14, 14, 255), end), 1);
-      put2(x, y + 0.5, mix(dark, rgba(30, 14, 14, 255), end), 1);
+    for (let x = mx - 7.6; x <= mx + 7.6; x += 0.5) {
+      const u = (x - mx) / 7.6;
+      const y = my + u * u * 1.8 + (tier <= 2 ? 0.6 : 0);
+      const end = pow(abs(u), 2.4);
+      put2(x, y, mix(dark, mix(lipC, SKIN.shade, 0.5), end), 1);
+      put2(x, y + 0.9, mix(mix(dark, lipC, 0.45), skinBase, end), 0.9);
       // lit lower lip and a shadow under it
-      put2(x, y + 1.8, mix(lipC, SKIN.lit, 0.35 - abs(u) * 0.3), 0.9);
-      put2(x, y + 3.0, SKIN.shade, 0.55 * (1 - end));
+      put2(x, y + 2.0, mix(lipC, SKIN.lit, 0.40 - abs(u) * 0.3), 0.85 * (1 - end * 0.6));
+      put2(x, y + 3.2, SKIN.shade, 0.45 * (1 - end));
       // upper lip in shadow
-      put2(x, y - 2.0, mix(lipC, SKIN.shade, 0.55), 0.75);
+      put2(x, y - 1.4, mix(lipC, SKIN.shade, 0.6), 0.6 * (1 - end * 0.5));
     }
   } else if (kind === 'open') {
     for (let j = -2.4; j <= 2.6; j += 0.5) {
@@ -3067,10 +3119,11 @@ function buildFace(opts) {
   setModel();
   drawWarden(cv, opts);
   const f = bake(cv, {
-    key: norm3(-0.40, -0.78, 0.52),
+    key: norm3(-0.40, -0.72, 0.60),
     keyCol: [1.0, 0.94, 0.86],
-    fill: 0.34, fillCol: [0.52, 0.56, 0.70],
-    rim: 0.26, env: 0.35, exposure: 1.02,
+    fill: 0.44, fillCol: [0.58, 0.60, 0.72],
+    rim: 0.24, env: 0.30, exposure: 1.02,
+    bounce: 0.34, bounceCol: [1.0, 0.70, 0.50],
   });
   rimOutline(f, rgba(12, 9, 12, 255));
   return f;

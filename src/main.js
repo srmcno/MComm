@@ -155,6 +155,9 @@ export async function boot() {
 
     const t0 = performance.now();
     sizeCanvas();
+    // The music sequencer has to be ticked in every state, not just gameplay,
+    // or the title theme never advances past its first 150ms of lookahead.
+    game.sound.update(dt);
 
     // --------------------------------------------------------- update
     if (game.state === STATE.TITLE) {

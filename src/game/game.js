@@ -296,7 +296,6 @@ export class Game {
       default: break;
     }
     this.hud.update(dt);
-    this.sound.update(dt);
 
     this.shake = damp(this.shake, 0, 5.5, dt);
     const sh = this.shake;
