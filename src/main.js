@@ -12,7 +12,9 @@ import {
 } from './game/render.js';
 import { clamp, damp } from './core/math.js';
 
-const MIN_W = 428, MAX_W = 1280;
+// Internal render width bounds. The ceiling is generous so a fast machine gets
+// a crisp image; the adaptive controller pulls it back down on anything slower.
+const MIN_W = 428, MAX_W = 1600;
 
 export async function boot() {
   const canvas = document.getElementById('screen');

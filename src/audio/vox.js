@@ -1510,6 +1510,20 @@ export const LINES = {
     'Nothing further from the sky. For eleven seconds.',
   ],
 
+  city_burning: [
+    '%s is on fire. It is still a city. Fire is a phase.',
+    '%s is burning. One more and it stops being a place.',
+    'Fires reported across %s. I have logged them under {W EH1 DH ER0}.',
+    '%s is at fifty percent city. The other fifty percent is doing its best.',
+  ],
+
+  city_rebuilt: [
+    '%s has been {R IY0 IH1 SH UW0 D}. The previous %s is not to be discussed.',
+    'Good news. %s is back. Slightly smaller. Slightly to the left. Nobody will notice.',
+    'I have rebuilt %s from the parts I had. Please do not go {IH0 N S AY1 D} it.',
+    '%s has been restored from a backup. The backup is from before the people.',
+  ],
+
   city_lost: [
     '%s has been retired. Please do not be discouraged. %s remain.',
     '%s is off the board. Its final population was very brave. %s remain.',

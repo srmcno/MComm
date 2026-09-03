@@ -432,29 +432,47 @@ export class Hud {
 
   drawMap(buf, W, H, s, game) {
     const lv = game.level, p = game.player;
-    const cell = clamp(Math.min(W * 0.62 / lv.W, H * 0.72 / lv.H), 2, 9);
+    const cell = clamp(Math.min(W * 0.60 / lv.W, H * 0.62 / lv.H), 2, 9);
     const mw = lv.W * cell, mh = lv.H * cell;
-    const ox = (W - mw) / 2, oy = (H - mh) / 2 - 6 * s;
-    fillRectBuf(buf, W, H, 0, 0, W, H, INK, 0.72);
-    fillRectBuf(buf, W, H, ox - 6, oy - 6, mw + 12, mh + 12, rgba(18, 16, 22, 255), 0.9);
+    const ox = (W - mw) / 2, oy = (H - mh) / 2 - 16 * s;
+    fillRectBuf(buf, W, H, 0, 0, W, H, INK, 0.90);
+    fillRectBuf(buf, W, H, ox - 7, oy - 7, mw + 14, mh + 14, rgba(16, 14, 20, 255), 0.96);
+    // Frame corners, so the panel reads as an instrument rather than a hole.
+    const cl = Math.max(8, 16 * s);
+    for (const [cx, cy, dx, dy] of [[ox - 7, oy - 7, 1, 1], [ox + mw + 7, oy - 7, -1, 1],
+                                    [ox - 7, oy + mh + 7, 1, -1], [ox + mw + 7, oy + mh + 7, -1, -1]]) {
+      fillRectBuf(buf, W, H, dx > 0 ? cx : cx - cl, cy - (dy > 0 ? 0 : 1), cl, 1.5 * s, AMBER, 0.8);
+      fillRectBuf(buf, W, H, cx - (dx > 0 ? 0 : 1), dy > 0 ? cy : cy - cl, 1.5 * s, cl, AMBER, 0.8);
+    }
     for (let y = 0; y < lv.H; y++) {
       for (let x = 0; x < lv.W; x++) {
         const i = y * lv.W + x;
-        if (!lv.visited[i]) continue;
         const px = ox + x * cell, py = oy + y * cell;
+        if (!lv.visited[i]) {
+          // Unsurveyed ground: a faint lattice, so the dark reads as fog rather
+          // than as nothing having been drawn.
+          if (((x + y) & 3) === 0) {
+            fillRectBuf(buf, W, H, px + cell * 0.5 - 0.5, py + cell * 0.5 - 0.5, 1, 1,
+              rgba(70, 66, 78, 255), 0.35);
+          }
+          continue;
+        }
         if (lv.wall[i] === 1) {
-          const c = lv.height[i] < 0.9 ? rgba(120, 108, 70, 255) : rgba(96, 100, 112, 255);
+          const c = lv.height[i] < 0.9 ? rgba(126, 112, 70, 255) : rgba(104, 108, 122, 255);
           fillRectBuf(buf, W, H, px, py, cell, cell, c, 0.95);
         } else if (lv.wall[i] === 2) {
           const k = lv.doorKind[i];
           fillRectBuf(buf, W, H, px, py, cell, cell,
             k === 1 ? RED : k === 2 ? rgba(80, 140, 255, 255) : k === 3 ? rgba(255, 208, 72, 255) : AMBER, 0.95);
-        } else if (lv.sky[i] || lv.roofPanel[i]) {
-          fillRectBuf(buf, W, H, px, py, cell, cell, rgba(40, 92, 110, 255), 0.85);
+        } else if (lv.roofPanel[i]) {
+          fillRectBuf(buf, W, H, px, py, cell, cell, rgba(44, 104, 124, 255), 0.9);
+          if (lv.sky[i]) addRectBuf(buf, W, H, px, py, cell, cell, rgba(60, 150, 180, 255), 0.35);
         } else if (lv.exit[i]) {
           fillRectBuf(buf, W, H, px, py, cell, cell, GREEN, 0.9);
+        } else if (lv.trigger[i]) {
+          fillRectBuf(buf, W, H, px, py, cell, cell, rgba(200, 70, 60, 255), 0.85);
         } else {
-          fillRectBuf(buf, W, H, px, py, cell, cell, rgba(38, 38, 46, 255), 0.85);
+          fillRectBuf(buf, W, H, px, py, cell, cell, rgba(44, 44, 54, 255), 0.9);
         }
       }
     }
@@ -477,12 +495,20 @@ export class Hud {
     lineBuf(buf, W, H, px + ca * 6, py + sa * 6, px + (-ca * 0.4 - sa * 0.6) * 6, py + (-sa * 0.4 + ca * 0.6) * 6, GREEN, 1, true);
     lineBuf(buf, W, H, px + ca * 6, py + sa * 6, px + (-ca * 0.4 + sa * 0.6) * 6, py + (-sa * 0.4 - ca * 0.6) * 6, GREEN, 1, true);
 
-    this.text.draw(buf, W, H, W / 2, oy + mh + 22 * s, `${game.level.name}  —  ${game.level.def.subtitle || ''}`, {
+    this.text.draw(buf, W, H, W / 2, oy - 16 * s,
+      `${game.level.name}  —  ${game.level.def.subtitle || ''}`, {
       size: Math.round(10 * s), color: AMBER, align: 'center', track: 3,
     });
-    this.text.draw(buf, W, H, W / 2, oy + mh + 36 * s,
-      `SECRETS ${game.player.secretsFound}/${game.secretTotal}   KILLS ${game.levelKills}/${game.enemyTotal}   TREASURE ${game.player.treasure}/${game.treasureTotal}`, {
-      size: Math.round(8 * s), color: BONE, align: 'center', track: 2, alpha: 0.8,
+    this.text.draw(buf, W, H, W / 2, oy + mh + 20 * s,
+      `SECRETS ${game.player.secretsFound}/${game.secretTotal}` +
+      `   ·   KILLS ${game.levelKills}/${game.enemyTotal}` +
+      `   ·   LAUNCH KEYS ${game.player.treasure}/${game.treasureTotal}` +
+      `   ·   WARHEADS DOWN ${game.player.skyKills}`, {
+      size: Math.round(8 * s), color: BONE, align: 'center', track: 2, alpha: 0.85,
+    });
+    this.text.draw(buf, W, H, W / 2, oy + mh + 32 * s,
+      'DECKS IN BLUE   ·   TRIGGERS IN RED   ·   EXIT IN GREEN', {
+      size: Math.round(7 * s), color: rgba(110, 100, 90, 255), align: 'center', track: 2.2,
     });
   }
 }
