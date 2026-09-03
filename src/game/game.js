@@ -14,6 +14,7 @@ import { Text, blitFrame, fillRectBuf, addRectBuf } from '../ui/text.js';
 import { parseLevelDef } from '../engine/assets.js';
 import { clamp, damp, lerp, dist, dist3, wrapAngle, makeRng, randRange, commas, TAU } from '../core/math.js';
 import { rgba } from '../core/pixels.js';
+import { recordRun, bestFor } from '../core/scores.js';
 
 export const STATE = {
   TITLE: 'title', BRIEF: 'brief', PLAY: 'play', PAUSE: 'pause',
@@ -136,6 +137,8 @@ export class Game {
     this.totalScoreCarry = 0;
     this.bossKilled = false;
     this.nextBonusCity = BONUS_CITY_EVERY;
+    this._recorded = false;
+    this.beatBest = false;
     this.loadLevel(0);
   }
 
@@ -255,6 +258,7 @@ export class Game {
   win() {
     this.setState(STATE.VICTORY);
     this.victoryT = 0;
+    this.recordThisRun(true);
     this.sound.stopMusic(0.6);
     this.sound.music('victory', { fadeIn: 0.2 });
     this.speak('victory', {}, 'You have won. There is nothing left to win.');
@@ -262,6 +266,7 @@ export class Game {
 
   gameOver(reason) {
     if (this.state === STATE.GAMEOVER) return;
+    this.recordThisRun(false);
     this.setState(STATE.GAMEOVER);
     this.overT = 0;
     this.overReason = reason;
@@ -270,6 +275,18 @@ export class Game {
     this.sound.sfx('player_die');
     this.speak(reason === 'cities' ? 'all_cities_lost' : 'game_over', {},
       reason === 'cities' ? 'All six are gone. You may stand down.' : 'The warden is no longer with us.');
+  }
+
+  /** Commit the run to the cabinet's memory, once. */
+  recordThisRun(won) {
+    if (this._recorded) return;
+    this._recorded = true;
+    this.previousBest = bestFor(this.difficulty);
+    this.scores = recordRun({
+      difficulty: this.difficulty, score: this.player.score,
+      cities: this.sky.livingCities().length, level: this.levelIndex + 1, won,
+    });
+    this.beatBest = this.player.score > this.previousBest;
   }
 
   // ---------------------------------------------------------------- speech
@@ -734,7 +751,9 @@ export class Game {
   }
 
   fireFlak(spec, a, m) {
-    const ideal = this.rangeLock ? this.rangeLock.range : -1;
+    // The precision bonus is for dialling the fuse yourself. Auto-ranging is
+    // there to keep you alive in a busy sky, not to pay you for it.
+    const ideal = (this.rangeLock && !this.player.autoFuse) ? this.rangeLock.range : -1;
     spec = this.diff.blast === 1 ? spec : { ...spec, blastRadius: spec.blastRadius * this.diff.blast };
     for (let i = 0; i < spec.pellets; i++) {
       let dx = a.x, dy = a.y, dz = a.z;
@@ -752,7 +771,7 @@ export class Game {
   }
 
   fireHalo(spec, a, m) {
-    const ideal = this.rangeLock ? this.rangeLock.range : -1;
+    const ideal = (this.rangeLock && !this.player.autoFuse) ? this.rangeLock.range : -1;
     const f = this.sky.fireFlak(m.x, m.y, m.z, a.x, a.y, a.z, spec, this.player.fuse, ideal);
     f.ring = spec;
   }

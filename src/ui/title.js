@@ -4,6 +4,7 @@
 import { rgba, mix, clamp as pclamp } from '../core/pixels.js';
 import { clamp, lerp, makeRng, TAU } from '../core/math.js';
 import { fillRectBuf, addRectBuf, lineBuf, blitFrame } from './text.js';
+import { getScores } from '../core/scores.js';
 
 const AMBER = rgba(255, 186, 64, 255);
 const HOT = rgba(255, 236, 190, 255);
@@ -328,6 +329,16 @@ export class TitleScreen {
         track: Math.round(4 * s), glow: on ? 0.8 : 0, glowColor: AMBER,
       });
     });
+    const sc = getScores();
+    const best = Math.max(...sc.best);
+    if (best > 0) {
+      T.draw(buf, W, H, W / 2, y0 + MENU.length * 22 * s + 16 * s,
+        `BEST SHIFT  ${best.toLocaleString()}` +
+        (sc.cleared.some(Boolean) ? '   ·   BUNKER CLEARED' : `   ·   REACHED LEVEL ${sc.deepest}`), {
+        size: Math.round(8 * s), color: AMBER, align: 'center',
+        track: Math.round(3 * s), alpha: 0.75,
+      });
+    }
   }
 
   drawPanel(buf, W, H, s, title, game) {
@@ -355,6 +366,18 @@ export class TitleScreen {
       T.draw(buf, W, H, p.x + 22 * s, y + 13 * s, d.blurb, {
         size: Math.round(8 * s), color: on ? BONE : rgba(90, 82, 74, 255), track: 1,
       });
+      const sc = getScores();
+      if (sc.best[i] > 0) {
+        T.draw(buf, W, H, p.x + p.w - 22 * s, y, sc.best[i].toLocaleString(), {
+          size: Math.round(11 * s), color: on ? AMBER : rgba(110, 96, 74, 255),
+          align: 'right', track: 1.4,
+        });
+        T.draw(buf, W, H, p.x + p.w - 22 * s, y + 13 * s,
+          sc.cleared[i] ? 'CLEARED' : 'BEST', {
+          size: Math.round(7 * s), color: sc.cleared[i] ? rgba(126, 232, 128, 255) : DIM,
+          align: 'right', track: 2,
+        });
+      }
     });
   }
 

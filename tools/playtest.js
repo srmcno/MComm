@@ -325,6 +325,30 @@ s = await page.evaluate(() => {
 check('auto-ranging locks and dials the fuse', s.has && s.err < 0.15,
   `lock ${s.range}m, fuse ${s.fuse}m`);
 
+// -------------------------- 11b. the precision bonus is for manual fuses only
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  const shoot = (auto) => {
+    g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('pistol');
+    g.player.score = 0;
+    const w = g.sky.spawnWarhead('stick', 1);
+    window.T.aimLead(w);
+    g.player.autoFuse = auto;
+    window.T.step(0.1);
+    // Both shots are equally well aimed; only the source of the fuse differs.
+    window.T.aimLead(w);
+    g.player.autoFuse = auto;
+    if (auto && g.rangeLock) g.player.fuse = g.rangeLock.range;
+    window.T.fireNow();
+    window.T.step(3);
+    return g.player.score;
+  };
+  return { manual: shoot(false), auto: shoot(true) };
+});
+check('a hand-dialled fuse pays double, auto-ranging does not',
+  s.manual >= 200 && s.auto > 0 && s.auto < s.manual,
+  `manual ${s.manual}, auto ${s.auto}`);
+
 // ---------------------------------------- 12. long soak: no leaks, no NaN
 s = await page.evaluate(() => {
   const g = window.NUKEHAUS.game;

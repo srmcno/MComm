@@ -151,8 +151,8 @@ export class Hud {
         T.draw(buf, W, H, pr.x, pr.y - b - 3 * s, `${lock.range.toFixed(0)}`, {
           size: Math.round(9 * s), color: lc, align: 'center', glow: 0.8, glowColor: lc,
         });
-        if (good) {
-          T.draw(buf, W, H, pr.x, pr.y + b + 10 * s, 'FUSE MATCHED', {
+        if (good && !p.autoFuse) {
+          T.draw(buf, W, H, pr.x, pr.y + b + 10 * s, 'FUSE MATCHED  ×2', {
             size: Math.round(7 * s), color: GREEN, align: 'center', track: 1.4,
           });
         }
@@ -163,11 +163,10 @@ export class Hud {
     T.draw(buf, W, H, cx, cy + R + 13 * s, `${p.fuse.toFixed(0)}m`, {
       size: Math.round(10 * s), color: col, align: 'center', glow: 0.7, glowColor: col, track: 0.5,
     });
-    if (p.autoFuse) {
-      T.draw(buf, W, H, cx, cy + R + 23 * s, 'AUTO', {
-        size: Math.round(7 * s), color: CYAN, align: 'center', track: 2, alpha: 0.75,
-      });
-    }
+    T.draw(buf, W, H, cx, cy + R + 23 * s, p.autoFuse ? 'AUTO-RANGING' : 'MANUAL  ×2', {
+      size: Math.round(7 * s), color: p.autoFuse ? CYAN : GREEN, align: 'center',
+      track: 2, alpha: 0.8,
+    });
   }
 
   // ---------------------------------------------------------- threat ring

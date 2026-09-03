@@ -45,6 +45,9 @@ A warhead caught in a burst cooks off its own payload, and that second burst is
 **bigger than the shell that lit it**. Warheads arrive in salvos, so a burst
 placed in the middle of a flight cascades. Chains are where the score is.
 
+Auto-ranging will dial the fuse for you, and in a busy sky you will want it. It
+does not pay the precision bonus. Turning it off doubles a clean burst.
+
 ## Controls
 
 ```
@@ -77,9 +80,17 @@ pushwall secrets, opening onto **silo decks** where the roof grinds back and the
 sky fills up.
 
 The six cities on the horizon — VERITY, ASHGROVE, LOW SABBATH, CANDLEMARK,
-HOLLOW BAY, SAINT ERROL — persist across the whole game. Each one dies to a
-single warhead and does not come back. Lose all six and it is over regardless of
-your health.
+HOLLOW BAY, SAINT ERROL — persist across the whole game. Each takes two hits:
+the first leaves it burning and still worth defending, the second finishes it.
+Lose all six and the run is over regardless of your health.
+
+They do not heal on their own, but score rebuilds them. Every 15,000 points the
+machine repairs the worst-hurt city and explains that this is not a
+contradiction. That is Missile Command's bonus city, and it is the difference
+between a hard game and a hopeless one.
+
+Not everything in the sky is aimed at a city. About a quarter of the arsenal is
+coming for the complex you are standing on.
 
 ## How it is built
 
@@ -119,18 +130,33 @@ modest hardware and sharpens up when it can.
 ## Tests
 
 ```
-node tools/playtest.js    # 28 gameplay assertions in a real browser
-node tools/smoke.js       # boots, drives the UI, screenshots, reports frame cost
-node tools/beauty.js      # composes specific scenes and photographs them
+node tools/playtest.js            # 29 gameplay assertions in a real browser
+node tools/audio-integration.js   # static coverage + live audio graph measurement
+node tools/campaign.js [0|1|2]    # a bot plays the whole game and reports balance
+node tools/smoke.js               # boots, drives the UI, screenshots, frame cost
+node tools/beauty.js              # composes specific scenes and photographs them
 node tools/preview-textures.js / preview-sprites.js / preview-vm.js / preview-maps.js
 ```
 
 `playtest.js` drives the actual game systems and checks the things that matter:
-that contact alone does not kill, that a burst chains through a flight, that a
-leaked warhead takes its city, that keycards gate their doors, that a wave can
-be fought and cleared, that every level is fully reachable with live collision
-in place, and that two minutes of continuous combat leaks no memory and produces
-no NaN.
+that contact alone does not kill, that a burst chains through a flight, that one
+leak burns a city and two destroy it, that a hand-dialled fuse pays double and
+auto-ranging does not, that keycards gate their doors, that a wave can be fought
+and cleared, that every level is fully reachable with live collision in place,
+and that two minutes of continuous combat leaks no memory and produces no NaN.
+
+`campaign.js` is the balance instrument. A bot with perfect lead calculation and
+no patience for anything else plays the whole game and reports, per level, how
+long it took, what it cost in health, and how many warheads it let through. It
+is how the flak collision bug was found: shells were bursting on the map
+boundary, so the intercept rate was under half what it should have been and the
+game was quietly unwinnable.
+
+## Records
+
+Best score, best city count and furthest level are kept per difficulty in
+`localStorage`, and shown on the title screen. If the browser refuses to store
+anything, the cabinet simply forgets.
 
 ## With respect to
 

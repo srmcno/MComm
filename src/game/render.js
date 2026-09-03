@@ -344,6 +344,16 @@ export function drawGameOver(game, buf, W, H) {
   T.draw(buf, W, H, W / 2, H * 0.62, `FINAL SCORE  ${commas(game.player.score)}`, {
     size: Math.round(14 * s), color: BONE, align: 'center', track: Math.round(3 * s), alpha: t,
   });
+  if (game.beatBest) {
+    T.draw(buf, W, H, W / 2, H * 0.68, 'A NEW RECORD. NOBODY IS IMPRESSED.', {
+      size: Math.round(9 * s), color: AMBER, align: 'center', track: Math.round(2.6 * s),
+      alpha: t * (0.55 + 0.45 * Math.abs(Math.sin(game.time * 4))),
+    });
+  } else if (game.previousBest) {
+    T.draw(buf, W, H, W / 2, H * 0.68, `BEST  ${commas(game.previousBest)}`, {
+      size: Math.round(9 * s), color: DIM, align: 'center', track: Math.round(2.6 * s), alpha: t,
+    });
+  }
   if (game.overT > 2.2) {
     T.draw(buf, W, H, W / 2, H * 0.80, 'PRESS ANYTHING', {
       size: Math.round(9 * s), color: AMBER, align: 'center', track: Math.round(6 * s),
@@ -378,6 +388,12 @@ export function drawVictory(game, buf, W, H) {
     `SECRETS ${game.player.secretsFound}   ·   LAUNCH KEYS ${game.player.treasure}   ·   BEST CHAIN ×${game.sky.bestChain}`, {
     size: Math.round(9 * s), color: DIM, align: 'center', track: 2, alpha: t,
   });
+  if (game.beatBest) {
+    T.draw(buf, W, H, W / 2, H * 0.74, 'A NEW RECORD FOR THIS CABINET', {
+      size: Math.round(9 * s), color: AMBER, align: 'center', track: Math.round(2.6 * s),
+      alpha: t * (0.55 + 0.45 * Math.abs(Math.sin(game.time * 4))),
+    });
+  }
   if (game.victoryT > 3) {
     T.draw(buf, W, H, W / 2, H * 0.84, 'PRESS ANYTHING', {
       size: Math.round(9 * s), color: AMBER, align: 'center', track: Math.round(6 * s),
