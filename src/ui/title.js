@@ -410,6 +410,8 @@ export class TitleScreen {
       [`${G.x}`, 'Pipe bomb. Press again to detonate. Timing is your problem.'],
       [`${G.a}`, 'Open doors, shove suspicious walls.'],
       [`${G.lb} ${G.rb}`, `Weapons.   ${G.back} map.   ${G.start} pause.`],
+      ['THE SIX', 'Each city survives one hit. The second one erases it.'],
+      ['', 'Every 15,000 points MUTTER reissues one. Score is a repair budget.'],
     ] : [
       ['MOUSE', 'Aim. Two axes, like anything else with a trigger.'],
       ['WHEEL / Z X', 'THE FUSE. How far the shell flies before it bursts.'],
@@ -421,9 +423,11 @@ export class TitleScreen {
       ['B or G', 'Pipe bomb. Press again to detonate. Timing is your problem.'],
       ['WASD', 'Move.  SHIFT run.  SPACE doors and suspicious walls.'],
       ['1-6', 'Weapons.   TAB map.   ESC pause.'],
+      ['THE SIX', 'Each city survives one hit. The second one erases it.'],
+      ['', 'Every 15,000 points MUTTER reissues one. Score is a repair budget.'],
     ];
     lines.forEach(([k, v], i) => {
-      const y = p.y + 38 * s + i * 13.5 * s;
+      const y = p.y + 36 * s + i * 12.4 * s;
       T.draw(buf, W, H, p.x + 20 * s, y, k, { size: Math.round(8.5 * s), color: AMBER, track: 1.6 });
       T.draw(buf, W, H, p.x + 116 * s, y, v, { size: Math.round(8.5 * s), color: BONE, track: 0.4 });
     });

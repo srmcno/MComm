@@ -2070,8 +2070,8 @@ const WEAPON_POSES = {
     fire0: { dx: -4, dy: 7, rot: -0.09, flash: 0, P: { stage: 'throw', dial: 0.06 } },
     fire1: { dx: 2, dy: 5, rot: 0.03, flash: 0, P: { stage: 'empty', spare: 0.0, close: 0.1 } },
     fire2: { dx: 1, dy: 2, rot: 0.01, flash: 0, P: { stage: 'empty', spare: 0.8, close: 0.4 } },
-    reload0: { dx: 4, dy: 8, rot: -0.06, flash: 0, P: { stage: 'wind', dial: 0.12 } },
-    reload1: { dx: 2, dy: 4, rot: -0.02, flash: 0, P: { stage: 'wind', dial: 0.64 } },
+    reload0: { dx: 4, dy: 8, rot: -0.06, flash: 0, P: { stage: 'wind', dial: 0.10, windShift: 5 } },
+    reload1: { dx: 2, dy: 4, rot: -0.02, flash: 0, P: { stage: 'wind', dial: 0.68, windShift: -4 } },
   },
 };
 
@@ -4223,9 +4223,12 @@ function pipeBody(cv, ax, ay, bx, by, r, o = {}) {
     stencil(cv, '15', dcx + dr * 0.34, dcy - dr * 0.16, rgba(40, 34, 28, 255), 0.9);
     // the hand, and the winding knob
     const ha = dial * TAU - PI / 2;
-    for (let rr = -dr * 0.12; rr <= dr * 0.68; rr += 0.4) {
-      tint(cv, dcx + cos(ha) * rr, dcy + sin(ha) * rr, rgba(186, 44, 34, 255), 0.95);
-      tint(cv, dcx + cos(ha) * rr + 1, dcy + sin(ha) * rr, rgba(120, 26, 22, 255), 0.6);
+    for (let rr = -dr * 0.14; rr <= dr * 0.70; rr += 0.35) {
+      const px3 = dcx + cos(ha) * rr, py3 = dcy + sin(ha) * rr;
+      const wide = rr < dr * 0.5 ? 1 : 0;
+      tint(cv, px3, py3, rgba(206, 48, 36, 255), 1);
+      if (wide) tint(cv, px3 - sin(ha), py3 + cos(ha), rgba(206, 48, 36, 255), 1);
+      tint(cv, px3 + sin(ha), py3 - cos(ha), rgba(126, 26, 22, 255), 0.7);
     }
     blob(cv, dcx, dcy, dr * 0.13, { col: rgba(70, 66, 62, 255), gloss: 0.5, grain: 0.05, seed: seed + 29 });
     const ka = at(0.62, -r * 2.35);
@@ -4290,7 +4293,7 @@ function drawPipebomb(cv, P) {
     if (stage === 'wind') {
       // second hand up on the winding knob
       drawGlove(cv, {
-        x: 138, y: 32, ang: 0.24, flip: -1, scale: 0.92, grip: 'pinch',
+        x: 128 + (P.windShift || 0), y: 34, ang: 0.22, flip: -1, scale: 0.94, grip: 'pinch',
         seed: 8511, wear: 0.5, sleeve: 1,
       });
     }

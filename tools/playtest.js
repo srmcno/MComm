@@ -2,6 +2,7 @@
 // combat loop works: warheads spawn, flak bursts kill them, chains score,
 // cities die when they leak, enemies fight, and levels can be completed.
 import { chromium } from 'playwright-core';
+import { chromePath } from './chrome-path.js';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,7 +19,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 await sleep(700);
 
 const browser = await chromium.launch({
-  executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+  ...(chromePath() ? { executablePath: chromePath() } : {}),
   args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader',
     '--enable-unsafe-swiftshader', '--mute-audio', '--disable-dev-shm-usage'],
 });
@@ -775,6 +776,47 @@ s = await page.evaluate(() => {
 });
 check('bodies stain the floor', s.painted > 0 && s.atlas > 0,
   `${s.painted} cells marked from ${s.atlas} decal textures`);
+
+// ------------------------------------------- 25. the Deadman reaches the sky
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  window.T.arm('deadman', 3);
+  for (let i = 0; i < 6; i++) g.sky.spawnWarhead('stick', 1);
+  const before = g.sky.warheads.length;
+  window.T.fireNow();
+  window.T.step(2.5);
+  return { before, after: g.sky.warheads.length };
+});
+check('the Deadman actually scrubs the sky', s.before >= 4 && s.after === 0,
+  `${s.before} inbound -> ${s.after}`);
+
+// -------------------------------------- 26. a mixed ammo box gives both types
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play');
+  const p = g.player;
+  p.ammo.flak = 999;                       // capped on flak, empty on nails
+  p.ammo.nail = 0;
+  const it = { kind: 'ammo', x: p.x, y: p.y, z: 0, taken: false };
+  g.pickUp(it);
+  return { nails: p.ammo.nail, taken: it.taken };
+});
+check('a full flak reserve does not swallow the nails in the same box',
+  s.nails > 0 && s.taken, `nails ${s.nails}`);
+
+// ------------------------------ 27. the end-of-floor bonus reaches the score
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.newGame(1); g.loadLevel(0); g.setState('play');
+  g.player.score = 1000;
+  g.levelTime = 1;
+  g.nextLevel();
+  return { total: g.interStats.total, score: g.player.score, carried: g.interStats.carried };
+});
+check('the intermission bonus is actually banked',
+  s.total > 0 && s.score === s.carried + s.total,
+  `carried ${s.carried} + bonus ${s.total} = ${s.score}`);
 
 // ------------------------------------------------------------- report
 console.log('');

@@ -1,10 +1,11 @@
 import { chromium } from 'playwright-core';
+import { chromePath } from './chrome-path.js';
 import { spawn } from 'node:child_process';
 const PORT = 8139;
 const server = spawn('python3', ['-m','http.server',String(PORT),'--bind','127.0.0.1'], { cwd: '/home/user/MComm', stdio:'ignore' });
 const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
 await sleep(600);
-const b = await chromium.launch({ executablePath:'/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+const b = await chromium.launch({ ...(chromePath() ? { executablePath: chromePath() } : {}),
   args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--mute-audio'] });
 const p = await b.newPage({ viewport:{width:1280,height:800} });
 await p.goto(`http://127.0.0.1:${PORT}/index.html`);

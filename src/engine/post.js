@@ -174,8 +174,39 @@ export class Post {
     };
     this.flash = 0; this.flashCol = [1, 0.95, 0.85];
     this.damage = 0; this.warp = 0; this.warpCentre = [0.5, 0.5];
-    try { this._initGL(); } catch (e) { console.warn('WebGL post unavailable:', e.message); this.gl = null; }
+    // Probe on a throwaway canvas first. A canvas keeps the first context type
+    // it is given for life, so binding the real one to webgl2 and only THEN
+    // discovering a missing capability is fatal: getContext('2d') afterwards
+    // returns null and the 2D fallback has nothing to draw into.
+    if (Post.webgl2Viable()) {
+      try { this._initGL(); } catch (e) { console.warn('WebGL post unavailable:', e.message); this.gl = null; }
+    }
     if (!this.gl) this._init2D();
+  }
+
+  /**
+   * Compile the whole pipeline against a 2x2 scratch canvas. Returns false for
+   * anything that would make _initGL throw, so the real canvas is never bound
+   * to a context we cannot use.
+   */
+  static webgl2Viable() {
+    let gl = null;
+    try {
+      const probe = document.createElement('canvas');
+      probe.width = 2; probe.height = 2;
+      gl = probe.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false });
+      if (!gl) return false;
+      if (!gl.getExtension('EXT_color_buffer_half_float') && !gl.getExtension('EXT_color_buffer_float')) return false;
+      program(gl, FRAG_BRIGHT);
+      program(gl, FRAG_BLUR);
+      program(gl, FRAG_COMPOSITE);
+      return true;
+    } catch (e) {
+      console.warn('WebGL post probe failed:', e && e.message);
+      return false;
+    } finally {
+      if (gl) { const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext(); }
+    }
   }
 
   _initGL() {
@@ -213,6 +244,12 @@ export class Post {
 
   _init2D() {
     this.ctx2d = this.canvas.getContext('2d', { alpha: false, desynchronized: true });
+    if (!this.ctx2d) {
+      // Nothing left to draw with. Better a black screen than a crash on frame 1.
+      console.warn('2D fallback unavailable: canvas already holds another context');
+      this.enabled = false;
+      return;
+    }
     this.ctx2d.imageSmoothingEnabled = false;
     this._img = null;
   }
@@ -327,6 +364,7 @@ export class Post {
 
   _present2D(frame, w, h) {
     const ctx = this.ctx2d;
+    if (!ctx) return;
     if (!this._img || this._img.width !== w || this._img.height !== h) {
       this._img = new ImageData(new Uint8ClampedArray(frame.buffer.slice(0)), w, h);
       this._scratch = document.createElement('canvas');

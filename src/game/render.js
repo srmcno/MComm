@@ -375,8 +375,13 @@ export function drawIntermission(game, buf, W, H) {
     if (r[2]) T.draw(buf, W, H, W * 0.72, y, r[2], { size: Math.round(11 * s), color: GREEN, track: 1.4, alpha: a });
   });
   if (reveal > rows.length) {
+    // Ramp the banked bonus onto the running score so the credit is visible.
+    const roll = clamp((game.interT - rows.length / 2.2) * 1.1, 0, 1);
+    const shown = st.carried === undefined
+      ? game.player.score
+      : st.carried + Math.round(st.total * roll);
     T.draw(buf, W, H, W / 2, y0 + 52 * s + rows.length * 20 * s + 22 * s,
-      `SCORE  ${commas(game.player.score)}`, {
+      `SCORE  ${commas(shown)}`, {
       size: Math.round(18 * s), color: AMBER, align: 'center', track: Math.round(3 * s),
       glow: 0.8, glowColor: AMBER,
     });

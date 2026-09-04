@@ -272,7 +272,14 @@ export class Level {
     return true;
   }
 
-  update(dt, onDoorEvent) {
+  /**
+   * @param {number} dt
+   * @param {function} onDoorEvent
+   * @param {function(number):boolean} [occupied]  is a body standing in this cell?
+   *   `_blockedByBody` was a flag nothing ever wrote, so doors shut on whoever
+   *   was standing in them.
+   */
+  update(dt, onDoorEvent, occupied) {
     const { W } = this;
     for (let i = 0; i < this.wall.length; i++) {
       const st = this.doorState[i];
@@ -282,7 +289,8 @@ export class Level {
         if (this.doorOpen[i] >= 1) { this.doorOpen[i] = 1; this.doorState[i] = 2; }
       } else if (st === 2) {
         this.doorTimer[i] -= dt;
-        if (this.doorTimer[i] <= 0 && !this._blockedByBody) this.doorState[i] = 3;
+        if (this.doorTimer[i] <= 0 && !(occupied && occupied(i))) this.doorState[i] = 3;
+        else if (this.doorTimer[i] <= 0) this.doorTimer[i] = 0.35;   // re-check shortly
       } else if (st === 3) {
         this.doorOpen[i] -= DOOR_SPEED * 0.75 * dt;
         if (this.doorOpen[i] <= 0) {

@@ -1,6 +1,7 @@
 // smoke.js - boots NUKEHAUS in a real browser, drives it, and writes screenshots.
 // Usage: node tools/smoke.js [outDir] [--shots=title,play,siege] [--seconds=N]
 import { chromium } from 'playwright-core';
+import { chromePath } from './chrome-path.js';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -9,7 +10,7 @@ const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
 const OUT = process.argv[2] && !process.argv[2].startsWith('--')
   ? process.argv[2]
   : '/tmp/claude-0/-home-user-MComm/1d9ae501-9927-5c9d-832d-0ee312d588ac/scratchpad/shots';
-const CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const CHROME = chromePath();
 const PORT = 8137;
 
 fs.mkdirSync(OUT, { recursive: true });
@@ -24,7 +25,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 await sleep(700);
 
 const browser = await chromium.launch({
-  executablePath: CHROME,
+  ...(CHROME ? { executablePath: CHROME } : {}),
   args: [
     '--no-sandbox', '--disable-dev-shm-usage',
     '--use-gl=angle', '--use-angle=swiftshader',

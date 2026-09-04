@@ -141,6 +141,11 @@ export async function boot() {
   input.onUnlock = () => {
     if (game.state === STATE.PLAY) {
       game.setState(STATE.PAUSE);
+      // Escape both drops the pointer lock and registers as a key. Without this
+      // the pause menu reads the same press on the next frame and resumes, so
+      // the one thing Escape reliably did was nothing.
+      input.consume('escape');
+      input.consume('pause');
     }
   };
 

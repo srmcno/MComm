@@ -2,6 +2,7 @@
 // Static half: every sfx name and every announcer line the game calls must exist.
 // Live half: boot a browser, start audio, and confirm sound is actually produced.
 import { chromium } from 'playwright-core';
+import { chromePath } from './chrome-path.js';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -65,7 +66,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 await sleep(600);
 
 const browser = await chromium.launch({
-  executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+  ...(chromePath() ? { executablePath: chromePath() } : {}),
   args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
     '--autoplay-policy=no-user-gesture-required', '--mute-audio', '--disable-dev-shm-usage'],
 });

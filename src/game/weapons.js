@@ -61,7 +61,9 @@ export const WEAPONS = {
     blurb: 'Scrubs the sky. Scrubs your instruments too. Use it once and regret it.',
     kind: 'nuke', vm: 'deadman',
     ammo: AMMO_CHARGE, cost: 1, refire: 2.4,
-    blastRadius: 46, altitude: 34,
+    // Warheads live 88-118 cells out at 44-76 altitude. A 46-radius burst at 34
+    // could not touch a single one of them, which made "scrubs the sky" a lie.
+    blastRadius: 132, altitude: 52,
     kick: 26, shakeAmount: 6.5, flash: 'flash_large', light: [1.0, 1.0, 0.94],
     sfx: 'deadman_arm',
   },

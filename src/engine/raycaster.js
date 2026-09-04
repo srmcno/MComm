@@ -266,7 +266,7 @@ export class Raycaster {
     // frame and a slideshow at high resolution.
     const LSTEP = 8, INV_LSTEP = 1 / 8;
 
-    const skyTop = this.skyTop;
+    const skyTop = this.skyTop, zbuf = this.zbuf;
     for (let y = 0; y < h; y++) {
       const p = y - horizon;
       const isFloor = p > 0;
@@ -306,7 +306,12 @@ export class Raycaster {
         // Above a parapet (or where the ray left the map) there is no ceiling —
         // there is the horizon. Without this you stand on an open silo deck and
         // see the roof of the corridor two rooms away instead of the sky.
-        if (!isFloor && skyTop[c] > 0 && y < skyTop[c]) { fx += stepX; fy += stepY; continue; }
+        // ...but only for the stretch BEYOND the wall we hit. A ceiling texel
+        // nearer than the parapet is a real roof over the player's head, and
+        // skipping it punched sky through the corridor he is standing in.
+        if (!isFloor && skyTop[c] > 0 && y < skyTop[c] && rowD >= zbuf[c] - 1e-3) {
+          this.needSky[c] = 1; fx += stepX; fy += stepY; continue;
+        }
         const cx = fx | 0, cy = fy | 0;
         if (cx < 0 || cy < 0 || cx >= W || cy >= H) { fx += stepX; fy += stepY; continue; }
         const ci = cy * W + cx;

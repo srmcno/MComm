@@ -9,6 +9,10 @@ import { clamp, dist3, makeRng, randRange, TAU } from '../core/math.js';
 import { CITY_AZIMUTH, CITY_NAMES } from '../engine/skybox.js';
 
 export const CITY_RADIUS = 62;
+// A shell is inert for its first few metres. Below this it passes through
+// geometry rather than bursting on it.
+export const FLAK_ARM_DIST = 5.5;
+
 export const SPAWN_RADIUS_MIN = 88;
 export const SPAWN_RADIUS_MAX = 118;
 export const SPAWN_ALT_MIN = 44;
@@ -326,6 +330,11 @@ export class SkyWar {
       if (w.type === 'mirv' && w.splitAt > 0 && w.z <= w.splitAt) {
         w.splitAt = -1;
         this._split(w, game);
+        // The carrier IS the payload. It used to keep flying after shedding its
+        // children, so every MIRV quietly added a third warhead to the wave.
+        w.alive = false;
+        this.warheads.splice(i, 1);
+        continue;
       }
 
       w.x += w.vx * dt; w.y += w.vy * dt; w.z += w.vz * dt;
@@ -383,6 +392,7 @@ export class SkyWar {
       let h = dt;
       if (f.travelled + speed * dt >= f.fuse) h = Math.max(0, (f.fuse - f.travelled) / speed);
       const step = speed * h;
+      const px = f.x, py = f.y, pz = f.z;
       f.x += f.vx * h; f.y += f.vy * h; f.z += f.vz * h;
       f.travelled += step;
       f.trailT += dt;
@@ -390,7 +400,9 @@ export class SkyWar {
 
       let pop = false;
       if (f.travelled >= f.fuse) pop = true;
-      if (f.z < 0.4 || f.travelled > 190) pop = true;
+      // Same arming rule for the ground plane, or a shot fired downhill detonates
+      // between the player's boots.
+      if ((f.z < 0.4 && f.travelled > FLAK_ARM_DIST) || f.travelled > 190) pop = true;
       // A sky mine cooks a shell early. That's what mines are for.
       if (!pop) {
         for (const w of this.warheads) {
@@ -401,7 +413,25 @@ export class SkyWar {
       // Shells burst on architecture, but only on what is actually in the way:
       // a parapet stops nothing above its cap, and the map boundary stops
       // nothing at all, since every warhead lives beyond it.
-      if (!pop && game.level && f.z < 1.4 && game.level.blockedAt(f.x, f.y, f.z)) pop = true;
+      // Sweep the whole step. A shell covers better than two cells per frame, so
+      // testing only where it landed let it tunnel clean through a one-cell wall.
+      // Nothing bursts inside the arming distance: a shell that clips the parapet
+      // at the player's elbow passes through it, the way real flak does, instead
+      // of taking his face off for shooting across his own deck.
+      if (!pop && game.level && f.travelled > FLAK_ARM_DIST && (f.z < 1.4 || pz < 1.4)) {
+        const n = Math.max(1, Math.ceil(step / 0.45));
+        for (let k = 1; k <= n; k++) {
+          const t = k / n;
+          const sx = px + (f.x - px) * t, sy = py + (f.y - py) * t, sz = pz + (f.z - pz) * t;
+          if (sz >= 1.4) continue;
+          if (game.level.blockedAt(sx, sy, sz)) {
+            // Burst at the contact point, not past it.
+            f.x = sx; f.y = sy; f.z = sz;
+            pop = true;
+            break;
+          }
+        }
+      }
 
       if (pop) {
         f.alive = false;

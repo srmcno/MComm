@@ -272,6 +272,8 @@ export class Input {
 
   isDown(a) { return this.down.has(a); }
   justPressed(a) { return this.pressed.has(a); }
+  /** Swallow an edge so two consumers cannot both act on one press. */
+  consume(a) { this.pressed.delete(a); }
   justReleased(a) { return this.released.has(a); }
   rawJustPressed(code) { return this.rawPressed.has(code); }
   anyPressed() { return this.rawPressed.size > 0 || this.mousePressed !== 0 || this.pressed.size > 0; }

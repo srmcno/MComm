@@ -361,6 +361,18 @@ export function parseLevelDef(def, index) {
   return out;
 }
 
+/**
+ * Hand the frame back to the browser so the loading screen can actually paint.
+ * Generation is one long synchronous burn otherwise, and the player stares at a
+ * blank canvas for the whole of it before the game appears fully formed.
+ */
+function yieldFrame() {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
+    else setTimeout(resolve, 0);
+  });
+}
+
 export async function loadAssets(onProgress = () => {}) {
   const warnings = [];
   const warn = (label, e) => {
@@ -369,18 +381,21 @@ export async function loadAssets(onProgress = () => {}) {
   };
 
   onProgress(0.05, 'CALIBRATING SURFACES');
+  await yieldFrame();
   let textures = null;
   try { textures = buildTextures(); }
   catch (e) { warn('textures.build', e); }
   if (!textures || !textures.atlas || textures.atlas.length < TEX * TEX) textures = fallbackTextures();
 
   onProgress(0.28, 'WAKING THE STAFF');
+  await yieldFrame();
   let sprites = null;
   try { sprites = buildSprites(); }
   catch (e) { warn('sprites.build', e); }
   if (!sprites || !sprites.frames) sprites = fallbackSprites();
 
   onProgress(0.52, 'ISSUING ORDNANCE');
+  await yieldFrame();
   let viewmodels = null;
   try { viewmodels = buildViewmodels(); }
   catch (e) { warn('viewmodels.build', e); }
@@ -400,6 +415,7 @@ export async function loadAssets(onProgress = () => {}) {
   ensure(viewmodels, requiredViewmodelKeys(), fallbackViewmodels);
 
   onProgress(0.72, 'SURVEYING THE BUNKER');
+  await yieldFrame();
   let maps = null;
   try { maps = MAPS_MODULE.MAPS && MAPS_MODULE.MAPS.length ? MAPS_MODULE : null; }
   catch (e) { warn('maps', e); }
@@ -441,6 +457,7 @@ export async function loadAssets(onProgress = () => {}) {
   for (const n of TEXTURE_ORDER) if (!texIndex.has(n)) texIndex.set(n, 0);
 
   onProgress(0.9, 'TUNING THE PUBLIC ADDRESS');
+  await yieldFrame();
   return {
     texAtlas: textures.atlas,
     texEmissive: textures.emissive,

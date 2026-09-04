@@ -202,6 +202,11 @@ export class Game {
     p.dead = false;
     p.emp = 0;
     p.health = Math.max(p.health, 45);
+    // A kill streak is a per-floor thing. It used to ride the elevator down.
+    p.streak = 0;
+    p.streakTimer = 0;
+    p.kickCooldown = 0;
+    p.cooldown = 0;
 
     // Level one stays clean until its siege; the leak announces itself there.
     const bs = BREACH_SCHEDULE[Math.min(this.levelIndex, BREACH_SCHEDULE.length - 1)];
@@ -215,6 +220,7 @@ export class Game {
     };
     if (bs.cap === 0) this.breach.cap = 0;
     this.hazards = [];
+    this.timers = [];
 
     this.triggerOrder = [];
     for (let n = 0; n < this.level.trigger.length; n++) {
@@ -274,6 +280,11 @@ export class Game {
     this.levelKills = 0;
     this.secretTotal = secretTotal;
     this.treasureTotal = treasureTotal;
+    // The player's own counters run for the whole campaign; the end-of-floor
+    // card is about THIS floor, so it needs its own pair or floor 3 reports
+    // 7 of 3 secrets and never pays the perfect bonus again.
+    this.levelSecrets = 0;
+    this.levelTreasure = 0;
 
     this.hud.popups.length = 0;
     this.hud.mapOpen = false;
@@ -313,11 +324,15 @@ export class Game {
   }
 
   nextLevel() {
+    this.interStats = this.buildStats();
+    // The card totalled the bonuses and then threw them away. Bank them before
+    // anything reads the score again, including the victory screen.
+    this.interStats.carried = this.player.score;
+    this.player.score += this.interStats.total;
     if (this.levelIndex + 1 >= this.totalLevels) { this.win(); return; }
     this.totalScoreCarry = this.player.score;
     this.setState(STATE.INTERMISSION);
     this.interT = 0;
-    this.interStats = this.buildStats();
     this.sound.stopMusic(0.5);
     this.sound.music('hero', { fadeIn: 0.8 });
     this.sound.sfx('elevator');
@@ -328,14 +343,14 @@ export class Game {
     const p = this.player;
     const timeBonus = Math.max(0, Math.round((this.level.def.par - this.levelTime) * 25));
     const cityBonus = this.sky.livingCities().length * 2500;
-    const killPct = this.enemyTotal ? p.kills / this.enemyTotal : 1;
-    const secretPct = this.secretTotal ? p.secretsFound / this.secretTotal : 1;
+    const killPct = this.enemyTotal ? this.levelKills / this.enemyTotal : 1;
+    const secretPct = this.secretTotal ? this.levelSecrets / this.secretTotal : 1;
     const perfect = (killPct >= 1 ? 5000 : 0) + (secretPct >= 1 ? 5000 : 0);
     return {
       time: this.levelTime, timeBonus, cityBonus, perfect,
       kills: this.levelKills, enemyTotal: this.enemyTotal,
-      secrets: p.secretsFound, secretTotal: this.secretTotal,
-      treasure: p.treasure, treasureTotal: this.treasureTotal,
+      secrets: this.levelSecrets, secretTotal: this.secretTotal,
+      treasure: this.levelTreasure, treasureTotal: this.treasureTotal,
       bestChain: this.sky.bestChain,
       skyKills: p.skyKills,
       total: timeBonus + cityBonus + perfect,
@@ -444,6 +459,26 @@ export class Game {
 
   // ---------------------------------------------------------------- update
 
+  /**
+   * Schedule work on GAME time, not wall time. setTimeout keeps running while
+   * the game is paused, so a queued flight or a game-over could fire behind a
+   * pause menu, or be missed entirely.
+   */
+  after(delay, fn) {
+    if (!this.timers) this.timers = [];
+    this.timers.push({ t: delay, level: this.levelIndex, fn });
+  }
+
+  _runTimers(dt) {
+    if (!this.timers || !this.timers.length) return;
+    for (let i = this.timers.length - 1; i >= 0; i--) {
+      const q = this.timers[i];
+      if (q.level !== this.levelIndex) { this.timers.splice(i, 1); continue; }
+      q.t -= dt;
+      if (q.t <= 0) { this.timers.splice(i, 1); q.fn(); }
+    }
+  }
+
   update(dt, input) {
     this.time += dt;
     this.text.frameTick(this.time);
@@ -518,6 +553,7 @@ export class Game {
     const p = this.player;
     const lv = this.level;
     this.levelTime += dt;
+    this._runTimers(dt);
 
     if (input.justPressed('pause') || input.justPressed('escape')) {
       this.setState(STATE.PAUSE);
@@ -585,6 +621,14 @@ export class Game {
         this.particles.dust(x, y, 0.4, 14);
         this.shake = Math.max(this.shake, 1.2);
       }
+    }, (i) => {
+      // Hold the door for anything standing in it. A closing slab used to
+      // swallow the player, and pin an enemy inside the wall for good.
+      if (lv.idx(p.x, p.y) === i) return true;
+      for (const e of this.enemies) {
+        if (e.alive && e.state !== ST.DEAD && lv.idx(e.x, e.y) === i) return true;
+      }
+      return false;
     });
     if (lv.updateRoof(dt)) {
       if (lv.roofOpen > 0.02 && lv.roofOpen < 0.99) this.shake = Math.max(this.shake, 0.55);
@@ -749,7 +793,7 @@ export class Game {
         h.tick = (h.tick || 0) + dt;
         if (h.tick > 0.5) {
           h.tick = 0;
-          p.hurt(h.dps * 0.5, this);
+          p.hurt(h.dps * 0.5, this, 'hazard');
           this.sound.sfx('acid_burn', { vol: 0.5 });
           this.hud.damageFrom(Math.atan2(h.y - p.y, h.x - p.x));
         }
@@ -829,34 +873,54 @@ export class Game {
   pickUp(it) {
     const p = this.player;
     let got = true, msg = '', col = rgba(126, 232, 128, 255);
+    // Nothing is heard, said or shown until the pickup is known to have taken.
+    // A health chime for a player already at full was a lie the mixer told.
+    let sfx = null, after = null;
     switch (it.kind) {
       case 'key_red': p.keys[0] = true; msg = 'RED KEYCARD'; col = rgba(255, 74, 62, 255);
-        this.sound.sfx('pickup_key'); this.hud.setFace('face_key', 1.8);
-        this.speak('key_taken', {}, 'You have taken something that was not yours. Wonderful.'); break;
+        sfx = 'pickup_key';
+        after = () => { this.hud.setFace('face_key', 1.8);
+          this.speak('key_taken', {}, 'You have taken something that was not yours. Wonderful.'); };
+        break;
       case 'key_blue': p.keys[1] = true; msg = 'BLUE KEYCARD'; col = rgba(80, 140, 255, 255);
-        this.sound.sfx('pickup_key'); this.hud.setFace('face_key', 1.8);
-        this.speak('key_taken', {}, 'Access granted. Against my advice.'); break;
+        sfx = 'pickup_key';
+        after = () => { this.hud.setFace('face_key', 1.8);
+          this.speak('key_taken', {}, 'Access granted. Against my advice.'); };
+        break;
       case 'key_gold': p.keys[2] = true; msg = 'GOLD KEYCARD'; col = rgba(255, 208, 72, 255);
-        this.sound.sfx('pickup_key'); this.hud.setFace('face_key', 1.8);
-        this.speak('key_taken', {}, 'That one opens the bad room.'); break;
-      case 'medkit_small': got = p.heal(18) > 0; msg = '+18 VITALS'; this.sound.sfx('pickup_health'); break;
-      case 'medkit_big': got = p.heal(48) > 0; msg = '+48 VITALS'; this.sound.sfx('pickup_health'); break;
-      case 'ammo': got = p.giveAmmo(AMMO_FLAK, 20) > 0 || p.giveAmmo(AMMO_NAIL, 26) > 0;
-        msg = 'FLAK SHELLS'; col = rgba(255, 186, 64, 255); this.sound.sfx('pickup_ammo'); break;
-      case 'ammo_crate':
-        p.giveAmmo(AMMO_FLAK, 50); p.giveAmmo(AMMO_NAIL, 60);
-        msg = 'AMMO CRATE'; col = rgba(255, 186, 64, 255); this.sound.sfx('pickup_ammo'); break;
+        sfx = 'pickup_key';
+        after = () => { this.hud.setFace('face_key', 1.8);
+          this.speak('key_taken', {}, 'That one opens the bad room.'); };
+        break;
+      case 'medkit_small': got = p.heal(18) > 0; msg = '+18 VITALS'; sfx = 'pickup_health'; break;
+      case 'medkit_big': got = p.heal(48) > 0; msg = '+48 VITALS'; sfx = 'pickup_health'; break;
+      case 'ammo': {
+        // Both barrels, not either. `||` short-circuited, so a player who was
+        // capped on flak walked away from the nails in the same box.
+        const f = p.giveAmmo(AMMO_FLAK, 20), n = p.giveAmmo(AMMO_NAIL, 26);
+        got = f > 0 || n > 0;
+        msg = 'FLAK SHELLS'; col = rgba(255, 186, 64, 255); sfx = 'pickup_ammo'; break;
+      }
+      case 'ammo_crate': {
+        const f = p.giveAmmo(AMMO_FLAK, 50), n = p.giveAmmo(AMMO_NAIL, 60);
+        got = f > 0 || n > 0;
+        msg = 'AMMO CRATE'; col = rgba(255, 186, 64, 255); sfx = 'pickup_ammo'; break;
+      }
       case 'treasure': p.treasure++; p.score += 2500; msg = 'LAUNCH KEY  +2500';
-        col = rgba(255, 208, 72, 255); this.sound.sfx('pickup_treasure'); this.hud.setFace('face_grin', 1.6); break;
+        col = rgba(255, 208, 72, 255); sfx = 'pickup_treasure';
+        after = () => { this.levelTreasure++; this.hud.setFace('face_grin', 1.6); };
+        break;
       case 'weapon': {
         const w = it.weapon || 'splitter';
         const isNew = p.giveWeapon(w);
         msg = isNew ? WEAPONS[w].name : 'AMMO';
         col = rgba(110, 236, 244, 255);
-        this.sound.sfx('pickup_weapon');
+        sfx = 'pickup_weapon';
         if (isNew) {
-          this.hud.popup(WEAPONS[w].blurb, { size: 9, life: 3.4, y: 22, dy: -8, color: rgba(200, 194, 180, 255), glow: 0.2 });
-          this.radio.say('brick', 'brick_pickup_weapon', this.radio.pick('weap', BRICK_LINES.weapon), { priority: 1 });
+          after = () => {
+            this.hud.popup(WEAPONS[w].blurb, { size: 9, life: 3.4, y: 22, dy: -8, color: rgba(200, 194, 180, 255), glow: 0.2 });
+            this.radio.say('brick', 'brick_pickup_weapon', this.radio.pick('weap', BRICK_LINES.weapon), { priority: 1 });
+          };
         }
         break;
       }
@@ -864,6 +928,8 @@ export class Game {
     }
     if (!got) return;
     it.taken = true;
+    if (sfx) this.sound.sfx(sfx);
+    if (after) after();
     this.hud.popup(msg, { size: 13, life: 1.5, color: col });
     this.particles.sparks(it.x, it.y, 0.5, 8, 1.2, [col & 255, (col >>> 8) & 255, (col >>> 16) & 255], 3);
   }
@@ -990,10 +1056,9 @@ export class Game {
         this.hud.showBanner('FLIGHT DOWN', 'ANOTHER IS COMING', 2.6, rgba(255, 186, 64, 255));
         this.sound.sfx('wave_clear');
         this.speak('wave_clear', {}, 'That flight is accounted for. The next one is not.');
-        const at = this.levelIndex;
-        setTimeout(() => {
-          if (this.state === STATE.PLAY && this.levelIndex === at) this.startWaveDef(next.w, next.i);
-        }, 6000);
+        this.after(6, () => {
+          if (this.state === STATE.PLAY) this.startWaveDef(next.w, next.i);
+        });
         return;
       }
       this.level.roofTarget = 0;
@@ -1021,7 +1086,9 @@ export class Game {
     const cands = [];
     for (let y = 0; y < lv.H; y++) for (let x = 0; x < lv.W; x++) {
       const i = y * lv.W + x;
-      if (lv.roofPanel[i] && !lv.wall[i]) {
+      // propBlock matters here: a pillar cell is walkable in the grid but solid
+      // to movement, and a grunt dropped into one is stuck there for the level.
+      if (lv.roofPanel[i] && !lv.wall[i] && !lv.propBlock[i]) {
         const d = dist(x + 0.5, y + 0.5, this.player.x, this.player.y);
         if (d > 4.5) cands.push([x + 0.5, y + 0.5]);
       }
@@ -1029,6 +1096,9 @@ export class Game {
     if (!cands.length) return;
     const [x, y] = cands[(this.rng() * cands.length) | 0];
     const e = new Enemy(kind, x, y);
+    // Same difficulty scaling every other spawner applies. Reinforcements were
+    // the one crew that arrived at stock health on every setting.
+    e.hp = e.maxHp = Math.round(e.maxHp * this.diff.enemyHp);
     e.state = ST.ALERT;
     this.enemies.push(e);
     this.enemyTotal++;
@@ -1156,6 +1226,7 @@ export class Game {
     const p = this.player;
     const r = this.level.tryUse(p.x, p.y, p.ang, p.keys, (x, y) => {
       p.secretsFound++;
+      this.levelSecrets++;
       p.score += 1500;
       this.hud.popup('SECRET FOUND  +1500', { size: 13, life: 2.0, color: rgba(255, 208, 72, 255) });
       this.hud.setFace('face_grin', 2.0);
@@ -1178,7 +1249,7 @@ export class Game {
       return;
     }
     if (!p.canFire()) {
-      if (p.cooldown <= 0 && this.ammoDry !== this.time) {
+      if (p.cooldown <= 0 && this.time - this.ammoDry > 0.45) {
         this.ammoDry = this.time;
         this.sound.sfx('dryfire');
         if (p.ammoFor(p.weapon) < p.spec.cost) {
@@ -1247,6 +1318,13 @@ export class Game {
 
   fireHalo(spec, a, m) {
     const ideal = (this.rangeLock && !this.player.autoFuse) ? this.rangeLock.range : -1;
+    // The ring is flak too, so it takes the same difficulty scaling. It used to
+    // be the one weapon that ignored it, which made VETERAN's Halo a cheat code.
+    if (this.diff.blast !== 1) {
+      spec = { ...spec,
+        blastRadius: spec.blastRadius * this.diff.blast,
+        ringRadius: spec.ringRadius * (0.5 + this.diff.blast * 0.5) };
+    }
     const f = this.sky.fireFlak(m.x, m.y, m.z, a.x, a.y, a.z, spec, this.player.fuse, ideal);
     f.ring = spec;
   }
@@ -1290,7 +1368,7 @@ export class Game {
     this.post.warpCentre = [0.5, 0.4];
     this.shake = 9;
     p.emp = 6.5;
-    p.hurt(12, this);
+    p.hurt(12, this, 'deadman');
     this.hud.showBanner('DEADMAN', 'THE SKY IS CLEAN. SO ARE YOUR INSTRUMENTS.', 3.2, rgba(255, 240, 200, 255));
   }
 
@@ -1349,7 +1427,7 @@ export class Game {
     const p = this.player;
     const dp = dist(x, y, p.x, p.y);
     if (dp < radius) {
-      p.hurt(damage * 0.5 * (1 - dp / radius), this);
+      p.hurt(damage * 0.5 * (1 - dp / radius), this, 'own-explosion');
       this.hud.damageFrom(Math.atan2(y - p.y, x - p.x));
     }
   }
@@ -1517,7 +1595,7 @@ export class Game {
     if (b.deadman) return;
     const p = this.player;
     const dmg = clamp(26 * (1 - d / (b.r * 0.85)), 4, 30);
-    p.hurt(dmg, this);
+    p.hurt(dmg, this, 'own-airburst');
     this.hud.damageFrom(Math.atan2(b.y - p.y, b.x - p.x));
     this.sound.sfx('player_hurt');
     this.hud.popup('TOO CLOSE', { size: 12, life: 1.2, color: rgba(255, 74, 62, 255) });
@@ -1564,11 +1642,9 @@ export class Game {
     this.player.score = Math.max(0, this.player.score - 2000);
     if (left === 0) {
       this.speak('all_cities_lost', {}, 'That was the last one. You are relieved of duty.');
-      const at = this.levelIndex;
-      setTimeout(() => {
-        if (this.state === STATE.PLAY && this.levelIndex === at &&
-            !this.sky.livingCities().length) this.gameOver('cities');
-      }, 2600);
+      this.after(2.6, () => {
+        if (!this.sky.livingCities().length) this.gameOver('cities');
+      });
     } else if (left === 1) {
       this.speak('city_lost_last', { args: [city.name] }, `${city.name} is retired. One left. No pressure.`);
     } else {
@@ -1798,9 +1874,17 @@ export class Game {
     const phase = e.phase || 1;
     // Salvo of bolts plus fresh warheads: MUTTER fights on both axes at once.
     const spread = phase >= 3 ? 4 : 2;
+    const ez = e.z + 1.2;
+    // Aim at the player's actual elevation. A fixed -0.06 slope put every bolt
+    // into the deck at 19.5 cells, which is inside an arena MUTTER can see 60
+    // cells across: the boss was firing warning shots at the floor.
+    const flat = Math.hypot(p.x - e.x, p.y - e.y) || 1;
+    const slope = clamp((p.z - ez) / flat, -0.9, 0.9);
+    const norm = Math.hypot(1, slope);
     for (let i = -spread; i <= spread; i++) {
-      const a = Math.atan2(p.y - e.y, p.x - e.x) + i * (phase >= 3 ? 0.11 : 0.14);
-      this.bolts.push(new Bolt(e.x, e.y, e.z + 1.2, Math.cos(a), Math.sin(a), -0.06,
+      // Wide enough to be a wall you strafe out of rather than a shotgun.
+      const a = Math.atan2(p.y - e.y, p.x - e.x) + i * (phase >= 3 ? 0.13 : 0.17);
+      this.bolts.push(new Bolt(e.x, e.y, ez, Math.cos(a) / norm, Math.sin(a) / norm, slope / norm,
         13 + phase * 2, e.def.damage * this.diff.enemyDamage, e));
     }
     if (phase >= 3) {

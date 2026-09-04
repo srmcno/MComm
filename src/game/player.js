@@ -113,8 +113,15 @@ export class Player {
     return true;
   }
 
-  hurt(n, game) {
+  hurt(n, game, src = 'unknown') {
     if (this.dead) return;
+    this.lastHurtBy = src;
+    // A per-source ledger, so the balance harness can say what actually killed
+    // a run instead of guessing from the level number.
+    if (game) {
+      if (!game.dmgLedger) game.dmgLedger = {};
+      game.dmgLedger[src] = (game.dmgLedger[src] || 0) + n;
+    }
     // Armour eats the majority of a hit until it's gone.
     if (this.armour > 0) {
       const soak = Math.min(this.armour, n * 0.6);
@@ -154,16 +161,9 @@ export class Player {
     // back to a working floor. Sustained pistol fire is roughly free; anything
     // heavier draws down reserves you have to go and find.
     this.regenTimer += dt;
-    if (this.regenTimer > 0.8) {
+    const rate = 0.8 / ((game && game.diff && game.diff.regen) || 1);
+    if (this.regenTimer > rate) {
       this.regenTimer = 0;
-    this.kickCooldown = 0;
-    this.kickAnim = 0;
-    this.streak = 0;         // kills without being hit
-    this.streakTimer = 0;
-    this.swayX = 0;          // viewmodel lag behind the camera
-    this.swayY = 0;
-    this._lastAng = 0;
-    this._lastPitch = 0;
       if (this.ammo[AMMO_FLAK] < 40) this.giveAmmo(AMMO_FLAK, 1);
     }
 
@@ -204,8 +204,10 @@ export class Player {
   moveWith(dt, axes, level, game) {
     const speed = (axes.run ? 5.05 : 3.35) * (this.dead ? 0 : 1);
     const ca = Math.cos(this.ang), sa = Math.sin(this.ang);
-    let wx = ca * axes.fwd + (-sa) * -axes.strafe;
-    let wy = sa * axes.fwd + (ca) * -axes.strafe;
+    // right = (-sin, cos) in this y-down grid, so strafe adds it directly.
+    // The extra negation this used to carry sent D left and A right.
+    let wx = ca * axes.fwd + (-sa) * axes.strafe;
+    let wy = sa * axes.fwd + (ca) * axes.strafe;
     const L = Math.hypot(wx, wy);
     if (L > 1) { wx /= L; wy /= L; }
     const targetVx = wx * speed, targetVy = wy * speed;

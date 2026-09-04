@@ -73,7 +73,10 @@ export const ENEMY_TYPES = {
   boss: {
     // Sits on the deck rather than hovering over it; MUTTER is bolted to the silo.
     hp: 2600, speed: 0, radius: 1.2, height: 2.9, eye: 1.6,
-    sight: 60, attack: 'boss', range: 60, damage: 16, windup: 0.9, cooldown: 2.1,
+    // Damage per BOLT, and it fires five to nine at a time. It was tuned at 16
+    // back when a fixed downward slope buried the whole salvo in the deck; now
+    // that they actually reach you, a volley has to be survivable.
+    sight: 60, attack: 'boss', range: 60, damage: 8, windup: 0.9, cooldown: 2.1,
     score: 10000, alert: 'boss_roar', pain: 0.0, gib: 20, boss: true,
     z: 0.02, walkFps: 4, deathFps: 6,
   },
@@ -257,7 +260,7 @@ export class Enemy {
     if (this.lungeT > 0) {
       this.lungeT -= dt;
       if (this.lungeDamage && toP < this.def.radius + 0.75) {
-        p.hurt(this.lungeDamage, game);
+        p.hurt(this.lungeDamage, game, this.kind + ':lunge');
         game.onPlayerHurt(this, 'lunge');
         this.lungeDamage = 0;
         this.kvx *= 0.2; this.kvy *= 0.2;
@@ -360,7 +363,7 @@ export class Enemy {
     switch (d.attack) {
       case 'melee':
         if (sees && toP <= d.range * 1.2) {
-          p.hurt(d.damage * dmgScale * randRange(this.rng, 0.8, 1.2), game);
+          p.hurt(d.damage * dmgScale * randRange(this.rng, 0.8, 1.2), game, this.kind + ':melee');
           game.onPlayerHurt(this, 'melee');
         }
         game.sound.sfx('wrencher_swing', { pan: game.panOf(this) });
@@ -372,7 +375,7 @@ export class Enemy {
       case 'flame':
         if (sees && toP <= d.range) {
           const falloff = 1 - toP / d.range;
-          p.hurt(d.damage * dmgScale * falloff * randRange(this.rng, 0.7, 1.1), game);
+          p.hurt(d.damage * dmgScale * falloff * randRange(this.rng, 0.7, 1.1), game, this.kind + ':hitscan');
           game.onPlayerHurt(this, 'flame');
         }
         game.spawnFlame(this, p);
@@ -395,7 +398,7 @@ export class Enemy {
         break;
       case 'chomp':
         if (sees && toP <= d.range * 1.25) {
-          p.hurt(d.damage * dmgScale * randRange(this.rng, 0.85, 1.15), game);
+          p.hurt(d.damage * dmgScale * randRange(this.rng, 0.85, 1.15), game, this.kind + ':maw');
           game.onPlayerHurt(this, 'chomp');
         }
         game.sound.sfx('gorger_attack', { pan: game.panOf(this) });
@@ -439,7 +442,7 @@ export class Bolt {
     const p = game.player;
     if (Math.hypot(this.x - p.x, this.y - p.y) < 0.36 && Math.abs(this.z - p.z) < 0.62) {
       this.alive = false;
-      p.hurt(this.damage, game);
+      p.hurt(this.damage, game, 'bolt');
       game.onPlayerHurt(this.owner, 'bolt');
       game.onBoltImpact(this, p);
     }
@@ -530,7 +533,7 @@ export class Acid {
     if (this.life <= 0) { this.alive = false; return; }
     if (Math.hypot(this.x - p.x, this.y - p.y) < 0.42 && Math.abs(this.z - p.z) < 0.7) {
       this.alive = false;
-      p.hurt(this.damage, game);
+      p.hurt(this.damage, game, 'acid');
       game.onPlayerHurt(this.owner, 'acid');
       game.onAcidSplash(this, true);
       return;

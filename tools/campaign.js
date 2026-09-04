@@ -3,12 +3,25 @@
 // how long each level takes, how much health it costs, and how many cities
 // survive at each difficulty.
 import { chromium } from 'playwright-core';
+import { chromePath } from './chrome-path.js';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
 const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
-const PORT = 8149;
-const DIFF = process.argv[2] ? Number(process.argv[2]) : 1;
+const PORT = Number(process.env.CAMPAIGN_PORT || 8149);
+// Accept a name or an index; `Number('clerical') | 0` silently meant CLERICAL.
+const DIFF_NAMES = ['clerical', 'warden', 'last shift', 'lastshift'];
+const raw = process.argv[2];
+let DIFF = 1;
+if (raw !== undefined) {
+  const n = Number(raw);
+  if (Number.isFinite(n)) DIFF = n | 0;
+  else {
+    const i = DIFF_NAMES.indexOf(String(raw).toLowerCase());
+    if (i < 0) { console.error(`unknown difficulty "${raw}" — use 0|1|2 or clerical|warden|"last shift"`); process.exit(2); }
+    DIFF = Math.min(i, 2);
+  }
+}
 const server = spawn('python3', ['-m', 'http.server', String(PORT), '--bind', '127.0.0.1'],
   { cwd: ROOT, stdio: 'ignore' });
 process.on('exit', () => { try { server.kill('SIGKILL'); } catch {} });
@@ -16,7 +29,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 await sleep(600);
 
 const browser = await chromium.launch({
-  executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+  ...(chromePath() ? { executablePath: chromePath() } : {}),
   args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader',
     '--enable-unsafe-swiftshader', '--mute-audio', '--disable-dev-shm-usage'],
 });
@@ -87,7 +100,8 @@ const report = await page.evaluate(async (difficulty) => {
     const citiesBefore = g.sky.livingCities().length;
     let route = null, routeI = 0, replan = 0, stuck = 0;
     let lastPos = [g.player.x, g.player.y];
-    let died = false, finished = false;
+    let died = false, finished = false, cause = '';
+    g.dmgLedger = {};
     let t = 0;
     const DT = 1 / 40;                       // coarse but stable for a long soak
     let sieges = 0, shots = 0;
@@ -238,7 +252,11 @@ const report = await page.evaluate(async (difficulty) => {
       g.update(DT, IN);
       IN.endFrame();
 
-      if (g.player.dead || g.state === 'gameover') { died = true; break; }
+      if (g.player.dead || g.state === 'gameover') {
+        died = true;
+        cause = g.overReason || g.player.lastHurtBy || 'unknown';
+        break;
+      }
       if (g.state === 'intermission') { finished = true; break; }
       if (g.state === 'victory') { finished = true; break; }
       if (g.sky.active) {
@@ -251,7 +269,9 @@ const report = await page.evaluate(async (difficulty) => {
     }
 
     results.push({
-      L, name: lv.name, time: +t.toFixed(0), finished, died,
+      L, name: lv.name, time: +t.toFixed(0), finished, died, cause,
+      damage: Object.fromEntries(Object.entries(g.dmgLedger || {})
+        .sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => [k, Math.round(v)])),
       health: Math.round(g.player.health),
       healthLost: Math.round(startHealth - g.player.health),
       score: g.player.score - startScore,
@@ -275,14 +295,15 @@ const report = await page.evaluate(async (difficulty) => {
 }, DIFF);
 
 console.log(`\n=== CAMPAIGN: ${report.difficulty} ===`);
-console.log('lvl  name            time  end       hp  kills    sieges  sky(down/leak/spawn)  deck  cities  score');
+console.log('lvl  name            time  end             hp  kills    sieges  sky(down/leak/spawn)  deck  cities  score');
 for (const r of report.results) {
   console.log(
     `${String(r.L + 1).padEnd(4)} ${r.name.padEnd(15)} ${String(r.time).padStart(4)}s ` +
-    `${(r.died ? 'DIED' : r.finished ? 'cleared' : 'timeout').padEnd(8)} ` +
+    `${(r.died ? `DIED:${r.cause}` : r.finished ? 'cleared' : 'timeout').padEnd(14)} ` +
     `${String(r.health).padStart(3)}  ${String(r.kills + '/' + r.enemies).padEnd(8)} ` +
     `${String(r.sieges).padStart(6)}  ${String(r.downed + '/' + r.leaked + '/' + r.spawned).padStart(20)}  ` +
-    `${String(r.onDeck + 's').padStart(4)}  ${String(r.citiesLeft + '/6').padStart(5)}  ${String(r.score).padStart(6)}`);
+    `${String(r.onDeck + 's').padStart(4)}  ${String(r.citiesLeft + '/6').padStart(5)}  ${String(r.score).padStart(6)}` +
+    `   ${Object.entries(r.damage).map(([k, v]) => `${k} ${v}`).join(', ')}`);
 }
 console.log(`final: ${report.state}, score ${report.score}`);
 if (errs.length) { console.log('\nPAGE ERRORS:'); for (const e of errs.slice(0, 6)) console.log('  ' + e); }
