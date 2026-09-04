@@ -4420,13 +4420,16 @@ function pEye(cv, x, y, o = {}) {
   const {
     open = 1, look = 0, lookY = 0, w = 8.0, iris = rgba(84, 66, 44, 255),
     squint = 0, sclera = rgba(226, 220, 210, 255), shade: shadeC = rgba(128, 88, 70, 255),
-    deep = rgba(78, 48, 40, 255), skin = rgba(198, 152, 122, 255), lash = 0,
+    deep = rgba(78, 48, 40, 255), skin = rgba(198, 152, 122, 255), lash = 0, socket = 1,
   } = o;
   const h = w * 0.58 * clamp(open, 0, 1.3);
   // socket
-  ellipseFill(cv, x, y + 0.6, w * 1.30, w * 0.92, {
+  ellipseFill(cv, x, y + 0.6, w * (0.98 + socket * 0.32), w * (0.70 + socket * 0.22), {
     bulge: 0, gloss: 0.06, grain: 0,
-    shader: (u, v) => mix(mix(shadeC, deep, 0.5), mix(shadeC, skin, 0.4), clamp(hypot(u, v * 0.85), 0, 1)),
+    shader: (u, v) => {
+      const inner = mix(mix(shadeC, deep, 0.5), mix(shadeC, skin, 0.4), clamp(hypot(u, v * 0.85), 0, 1));
+      return socket >= 1 ? inner : mix(skin, inner, socket);
+    },
   });
   if (h < 1.1) {
     for (let i = -w; i <= w; i += 0.5) {
@@ -4807,12 +4810,12 @@ function drawBrick(cv, idx) {
 }
 
 const ILSA = {
-  skin: rgba(198, 156, 128, 255),
-  lit: rgba(230, 192, 160, 255),
-  shade: rgba(140, 96, 76, 255),
-  deep: rgba(88, 54, 46, 255),
-  hair: rgba(72, 52, 44, 255),
-  hairHi: rgba(126, 94, 74, 255),
+  skin: rgba(186, 144, 116, 255),
+  lit: rgba(216, 176, 142, 255),
+  shade: rgba(124, 82, 66, 255),
+  deep: rgba(78, 46, 40, 255),
+  hair: rgba(96, 68, 54, 255),
+  hairHi: rgba(158, 120, 90, 255),
   lens: rgba(198, 206, 190, 255),
   suit: rgba(106, 112, 118, 255),
   suitD: rgba(66, 72, 80, 255),
@@ -4825,9 +4828,9 @@ const ILSA_MODES = [
   // 1 mid-explanation, slightly urgent
   { browL: { lift: 3.4, tilt: -0.3 }, browR: { lift: 3.8, tilt: -0.35 }, open: 1.12, mouth: 'open', tilt: -0.02 },
   // 2 deeply unimpressed - the one the game will use most
-  { browL: { lift: 1.0, tilt: 0.25 }, browR: { lift: 6.0, tilt: -0.55 }, open: 0.52, squint: 0.28, mouth: 'flat', skew: 1.8, tilt: 0.055 },
+  { browL: { lift: 1.0, tilt: 0.25 }, browR: { lift: 6.5, tilt: -0.55 }, open: 0.66, squint: 0.22, mouth: 'flat', skew: 1.8, tilt: 0.055 },
   // 3 a real, tired smile
-  { browL: { lift: 1.8, tilt: -0.2 }, browR: { lift: 1.6, tilt: -0.2 }, open: 0.58, squint: 0.42, mouth: 'smile', tilt: -0.02, warm: 1 },
+  { browL: { lift: 1.8, tilt: -0.2 }, browR: { lift: 1.6, tilt: -0.2 }, open: 0.70, squint: 0.38, mouth: 'smile', tilt: -0.02, warm: 1 },
 ];
 
 function drawIlsa(cv, idx) {
@@ -4836,30 +4839,31 @@ function drawIlsa(cv, idx) {
   const seed = 9301 + idx;
 
   // ---- masses ----
-  hfEllipsoid(H, 64, 152, 54, 40, 16, 4);                       // chest
-  hfEllipsoid(H, 26, 132, 24, 20, 14, 4);                       // shoulders
-  hfEllipsoid(H, 102, 132, 24, 20, 14, 4);
-  hfEllipsoid(H, 64, 104, 15, 22, 20, 1);                       // neck
-  hfEllipsoid(H, 41, 62, 4.5, 10, 11, 1);                       // ears
-  hfEllipsoid(H, 87, 62, 4.5, 10, 11, 1);
-  hfEllipsoid(H, 64, 52, 25, 30, 26, 1, { taper: 0.30 });       // skull
-  hfBump(H, 64, 76, 13, 11, 3.0, { only: 1 });                  // chin
-  hfBump(H, 47, 62, 11, 9, 2.8, { only: 1 });
-  hfBump(H, 81, 62, 11, 9, 2.8, { only: 1 });
-  hfBump(H, 54, 51, 11, 5, 2.8, { only: 1 });                   // brow ridge
-  hfBump(H, 74, 51, 11, 5, 2.8, { only: 1 });
-  hfBump(H, 64, 57, 4.2, 13, 5.6, { only: 1, p: 1.15 });        // nose bridge
-  hfBump(H, 64, 68, 5.6, 4.6, 3.2, { only: 1, p: 1.3 });        // nose tip
-  hfBump(H, 55, 57, 8, 5.5, -3.0, { only: 1, p: 1.3 });
-  hfBump(H, 73, 57, 8, 5.5, -3.0, { only: 1, p: 1.3 });
-  // hair, pulled back off the face and losing the argument
-  hfEllipsoid(H, 64, 40, 29, 26, 30, 2);
-  hfBox(H, 33, 36, 43, 76, 25, 2, { round: 5 });
-  hfBox(H, 85, 36, 95, 76, 25, 2, { round: 5 });
-  hfEllipsoid(H, 64, 26, 23, 12, 31, 2);                        // the sweep over the crown
-  hfEllipsoid(H, 64, 86, 14, 12, 18, 2);                        // the tail behind the neck
+  hfEllipsoid(H, 64, 154, 56, 38, 16, 4);                       // chest
+  hfEllipsoid(H, 26, 134, 25, 20, 14, 4);                       // shoulders
+  hfEllipsoid(H, 102, 134, 25, 20, 14, 4);
+  hfEllipsoid(H, 64, 108, 13, 20, 20, 1);                       // neck
+  hfEllipsoid(H, 39, 60, 4.5, 10, 11, 1);                       // ears
+  hfEllipsoid(H, 89, 60, 4.5, 10, 11, 1);
+  // hair goes down FIRST as a full mass, then the face is stamped back over it,
+  // which is what leaves a hairline instead of a helmet.
+  hfEllipsoid(H, 64, 44, 32, 34, 30, 2);
+  hfEllipsoid(H, 64, 24, 27, 16, 31, 2);                        // the sweep over the crown
+  hfBox(H, 33, 42, 43, 80, 26, 2, { round: 7 });                // pulled back behind the ears
+  hfBox(H, 85, 42, 95, 80, 26, 2, { round: 7 });
+  hfEllipsoid(H, 64, 92, 16, 12, 18, 2);                        // the tail at the nape
+  hfEllipsoid(H, 64, 56, 24, 30, 27, 1, { over: true, taper: 0.46 });   // the face itself
+  hfBump(H, 64, 83, 14, 11, 3.0, { only: 1 });                  // chin
+  hfBump(H, 47, 64, 12, 10, 2.8, { only: 1 });
+  hfBump(H, 81, 64, 12, 10, 2.8, { only: 1 });
+  hfBump(H, 53, 50, 12, 5.5, 2.8, { only: 1 });                 // brow ridge
+  hfBump(H, 75, 50, 12, 5.5, 2.8, { only: 1 });
+  hfBump(H, 64, 57, 4.4, 14, 5.6, { only: 1, p: 1.15 });        // nose bridge
+  hfBump(H, 64, 67, 6.0, 5.0, 3.2, { only: 1, p: 1.3 });        // nose tip
+  hfBump(H, 54, 57, 9, 6, -3.0, { only: 1, p: 1.3 });
+  hfBump(H, 74, 57, 9, 6, -3.0, { only: 1, p: 1.3 });
   // safety glasses pushed up onto the hair
-  hfBox(H, 45, 17, 83, 26, 35, 3, { round: 5, dome: 0.45 });
+  hfBox(H, 42, 14, 86, 25, 35, 3, { round: 5, dome: 0.45 });
 
   // ---- albedo ----
   for (let y = 0; y < PW; y++) {
@@ -4871,18 +4875,20 @@ function drawIlsa(cv, idx) {
       let c, gl = 0.12;
       if (m === 1) {
         c = mix(ILSA.skin, ILSA.lit, clamp(n * 1.2 - 0.12, 0, 1));
-        const flush = pow(max(0, 1 - hypot((x - 64) / 24, (y - 62) / 14)), 2) * 0.16;
-        c = mix(c, rgba(208, 116, 96, 255), flush);
+        // warmth across the cheeks and the tip of the nose
+        const cheeks = pow(max(0, 1 - hypot((abs(x - 64) - 15) / 12, (y - 66) / 10)), 1.6) * 0.34;
+        const nose = pow(max(0, 1 - hypot((x - 64) / 7, (y - 68) / 6)), 2) * 0.22;
+        c = mix(c, rgba(202, 116, 98, 255), clamp(cheeks + nose, 0, 1));
         gl = 0.18;
       } else if (m === 2) {
         // strands running back off the crown
-        const strand = 0.5 + 0.5 * sin(atan2(y - 44, x - 64) * 22 + n * 5);
-        c = mix(shade(ILSA.hair, 0.7), ILSA.hair, clamp(0.2 + n * 1.2, 0, 1));
-        c = mix(c, ILSA.hairHi, pow(strand, 2.4) * 0.42);
-        gl = 0.30;
+        const strand = 0.5 + 0.5 * sin(atan2(y - 44, x - 64) * 9 + n * 4);
+        c = mix(shade(ILSA.hair, 0.62), ILSA.hair, clamp(0.2 + n * 1.2, 0, 1));
+        c = mix(c, ILSA.hairHi, pow(strand, 2.0) * 0.26);
+        gl = 0.26;
       } else if (m === 3) {
-        c = mix(ILSA.lens, rgba(150, 168, 150, 255), clamp(0.2 + n * 0.8, 0, 1));
-        gl = 0.80;
+        c = mix(rgba(158, 172, 152, 255), rgba(118, 136, 118, 255), clamp(0.2 + n * 0.8, 0, 1));
+        gl = 0.62;
       } else {
         c = mix(ILSA.suitD, ILSA.suit, clamp(0.28 + n * 1.2, 0, 1));
         if (((x + y) | 0) % 3 === 0) c = shade(c, 1.05);
@@ -4894,23 +4900,29 @@ function drawIlsa(cv, idx) {
   hfNormals(cv, H, 0.58);
 
   // ---- safety glasses: a bright lower lip and a raked highlight ----
-  for (let x = 46; x <= 82; x++) {
-    const u = (x - 64) / 18;
-    tint(cv, x, 19.0 + u * u * 1.8, rgba(240, 252, 238, 255), 0.8 - abs(u) * 0.4);
-    tint(cv, x, 25.4 + u * u * 1.2, rgba(96, 116, 100, 255), 0.55);
+  for (let x = 43; x <= 85; x++) {
+    const u = (x - 64) / 21;
+    tint(cv, x, 16.2 + u * u * 1.8, rgba(214, 232, 214, 255), 0.62 - abs(u) * 0.34);
+    tint(cv, x, 23.8 + u * u * 1.2, rgba(72, 88, 76, 255), 0.62);
   }
-  pOcclude(cv, Array.from({ length: 114 }, (_, i) => [46 + (i % 38), 26 + ((i / 38) | 0)]), 0.80);
+  // frame rim and the strap ends, so it reads as safety glasses not a visor
+  for (const sx of [-1, 1]) {
+    capsule(cv, 64 + sx * 21, 16, 64 + sx * 25, 28, 2.2, 1.8,
+      { col: rgba(52, 56, 50, 255), gloss: 0.5, grain: 0.06, seed: 9351 });
+  }
+  metalPanelRot(cv, 64, 20, 7, 4, 0, { col: rgba(70, 76, 68, 255), gloss: 0.5, seed: 9353 });
+  pOcclude(cv, Array.from({ length: 132 }, (_, i) => [43 + (i % 44), 25 + ((i / 44) | 0)]), 0.80);
   // loose strands that have escaped the tie
-  for (let k = 0; k < 7; k++) {
-    const sx = k < 4 ? -1 : 1;
-    const x0 = 64 + sx * (16 + hash2(k, 1, seed) * 10);
-    const y0 = 34 + hash2(k, 2, seed) * 10;
-    const len = 16 + hash2(k, 3, seed) * 20;
+  for (let k = 0; k < 4; k++) {
+    const sx = k < 2 ? -1 : 1;
+    const x0 = 64 + sx * (27 + hash2(k, 1, seed) * 4);
+    const y0 = 42 + hash2(k, 2, seed) * 8;
+    const len = 16 + hash2(k, 3, seed) * 16;
     let px2 = x0, py2 = y0;
     for (let t = 1; t <= 6; t++) {
-      const nx2 = x0 + sx * t * 1.6 + sin(t * 0.9 + k) * 3.0;
+      const nx2 = x0 + sx * t * 0.9 + sin(t * 0.9 + k) * 1.6;
       const ny2 = y0 + (t / 6) * len;
-      capsule(cv, px2, py2, nx2, ny2, 1.7, 1.2, {
+      capsule(cv, px2, py2, nx2, ny2, 1.5, 1.0, {
         gloss: 0.34, grain: 0.06, seed: seed + 70 + k,
         shader: (tt, u) => mix(shade(ILSA.hair, 0.8), ILSA.hairHi, clamp(0.5 - u * 0.9, 0, 1)),
       });
@@ -4920,21 +4932,21 @@ function drawIlsa(cv, idx) {
 
   // ---- headset ----
   const bandCol = rgba(52, 54, 60, 255);
-  capsule(cv, 35, 50, 46, 20, 2.8, 2.8, { col: bandCol, gloss: 0.34, grain: 0.08, seed: seed + 81 });
-  capsule(cv, 46, 20, 82, 20, 2.8, 2.8, { col: bandCol, gloss: 0.34, grain: 0.08, seed: seed + 82 });
-  capsule(cv, 82, 20, 93, 50, 2.8, 2.8, { col: bandCol, gloss: 0.34, grain: 0.08, seed: seed + 83 });
+  capsule(cv, 34, 56, 46, 13, 2.6, 2.6, { col: bandCol, gloss: 0.28, grain: 0.08, seed: seed + 81 });
+  capsule(cv, 46, 13, 82, 13, 2.6, 2.6, { col: bandCol, gloss: 0.28, grain: 0.08, seed: seed + 82 });
+  capsule(cv, 82, 13, 94, 56, 2.6, 2.6, { col: bandCol, gloss: 0.28, grain: 0.08, seed: seed + 83 });
   for (const sx of [-1, 1]) {
-    const ex = 64 + sx * 29;
-    blob(cv, ex, 62, 8, {
-      gloss: 0.42, grain: 0.08, seed: seed + 85,
-      shader: (u, v) => mix(rgba(64, 66, 74, 255), rgba(34, 36, 42, 255), clamp(hypot(u, v) * 1.1, 0, 1)),
+    const ex = 64 + sx * 30;
+    blob(cv, ex, 63, 6.4, {
+      gloss: 0.16, grain: 0.10, seed: seed + 85, squashY: 1.15,
+      shader: (u, v) => mix(rgba(60, 62, 68, 255), rgba(38, 40, 46, 255), clamp(hypot(u, v) * 0.9, 0, 1)),
     });
-    ringTube(cv, ex, 62, 8, 2.0, { col: rgba(88, 90, 98, 255), gloss: 0.5, grain: 0.08, seed: seed + 87 });
+    ringTube(cv, ex, 63, 6.4, 1.5, { col: rgba(74, 76, 84, 255), gloss: 0.34, grain: 0.08, seed: seed + 87, squashY: 1.15 });
   }
   // boom mic swinging in toward her mouth
   let mx0 = 35, my0 = 70;
   for (let t = 1; t <= 5; t++) {
-    const nx2 = 35 + t * 2.8, ny2 = 70 + t * 3.6;
+    const nx2 = 35 + t * 2.4, ny2 = 70 + t * 3.4;
     capsule(cv, mx0, my0, nx2, ny2, 2.0, 1.9, { col: bandCol, gloss: 0.4, grain: 0.08, seed: seed + 89 });
     mx0 = nx2; my0 = ny2;
   }
@@ -4943,45 +4955,81 @@ function drawIlsa(cv, idx) {
     shader: (u, v, x, y) => shade(rgba(48, 48, 52, 255), 0.8 + fbm(seed + 93, x / 2, y / 2, 2, 8) * 0.5),
   });
   // status LED on the earpiece
-  blob(cv, 95, 57, 2.0, { col: rgba(120, 255, 150, 255), gloss: 0.2, grain: 0, em: 0.9 });
+  blob(cv, 93, 58, 1.8, { col: rgba(120, 255, 150, 255), gloss: 0.2, grain: 0, em: 0.9 });
 
   // ---- eyes, brows ----
-  const eyeY = 57;
-  pEye(cv, 55, eyeY, {
-    open: M.open, squint: M.squint || 0, w: 7.4, iris: rgba(74, 96, 70, 255),
-    skin: ILSA.skin, shade: ILSA.shade, deep: ILSA.deep, lash: 1,
+  const eyeY = 59;
+  pEye(cv, 54, eyeY, {
+    open: M.open, squint: M.squint || 0, w: 7.6, iris: rgba(74, 96, 70, 255),
+    skin: ILSA.skin, shade: ILSA.shade, deep: ILSA.deep, lash: 1, socket: 0.24,
+    sclera: rgba(206, 200, 190, 255),
   });
-  pEye(cv, 73, eyeY, {
-    open: M.open, squint: M.squint || 0, w: 7.4, iris: rgba(74, 96, 70, 255),
-    skin: ILSA.skin, shade: ILSA.shade, deep: ILSA.deep, lash: 1,
+  pEye(cv, 74, eyeY, {
+    open: M.open, squint: M.squint || 0, w: 7.6, iris: rgba(74, 96, 70, 255),
+    skin: ILSA.skin, shade: ILSA.shade, deep: ILSA.deep, lash: 1, socket: 0.24,
+    sclera: rgba(206, 200, 190, 255),
   });
-  pBrow(cv, 54, eyeY - 8.0, { w: 10, tilt: M.browL.tilt, lift: M.browL.lift, side: -1, col: rgba(58, 42, 36, 255), thick: 2.8 });
-  pBrow(cv, 74, eyeY - 8.0, { w: 10, tilt: M.browR.tilt, lift: M.browR.lift, side: 1, col: rgba(58, 42, 36, 255), thick: 2.8 });
+  for (const ex of [54, 74]) {
+    for (let i2 = -9; i2 <= 9; i2 += 0.5) {
+      const u = i2 / 9;
+      for (let d = 0; d < 3; d += 0.5) {
+        tint(cv, ex + i2, eyeY - 5.6 + u * u * 1.6 - d, ILSA.shade, (0.30 - d * 0.07) * (1 - abs(u) * 0.5));
+      }
+    }
+  }
+  pBrow(cv, 53, eyeY - 8.6, { w: 11, tilt: M.browL.tilt, lift: M.browL.lift, side: -1, col: rgba(62, 44, 36, 255), thick: 3.0 });
+  pBrow(cv, 75, eyeY - 8.6, { w: 11, tilt: M.browR.tilt, lift: M.browR.lift, side: 1, col: rgba(62, 44, 36, 255), thick: 3.0 });
   // shadows of not enough sleep
-  for (const ex of [55, 73]) {
+  for (const ex of [54, 74]) {
     for (let i2 = -7; i2 <= 7; i2 += 0.5) {
       const u = i2 / 7;
       tint(cv, ex + i2, eyeY + 6.4 + u * u * 1.2, mix(ILSA.shade, rgba(126, 96, 108, 255), 0.5), 0.32);
       tint(cv, ex + i2, eyeY + 7.6 + u * u * 1.2, ILSA.shade, 0.18);
     }
   }
+  // hairline: a soft shadow where the hair meets the forehead, and two short
+  // wisps that have escaped forward over the temples
+  for (let x = 42; x <= 86; x += 0.5) {
+    const u = (x - 64) / 22;
+    for (let d = 0; d < 3; d += 0.5) tint(cv, x, 33 + u * u * 4.5 + d, ILSA.shade, 0.30 - d * 0.06);
+  }
+  for (const sx of [-1, 1]) {
+    let fx = 64 + sx * 21, fy = 34;
+    for (let t = 1; t <= 4; t++) {
+      const nx2 = fx + sx * 2.2, ny2 = fy + 3.4;
+      capsule(cv, fx, fy, nx2, ny2, 1.7, 1.1, {
+        gloss: 0.28, grain: 0.06, seed: seed + 130 + t,
+        shader: (tt, u) => mix(shade(ILSA.hair, 0.8), ILSA.hairHi, clamp(0.5 - u * 0.9, 0, 1)),
+      });
+      fx = nx2; fy = ny2;
+    }
+  }
 
   // ---- nose, mouth ----
-  for (let y = 50; y <= 71; y++) {
-    const k = clamp((y - 50) / 21, 0, 1);
+  for (let y = 52; y <= 71; y++) {
+    const k = clamp((y - 52) / 19, 0, 1);
     for (let i2 = 0; i2 < 0.8 + k * 2.6; i2 += 0.5) tint(cv, 64 + 2.8 + k * 2.0 + i2, y, ILSA.shade, 0.28 + k * 0.30);
     tint(cv, 64 - 1.2, y, mix(ILSA.skin, ILSA.lit, 0.5), 0.26);
   }
   for (const sx of [-1, 1]) ellipseFill(cv, 64 + sx * 3.4, 70, 1.8, 1.2, { bulge: 0, gloss: 0, grain: 0, shader: () => ILSA.deep });
   for (let x = 59; x <= 69; x += 0.5) tint(cv, x, 72 + pow(abs(x - 64) / 5, 2) * 1.2, ILSA.shade, 0.4);
-  pMouth(cv, 64, 80, M.mouth, {
-    w: 12, skin: ILSA.skin, lip: rgba(164, 106, 94, 255), shade: ILSA.shade,
+  // cheek hollows and a jaw line, so the lower face has structure
+  for (const sx of [-1, 1]) {
+    for (let t = 0; t <= 1; t += 0.03) {
+      tint(cv, 64 + sx * lerp(20, 12, t), lerp(64, 82, t), ILSA.shade, 0.34 * (1 - abs(t - 0.4)));
+    }
+  }
+  for (let a = 0.45; a < PI - 0.45; a += 0.03) {
+    for (let d = 0; d < 2.5; d += 0.5) tint(cv, 64 + cos(a) * -22, 56 + sin(a) * 29 - d, ILSA.shade, 0.18);
+  }
+  pMouth(cv, 64, 77, M.mouth, {
+    w: 13, skin: ILSA.skin, lip: rgba(164, 106, 94, 255), shade: ILSA.shade,
     dark: rgba(44, 20, 20, 255), skew: M.skew || 0,
   });
 
   // ---- jumpsuit: collar, zip, tool loop, name patch ----
   for (const sx of [-1, 1]) {
-    capsule(cv, 64 + sx * 6, 112, 64 + sx * 30, 128, 7.0, 9.0, {
+    capsule(cv, 64 + sx * 5, 114, 64 + sx * 32, 130, 8.0, 10.0, {
       gloss: 0.12, grain: 0, seed: seed + 101,
       shader: (t, u, x, y) => {
         const n = fbm(seed + 103, x / 6, y / 6, 2, 8);
@@ -5005,15 +5053,15 @@ function drawIlsa(cv, idx) {
 
   // ---- grease, worn across one cheek with the back of a wrist ----
   for (let k = 0; k < 4; k++) {
-    const gy = 66 + k * 2.6;
-    for (let x = 78; x < 96; x += 0.5) {
+    const gy = 70 + k * 2.6;
+    for (let x = 78; x < 94; x += 0.5) {
       const n = fbm(seed + 121, x / 4, gy / 3, 2, 8);
       if (n < 0.42) continue;
       tint(cv, x, gy + sin(x * 0.4) * 1.2, ILSA.grease, 0.30 + n * 0.42);
     }
   }
   if (M.warm) {
-    for (const ex of [55, 73]) for (let i2 = -8; i2 <= 8; i2 += 0.5) {
+    for (const ex of [54, 74]) for (let i2 = -8; i2 <= 8; i2 += 0.5) {
       tint(cv, ex + i2, eyeY + 8.6, mix(ILSA.shade, ILSA.lit, 0.5), 0.34);   // crow's feet
     }
   }
@@ -5045,11 +5093,11 @@ function crtPass(f, seed) {
       r += br; g += bg; b += bb;
       // phosphor: pull toward green, lift the blacks the way a CRT does
       const lum = (r * 0.3 + g * 0.6 + b * 0.1);
-      r = lerp(r, lum * 0.80, 0.22) + 3;
-      g = lerp(g, lum * 1.06, 0.22) + 8;
-      b = lerp(b, lum * 0.84, 0.22) + 5;
+      r = lerp(r, lum * 0.84, 0.18);
+      g = lerp(g, lum * 1.08, 0.18) + 5;
+      b = lerp(b, lum * 0.88, 0.18) + 1;
       // scanlines, plus a slow horizontal band that is a touch brighter
-      const scan = (y & 1) ? 0.86 : 1.04;
+      const scan = (y & 1) ? 0.91 : 1.03;
       const band = 1 + 0.07 * sin((y + (seed % 17)) * 0.10);
       const jitter = ((y % 5) === 0) ? 1.03 : 1;
       const k2 = scan * band * jitter;
@@ -5068,9 +5116,9 @@ function buildPortrait(who, idx) {
   const f = bake(posed, {
     key: norm3(-0.42, -0.70, 0.58),
     keyCol: who === 'brick' ? [1.0, 0.93, 0.84] : [0.94, 0.98, 1.0],
-    fill: 0.42, fillCol: who === 'brick' ? [0.60, 0.58, 0.66] : [0.54, 0.60, 0.70],
-    rim: 0.28, env: 0.34, exposure: 1.03,
-    bounce: 0.30, bounceCol: who === 'brick' ? [1.0, 0.72, 0.52] : [0.72, 0.90, 0.80],
+    fill: 0.30, fillCol: who === 'brick' ? [0.60, 0.58, 0.66] : [0.54, 0.60, 0.70],
+    rim: 0.26, env: 0.30, exposure: who === 'brick' ? 1.0 : 0.90,
+    bounce: 0.20, bounceCol: who === 'brick' ? [1.0, 0.72, 0.52] : [0.72, 0.90, 0.80],
   });
   rimOutline(f, rgba(12, 10, 14, 255));
   if (who === 'ilsa') crtPass(f, 9301 + idx);

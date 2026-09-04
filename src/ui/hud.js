@@ -32,6 +32,26 @@ export class Hud {
     this.tick = 0;
     this.hit = 0;
     this.hitKill = false;
+    this.splats = [];
+  }
+
+  /**
+   * Gore on the lens. Nothing in a shooter says "that happened right here" as
+   * cheaply as the screen itself getting dirty.
+   */
+  splatter(n, seed) {
+    for (let i = 0; i < n; i++) {
+      if (this.splats.length > 26) this.splats.shift();
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.pow(Math.random(), 0.6) * 0.5;
+      this.splats.push({
+        x: 0.5 + Math.cos(a) * r, y: 0.5 + Math.sin(a) * r * 0.8,
+        s: 0.008 + Math.random() * 0.030,
+        t: 0, life: 4.5 + Math.random() * 4,
+        drip: Math.random() * 0.05,
+        tone: 0.55 + Math.random() * 0.45,
+      });
+    }
   }
 
   /** Crosshair confirmation. Reads instantly and costs nothing. */
@@ -63,6 +83,12 @@ export class Hud {
 
   update(dt) {
     this.tick += dt;
+    for (let i = this.splats.length - 1; i >= 0; i--) {
+      const sp = this.splats[i];
+      sp.t += dt;
+      sp.y += sp.drip * dt * 0.12;
+      if (sp.t >= sp.life) this.splats.splice(i, 1);
+    }
     if (this.hit > 0) {
       this.hit -= dt;
       if (this.hit <= 0) { this.hit = 0; this.hitKill = false; }
@@ -98,6 +124,7 @@ export class Hud {
     } else {
       this.drawEmpStatic(buf, W, H, s, game);
     }
+    this.drawSplatter(buf, W, H);
     this.drawObjective(buf, W, H, s, game);
     this.drawRadio(buf, W, H, s, game);
     this.drawBottom(buf, W, H, s, game);
@@ -123,7 +150,8 @@ export class Hud {
         lineBuf(buf, W, H, mx + dx * 3 * s, my + dy * 3 * s, mx + dx * 8 * s, my + dy * 8 * s,
           rgba(190, 230, 250, 255), 0.6, true);
       }
-      this.text.draw(buf, W, H, W / 2, H * 0.16, 'CLICK TO CAPTURE THE MOUSE', {
+      // Low on the screen: the radio panel owns the top-left.
+      this.text.draw(buf, W, H, W / 2, H * 0.63, 'CLICK TO CAPTURE THE MOUSE', {
         size: Math.round(8 * s), color: rgba(150, 200, 220, 255), align: 'center',
         track: Math.round(3 * s), alpha: 0.35 + 0.25 * Math.abs(Math.sin(this.tick * 2.2)),
       });
@@ -199,6 +227,34 @@ export class Hud {
       size: Math.round(7 * s), color: p.autoFuse ? CYAN : GREEN, align: 'center',
       track: 2, alpha: 0.8,
     });
+  }
+
+  drawSplatter(buf, W, H) {
+    for (const sp of this.splats) {
+      const k = 1 - sp.t / sp.life;
+      const a = Math.pow(k, 0.55) * 0.62;
+      if (a < 0.02) continue;
+      const cx = sp.x * W, cy = sp.y * H, r = sp.s * W;
+      // A soft blob plus a couple of satellites, darkening rather than painting.
+      const r2 = r * r;
+      const x0 = Math.max(0, (cx - r) | 0), x1 = Math.min(W, (cx + r) | 0 + 1);
+      const y0 = Math.max(0, (cy - r) | 0), y1 = Math.min(H, (cy + r) | 0 + 1);
+      for (let y = y0; y < y1; y++) {
+        const dy = y - cy;
+        for (let x = x0; x < x1; x++) {
+          const dx = x - cx;
+          const d2 = dx * dx + dy * dy;
+          if (d2 > r2) continue;
+          const f = (1 - d2 / r2) * a * sp.tone;
+          const o = y * W + x, dcol = buf[o];
+          const dr = dcol & 255, dg = (dcol >>> 8) & 255, db = (dcol >>> 16) & 255;
+          buf[o] = (255 << 24 |
+            ((db * (1 - f * 0.92)) | 0) << 16 |
+            ((dg * (1 - f * 0.94)) | 0) << 8 |
+            ((dr * (1 - f * 0.35) + 46 * f) | 0)) >>> 0;
+        }
+      }
+    }
   }
 
   drawHitMark(buf, W, H, s, cx, cy) {
@@ -470,8 +526,9 @@ export class Hud {
     const f = key ? game.art.vm[key] : null;
 
     if (f) {
-      fillRectBuf(buf, W, H, x - 3 * s, y - 3 * s, size + 6 * s, size + 6 * s, INK, 0.75 * a);
-      blitFrame(buf, W, H, f, x, y, { scale: size / f.w, alpha: a });
+      fillRectBuf(buf, W, H, x - 3 * s, y - 3 * s, size + 6 * s, size + 6 * s, INK, 0.82 * a);
+      // Lift the portrait off the scene behind it; Ilsa's CRT is dark by design.
+      blitFrame(buf, W, H, f, x, y, { scale: size / f.w, alpha: a, lum: 1.22 });
       // Bezel: two corner brackets and a live status lamp.
       for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
         const cx = x - 3 * s + dx * (size + 6 * s), cy = y - 3 * s + dy * (size + 6 * s);
@@ -490,12 +547,16 @@ export class Hud {
     }
 
     const tx = f ? x + size + 10 * s : x;
+    // A plate behind the dialogue, or it competes with whatever wall is behind it.
+    const plateW = Math.min(W - tx - 12 * s, 460 * s);
+    fillRectBuf(buf, W, H, tx - 6 * s, y - 3 * s, plateW + 12 * s, size + 6 * s, INK, 0.66 * a);
+    fillRectBuf(buf, W, H, tx - 6 * s, y - 3 * s, 1.5 * s, size + 6 * s, col, 0.7 * a);
     this.text.draw(buf, W, H, tx, y + 10 * s, sp.name, {
       size: Math.round(9 * s), color: col, track: Math.round(3 * s), alpha: a,
       glow: 0.5 * a, glowColor: col,
     });
     // Word-wrapped line, so long dialogue never runs off the screen.
-    const maxW = W - tx - 22 * s;
+    const maxW = plateW - 8 * s;
     const words = String(m.text || '').split(' ');
     const lines = [];
     let cur = '';
@@ -512,8 +573,9 @@ export class Hud {
       const take = clamp(chars - used, 0, ln.length);
       used += ln.length;
       if (take <= 0) return;
-      this.text.draw(buf, W, H, tx, y + 26 * s + i * 12 * s, ln.slice(0, take), {
-        size: Math.round(9.5 * s), color: rgba(226, 220, 206, 255), track: 0.4, alpha: a,
+      this.text.draw(buf, W, H, tx, y + 27 * s + i * 12.5 * s, ln.slice(0, take), {
+        size: Math.round(9.5 * s), color: rgba(232, 226, 212, 255), track: 0.4, alpha: a,
+        shadow: true,
       });
     });
   }

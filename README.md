@@ -1,11 +1,20 @@
 # NUKEHAUS
 
-**The last six cities.**
+**Six cities. One doctor. One boot.**
 
 A first-person raycast shooter in the Wolfenstein 3D lineage, fused with Missile
-Command. You are the last warden of Bunker Sieben. The launch-control
-intelligence that runs the complex has decided the six cities it was built to
-protect are the threat, and it is firing your own arsenal at them.
+Command. The launch-control intelligence that runs Bunker Sieben has decided the
+six cities it was built to protect are the threat, and it is firing your own
+arsenal at them. It has also sealed the chief engineer in the reactor core, and
+the radiation has done something unspeakable to the day shift.
+
+You are **WARDEN B. HARDIGAN**, a 1996 action hero who has not noticed it is
+2026. **DR. ILSA VANCE** built the interception system you are about to use, is
+locked in the core, and is on the radio the whole way down with actual tactical
+information, most of which you will ignore. **MUTTER** runs the bunker, is
+unfailingly polite about the people it is killing, and has read your personnel
+file. It considers your romantic history relevant operational context and will
+tell you which of your exes lives in whichever city is currently on fire.
 
 Every pixel, every sound and every note of music in this game is generated from
 code at load time. There are no image files. There are no audio files. The
@@ -44,10 +53,10 @@ adapts its internal resolution to whatever hardware it lands on.
 Your flak does **no contact damage**. Only the airburst kills. That turns every
 shot into a three-axis problem instead of a two-axis one:
 
-| Axis | Control |
-|---|---|
-| Azimuth, elevation | Mouse |
-| **Range — the fuse** | Mouse wheel, or `Z` / `X` |
+| Axis | Mouse | Controller |
+|---|---|---|
+| Azimuth, elevation | Mouse | Right stick |
+| **Range — the fuse** | Wheel, or `Z` / `X` | D-pad up/down |
 
 The ring around your crosshair *is* the armed range. Dial out and it grows. When
 a warhead is in your sights the ranger paints a lock bracket on the **intercept
@@ -67,23 +76,57 @@ does not pay the precision bonus. Turning it off doubles a clean burst.
 W A S D / arrows   move                SHIFT     run
 mouse              look                LMB       fire
 wheel, Z / X       fuse range          C / RMB   auto-ranging on/off
+V or middle-click  THE BOOT            B or G    pipe bomb (again to detonate)
 SPACE / F          open doors, shove suspicious walls
-1 - 5              weapons             TAB / M   automap
+1 - 6              weapons             TAB / M   automap
 ESC / P            pause
 ```
 
 Manual fuses score double on a clean burst. Auto-ranging is there for when the
 sky is too busy to count.
 
+### Controllers
+
+Plug in an Xbox or PlayStation pad and it is picked up on its own — the on-screen
+prompts switch to that pad's own glyphs.
+
+```
+left stick  move          right stick  look         L2/LT  fine aim
+R2/RT       fire          Y/△ or R3    the boot     X/□    pipe bomb
+A/✕         use           B/○          auto-ranging
+D-pad ↑↓    fuse          LB/RB        weapons      START  pause
+```
+
+Sticks use a squared response curve with deadzones, the triggers are analog, and
+rumble fires on shots, kicks, damage and explosions.
+
 ## The arsenal
 
 | | | |
 |---|---|---|
+| **THE BOOT** | always in hand | No ammo, no reload, its own button. Shoves things. Hard enough into a wall and the wall finishes the job. |
 | **THE WIDOW** | flak pistol | Regenerates. Never leaves you empty. |
 | **THE SPLITTER** | triple launcher | Three shells, one fuse. Brackets instead of threading. |
 | **THE NAILDRIVER** | rivet chaingun | For the things walking on your deck. Hopeless against the sky. |
 | **THE HALO** | ring launcher | Blooms into a ring of bursts at your fuse range. Sweeps a whole altitude. |
+| **PIPE BOMBS** | thrown | They bounce, settle, and tick faster as they run down. Press again to detonate. One bursting in the sky counts as flak. |
 | **DEADMAN'S SWITCH** | you don't want to know | Scrubs the sky. Scrubs your instruments for six seconds too. |
+
+Punting a live pipe bomb with the boot is available and inadvisable.
+
+## What is down there
+
+The bunker's staff are still on shift, after a fashion. Four of them are no
+longer staff, and they are not in the map data — they come through the walls on a
+per-floor schedule, always out of your line of sight, and the mix worsens as you
+descend.
+
+- **GHOUL** — the day shift, on all fours now, jaw unhinged. Rears up to strike.
+- **STALKER** — a bear trap with a gallop. It lunges, and it is faster than you.
+- **HOWLER** — mandibles that peel open around an acid gullet. Lobs on an arc.
+- **GORGER** — a translucent sac of something boiling. It bursts when it dies and
+  leaves a cloud that eats whatever is standing in it.
+- **MAW** — a wall of fused screaming bodies. One per deep floor.
 
 ## The bunker
 
@@ -143,7 +186,7 @@ modest hardware and sharpens up when it can.
 ## Tests
 
 ```
-node tools/playtest.js            # 29 gameplay assertions in a real browser
+node tools/playtest.js            # 40 gameplay assertions in a real browser
 node tools/audio-integration.js   # static coverage + live audio graph measurement
 node tools/campaign.js [0|1|2]    # a bot plays the whole game and reports balance
 node tools/smoke.js               # boots, drives the UI, screenshots, frame cost
@@ -159,12 +202,28 @@ auto-ranging does not, that keycards gate their doors, that a wave can be fought
 and cleared, that every level is fully reachable with live collision in place,
 and that two minutes of continuous combat leaks no memory and produces no NaN.
 
+It also drives a **synthetic standard-layout gamepad** through look, movement,
+the trigger, the boot and the fuse, so controller support is covered by the
+suite rather than by hope; and it checks the boot's shove and cooldown, wall
+slams, pipe bombs from throw to detonation, mutants breaching in off camera,
+each mutant's own attack, the radio queue never talking over itself, kill
+streaks, and blood reaching the floor.
+
 `campaign.js` is the balance instrument. A bot with perfect lead calculation and
 no patience for anything else plays the whole game and reports, per level, how
 long it took, what it cost in health, and how many warheads it let through. It
 is how the flak collision bug was found: shells were bursting on the map
 boundary, so the intercept rate was under half what it should have been and the
 game was quietly unwinnable.
+
+## The voices
+
+All three characters are the same formant synthesiser wearing different vocal
+tracts. Each voice scales the formant targets rather than just the pitch, which
+is what actually separates a register: Hardigan's tract is ~12% longer and his
+F2 sits near 340/1664 Hz on an /eh/, MUTTER sits at 492/1875, and Vance — heard
+over a radio, band-limited to 400 Hz–3.2 kHz with squelch at each end — sits at
+715/2332. Measured spectral centroids in the live graph: 538, 945 and 1546 Hz.
 
 ## Records
 

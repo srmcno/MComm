@@ -18,8 +18,9 @@ function makeDot(size, hard) {
     for (let x = 0; x < size; x++) {
       const d = Math.hypot(x - c, y - c) / (c + 0.5);
       if (d > 1) continue;
-      // A soft core with a fast falloff reads as a spark; hard reads as debris.
-      const a = hard ? (d < 0.82 ? 1 : 0.35) : Math.pow(1 - d, 1.9);
+      // Hard dots are solid discs with a soft rim. At low resolution a fast
+      // falloff turns into a visible plus sign the moment one gets magnified.
+      const a = hard ? Math.min(1, (1 - d) * 3.2) : Math.pow(1 - d, 1.9);
       if (a <= 0.02) continue;
       f.data[y * size + x] = rgba(255, 255, 255, a * 255);
     }
@@ -29,9 +30,9 @@ function makeDot(size, hard) {
 
 export class Particles {
   constructor() {
-    this.dotSoft = makeDot(9, false);
-    this.dotHard = makeDot(5, true);
-    this.dotTiny = makeDot(3, true);
+    this.dotSoft = makeDot(11, false);
+    this.dotHard = makeDot(9, true);
+    this.dotTiny = makeDot(7, true);
     this.pool = [];
     this.live = [];
     this.effects = [];
@@ -259,6 +260,9 @@ export class Particles {
         h: p.size, wScale: 1,
         tint: rgba(p.r, p.g, p.b, 255),
         alpha: a, additive: p.additive, emissive: p.additive, noFog: p.additive,
+        // A speck of blood a hand's width from the lens should not be the size
+        // of a door. Cap what any one particle may cover.
+        maxFrac: p.additive ? 0.16 : 0.09,
       });
     }
     for (let i = 0; i < this.effects.length; i++) {

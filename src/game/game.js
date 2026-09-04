@@ -591,6 +591,7 @@ export class Game {
     }
     this.updateBreaches(dt);
     this.updateHazards(dt);
+    this.updateBoss(dt);
     this.sky.update(dt, this);
     this.particles.update(dt, lv);
     this.checkBonusCity();
@@ -1657,6 +1658,7 @@ export class Game {
     this.sound.sfx('player_hurt');
     this.player.streak = 0;
     this.input.rumble(0.55, 0.4, 160);
+    if (how === 'melee' || how === 'chomp' || how === 'lunge') this.hud.splatter(3);
     if (this.rng() < 0.16) this.brick('brick_hurt', BRICK_LINES.hurt);
     if (src) this.hud.damageFrom(Math.atan2(src.y - this.player.y, src.x - this.player.x));
     this.hud.setFace('face_hurt', 0.9);
@@ -1728,17 +1730,73 @@ export class Game {
       this.hud.popup('WARHEADS BLESSED', { size: 11, life: 1.6, color: rgba(200, 110, 255, 255) });
     }
   }
+  /**
+   * MUTTER fights in three phases and spends the middle one hiding behind its
+   * own staff, which is exactly the kind of thing it would do.
+   */
+  updateBoss(dt) {
+    const b = this.enemies.find((e) => e.def.boss && e.alive);
+    if (!b) { this.bossShut = false; return; }
+    if (b.phase === undefined) { b.phase = 1; b.shielded = false; b.adds = []; }
+    const frac = b.hp / b.maxHp;
+    const want = frac > 0.66 ? 1 : frac > 0.33 ? 2 : 3;
+    if (want !== b.phase) {
+      b.phase = want;
+      this.sound.sfx('boss_hurt');
+      this.shake = Math.max(this.shake, 4);
+      if (want === 2) {
+        // Shutters down. It will not take a scratch until its help is dead.
+        b.shielded = true;
+        b.adds = [];
+        for (let i = 0; i < 4; i++) {
+          if (this.spawnBreach(['ghoul', 'stalker', 'howler'][i % 3])) {
+            b.adds.push(this.enemies[this.enemies.length - 1]);
+          }
+        }
+        this.hud.showBanner('SHUTTERS DOWN', 'IT IS HIDING BEHIND THE STAFF', 3.2, rgba(255, 74, 62, 255));
+        this.radio.say('ilsa', 'ilsa_boss_warning',
+          "It has armoured over. Kill what it sent and it has to open again.", { priority: 3 });
+      } else if (want === 3) {
+        this.hud.showBanner('IT IS AFRAID', 'FINISH IT', 3.0, rgba(255, 208, 72, 255));
+        this.radio.say('brick', 'brick_boss_taunt',
+          "There it is. There's the fear. I love this part.", { priority: 3 });
+      }
+    }
+    if (b.shielded) {
+      b.adds = b.adds.filter((a) => a && a.alive);
+      if (!b.adds.length) {
+        b.shielded = false;
+        this.sound.sfx('boss_hurt');
+        this.post.flash = Math.max(this.post.flash, 0.4);
+        this.hud.showBanner('SHUTTERS UP', 'HIT IT', 2.2, rgba(126, 232, 128, 255));
+      }
+    }
+    this.bossShut = b.shielded;
+  }
+
   onBossAttack(e) {
     const p = this.player;
     this.sound.sfx('boss_roar', { pan: this.panOf(e) });
-    // Salvo of bolts plus a fresh warhead: MUTTER fights on both axes.
-    for (let i = -2; i <= 2; i++) {
-      const a = Math.atan2(p.y - e.y, p.x - e.x) + i * 0.14;
-      this.bolts.push(new Bolt(e.x, e.y, e.z + 1.2, Math.cos(a), Math.sin(a), -0.06, 13, e.def.damage, e));
+    const phase = e.phase || 1;
+    // Salvo of bolts plus fresh warheads: MUTTER fights on both axes at once.
+    const spread = phase >= 3 ? 4 : 2;
+    for (let i = -spread; i <= spread; i++) {
+      const a = Math.atan2(p.y - e.y, p.x - e.x) + i * (phase >= 3 ? 0.11 : 0.14);
+      this.bolts.push(new Bolt(e.x, e.y, e.z + 1.2, Math.cos(a), Math.sin(a), -0.06,
+        13 + phase * 2, e.def.damage * this.diff.enemyDamage, e));
     }
-    if (this.sky.warheads.length < 9 && this.rng() < 0.6) {
+    if (phase >= 3) {
+      // It starts spitting too, because dignity is gone.
+      for (let i = -1; i <= 1; i++) {
+        const a = Math.atan2(p.y - e.y, p.x - e.x) + i * 0.3;
+        this.acids.push(new Acid(e.x, e.y, e.z + 1.4, Math.cos(a), Math.sin(a), 0.16, 13,
+          10 * this.diff.enemyDamage, e));
+      }
+    }
+    const cap = 6 + phase * 2;
+    if (this.sky.warheads.length < cap && this.rng() < 0.4 + phase * 0.15) {
       const t = this.rng() < 0.35 ? 'buster' : this.rng() < 0.5 ? 'mirv' : 'screamer';
-      const w = this.sky.spawnWarhead(t, 1.05);
+      const w = this.sky.spawnWarhead(t, 1 + phase * 0.06);
       this.onWarheadLaunched(w);
     }
   }
@@ -1816,6 +1874,11 @@ export class Game {
       fps: 20, size: e.height * 2.2, additive: false, alpha: 0.95,
     });
     this.sound.sfx('gib', { pan: this.panOf(e), rate: randRange(this.rng, 0.85, 1.2) });
+    // Close enough and it goes on the lens.
+    const d = dist(e.x, e.y, this.player.x, this.player.y);
+    if (d < 5.5 && this.level.lineOfSight(this.player.x, this.player.y, e.x, e.y)) {
+      this.hud.splatter(clamp(Math.round(7 - d), 2, 7));
+    }
   }
 
   spawnFlame(e, p) {

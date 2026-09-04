@@ -718,6 +718,8 @@ s = await page.evaluate(() => {
   navigator.getGamepads = () => [pad];
   const inp = g.input;
   inp.padIndex = -1;
+  window.T.arm('pistol');
+  g.player.fuse = 60; g.player.autoFuse = false;
   const ang0 = g.player.ang;
 
   pad.axes[2] = 1;                       // right stick fully right
@@ -752,10 +754,13 @@ s = await page.evaluate(() => {
   return { kind: inp.padKind, turned: +turned.toFixed(2), moved: +moved.toFixed(2),
     fired, kicked, fuseUp, seen: inp.padSeen };
 });
-check('a standard gamepad drives look, move, fire, boot and fuse',
-  s.seen && s.kind === 'xbox' && Math.abs(s.turned) > 0.3 && s.moved > 0.3 &&
-  s.fired && s.kicked && s.fuseUp,
-  `${s.kind}: turned ${s.turned} rad, moved ${s.moved} cells`);
+{
+  const parts = { detected: s.seen && s.kind === 'xbox', look: Math.abs(s.turned) > 0.3,
+    move: s.moved > 0.3, fire: s.fired, boot: s.kicked, fuse: s.fuseUp };
+  const bad = Object.entries(parts).filter(([, v]) => !v).map(([k]) => k);
+  check('a standard gamepad drives look, move, fire, boot and fuse', bad.length === 0,
+    bad.length ? `failed: ${bad.join(', ')}` : `${s.kind}: turned ${s.turned} rad, moved ${s.moved} cells`);
+}
 
 // ------------------------------------------------- 24. gore decals
 s = await page.evaluate(() => {

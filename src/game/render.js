@@ -235,9 +235,9 @@ export function drawViewmodel(game, buf, W, H) {
     const k = 1 - p.kickAnim / 0.34;
     const bf = art.vm[k < 0.35 ? 'boot_fire0' : k < 0.68 ? 'boot_fire1' : 'boot_fire2'] || art.vm.boot_idle;
     if (bf) {
-      const bs = (H * 0.72) / bf.h;
+      const bs = (H * 0.60) / bf.h;
       const bx = W / 2 - (bf.w * bs) / 2 + Math.sin(p.bobPhase) * 6 * s;
-      const by = H - bf.h * bs + (1 - Math.sin(Math.min(1, k) * Math.PI)) * H * 0.30;
+      const by = H - bf.h * bs + (1 - Math.sin(Math.min(1, k) * Math.PI)) * H * 0.34;
       const L0 = game.lights.sample(p.x, p.y);
       blitFrame(buf, W, H, bf, bx, by, {
         scale: bs, lum: clamp(0.7 + (L0[0] + L0[1] + L0[2]) / 3 * 0.5, 0.6, 1.6),

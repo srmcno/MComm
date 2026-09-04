@@ -157,6 +157,15 @@ export class Enemy {
 
   hurt(n, game, fromX, fromY) {
     if (!this.alive || this.state === ST.DYING || this.state === ST.DEAD) return false;
+    if (this.shielded) {
+      // Armour plate. Loud, and completely ineffective.
+      this.painFlash = Math.max(this.painFlash, 0.5);
+      if (game && !this._clangAt) {
+        this._clangAt = 0.2;
+        game.sound.sfx('ricochet', { pan: game.panOf(this) });
+      }
+      return false;
+    }
     this.hp -= n;
     this.painFlash = 1;
     if (this.state === ST.IDLE) this.wake(game);
@@ -190,6 +199,7 @@ export class Enemy {
     const d = this.def;
     this.stateT += dt;
     this.painFlash = damp(this.painFlash, 0, 6, dt);
+    if (this._clangAt) { this._clangAt -= dt; if (this._clangAt <= 0) this._clangAt = 0; }
     this.spawnGrace = Math.max(0, this.spawnGrace - dt);
     this.animT += dt;
     if (this.animT > 1 / d.walkFps) { this.animT = 0; this.animFrame++; }

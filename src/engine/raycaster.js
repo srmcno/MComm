@@ -426,7 +426,13 @@ export class Raycaster {
       if (!f) continue;
       const worldH = s.h || 0.8;
       const aspect = f.w / f.h;
-      const sh = worldH * s._scale;
+      let sh = worldH * s._scale;
+      // Optional screen-size ceiling, so a particle passing close to the lens
+      // does not blow up into a wall of colour.
+      if (s.maxFrac) {
+        const cap = h * s.maxFrac;
+        if (sh > cap) sh = cap;
+      }
       const sw = sh * aspect * (s.wScale || 1);
       if (sh < 0.6 || sw < 0.6) continue;
 
