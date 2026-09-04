@@ -118,7 +118,7 @@ export class Raycaster {
 
   _castWalls(lv, cam, art, light, opts, horizon, dirX, dirY, planeX, planeY) {
     const { w, h, buf, zbuf, wallTop, wallBot, skyTop } = this;
-    const { wall, wallTex, doorOpen, doorVert, height, W, H } = lv;
+    const { wall, wallTex, doorOpen, doorVert, height, sky, W, H } = lv;
     const atlas = art.texAtlas, emis = art.texEmissive;
     const projY = this.projY;
     const eye = cam.z;
@@ -138,13 +138,18 @@ export class Raycaster {
       else { stepY = 1; sdy = (mapY + 1 - cam.y) * ddy; }
 
       let side = 0, dist = 0, tex = 0, u = 0, hit = false, wallH = 1.0;
+      // The cell the ray was standing in when it hit. You can only see the
+      // horizon over a parapet if THAT cell has no roof on it right now.
+      let nearIdx = -1;
       let guard = 0;
 
       while (guard++ < 220) {
+        const prevIdx = (mapY >= 0 && mapY < H && mapX >= 0 && mapX < W) ? mapY * W + mapX : -1;
         if (sdx < sdy) { sdx += ddx; mapX += stepX; side = 0; }
         else { sdy += ddy; mapY += stepY; side = 1; }
         if (mapX < 0 || mapY < 0 || mapX >= W || mapY >= H) break;
         const idx = mapY * W + mapX;
+        nearIdx = prevIdx;
         const cell = wall[idx];
         if (!cell) continue;
 
@@ -200,9 +205,13 @@ export class Raycaster {
       wallTop[c] = drawStart;
       wallBot[c] = drawEnd;
       // Above a parapet you can see the horizon, so distant sprites and sky are
-      // allowed there. A full-height wall admits neither.
-      skyTop[c] = wallH < 0.999 ? drawStart : 0;
-      if (wallH < 0.999) this.needSky[c] = 1;
+      // allowed there. A full-height wall admits neither, and neither does a
+      // parapet whose deck still has its roof on: the panels grind back over
+      // several seconds, and the sky belongs to the cells they have cleared,
+      // not to every short wall on the map.
+      const openHere = wallH < 0.999 && nearIdx >= 0 && sky[nearIdx];
+      skyTop[c] = openHere ? drawStart : 0;
+      if (openHere) this.needSky[c] = 1;
 
       if (drawEnd < drawStart) continue;
 

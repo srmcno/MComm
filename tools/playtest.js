@@ -999,6 +999,48 @@ check('the Boot cannot punt through a wall',
   s.skipped || (s.hp1 === s.hp0 && !s.los),
   s.skipped ? 'no suitable wall on this map' : `hp ${s.hp0} -> ${s.hp1}`);
 
+// ----------------------------- 35. a closed roof is opaque, an open one is not
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  const lv = g.level;
+  // Stand in the middle of the silo deck, looking level at the horizon.
+  let cx = 0, cy = 0, n = 0;
+  for (let y = 0; y < lv.H; y++) for (let x = 0; x < lv.W; x++) {
+    if (lv.roofPanel[y * lv.W + x]) { cx += x + 0.5; cy += y + 0.5; n++; }
+  }
+  if (!n) return { skipped: true };
+  g.player.x = cx / n; g.player.y = cy / n; g.player.pitch = 0;
+  // Render straight from state, so nothing a previous case left on the camera
+  // (shake, recoil) can drag it off the deck.
+  g.shake = 0; g.shakeX = 0; g.shakeY = 0; g.player.recoilPitch = 0;
+
+  // skyTop marks the columns where the renderer decided the horizon shows above
+  // a parapet. Sweep the whole yaw so the answer does not depend on which way
+  // the level happens to start you facing.
+  const skyCols = () => {
+    let lit = 0;
+    for (let k = 0; k < 8; k++) {
+      g.player.ang = (k / 8) * Math.PI * 2;
+      const rc = window.NUKEHAUS.renderOnce();
+      for (let c = 0; c < rc.w; c++) if (rc.skyTop[c] > 0 && rc.zbuf[c] < 1e8) lit++;
+    }
+    return lit;
+  };
+  lv.closeRoof();
+  const shut = skyCols();
+  lv.openRoof();
+  for (let i = 0; i < 260; i++) lv.updateRoof(1 / 60);
+  const open = skyCols();
+  let parapets = 0;
+  for (let i = 0; i < lv.wall.length; i++) if (lv.wall[i] && lv.height[i] < 0.999) parapets++;
+  return { skipped: false, shut, open, roofOpen: lv.roofOpen, deck: n, parapets };
+});
+check('the roof is opaque until it grinds back',
+  s.skipped || (s.shut === 0 && s.open > 0 && s.roofOpen === 1),
+  s.skipped ? 'no deck on this map'
+    : `parapet-sky columns over 8 yaws: shut ${s.shut}, open ${s.open} (${s.parapets} parapets, ${s.deck} deck cells)`);
+
 // ------------------------------------------------------------- report
 console.log('');
 if (errors.length) {

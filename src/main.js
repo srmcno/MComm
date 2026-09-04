@@ -243,5 +243,8 @@ export async function boot() {
 
   // Handy for poking at the game from the console or a test harness.
   window.NUKEHAUS = { game, title, input, post, art,
+    // Render one world frame on demand, so a harness can assert on what the
+    // raycaster actually produced rather than on the state that fed it.
+    renderOnce: () => { renderWorld(game, iw, ih); return game.rc; },
     get frame() { return frame; }, get size() { return [iw, ih]; } };
 }
