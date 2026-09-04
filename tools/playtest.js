@@ -818,6 +818,187 @@ check('the intermission bonus is actually banked',
   s.total > 0 && s.score === s.carried + s.total,
   `carried ${s.carried} + bonus ${s.total} = ${s.score}`);
 
+// ------------------------------- 28. pad menu aliases stay out of gameplay
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  const pad = {
+    index: 0, id: 'Xbox Wireless Controller (STANDARD GAMEPAD)', connected: true,
+    mapping: 'standard', axes: [0, 0, 0, 0],
+    buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })),
+  };
+  navigator.getGamepads = () => [pad];
+  const inp = g.input;
+  inp.padIndex = -1;
+  const tick = (n = 1) => { for (let i = 0; i < n; i++) { inp.update(1 / 60); g.update(1 / 60, inp); inp.endFrame(); } };
+  const hold = (i, on) => { pad.buttons[i] = { pressed: on, value: on ? 1 : 0 }; };
+
+  // B / Circle is the auto-range toggle in play, and must never read as escape.
+  g.player.autoFuse = false;
+  hold(1, true); tick(1);
+  const afterB = { state: g.state, auto: g.player.autoFuse };
+  hold(1, false); tick(2);
+
+  // D-pad up dials the fuse. It must not also walk him forward.
+  g.player.autoFuse = false;
+  const x0 = g.player.x, y0 = g.player.y, f0 = g.player.fuse;
+  hold(12, true); tick(30); hold(12, false);
+  const moved = Math.hypot(g.player.x - x0, g.player.y - y0);
+  return { state: afterB.state, auto: afterB.auto, moved: +moved.toFixed(3), fuseMoved: g.player.fuse > f0 };
+});
+check('the d-pad and B/Circle do not leak menu actions into play',
+  s.state === 'play' && s.auto === true && s.moved < 0.05 && s.fuseMoved,
+  `state ${s.state}, auto-range ${s.auto}, walked ${s.moved} cells, fuse moved ${s.fuseMoved}`);
+
+// -------------------------------- 29. a pad that vanishes lets go of the trigger
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play');
+  const pad = {
+    index: 0, id: 'Xbox Wireless Controller (STANDARD GAMEPAD)', connected: true,
+    mapping: 'standard', axes: [0, 0, 0, 0],
+    buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })),
+  };
+  navigator.getGamepads = () => [pad];
+  const inp = g.input;
+  inp.padIndex = -1;
+  pad.buttons[7] = { pressed: true, value: 1 };
+  inp.update(1 / 60);
+  const held = inp.firing();
+  // The pad loses power: getGamepads simply stops returning it.
+  navigator.getGamepads = () => [];
+  inp.padIndex = -1;
+  inp.update(1 / 60);
+  return { held, after: inp.firing(), down: inp.down.has('fire'), padDown: inp.padDown.size };
+});
+check('a gamepad that disconnects mid-hold releases what it was holding',
+  s.held && !s.after && !s.down && s.padDown === 0,
+  `firing ${s.held} -> ${s.after}, down set ${s.down}`);
+
+// ------------------------- 29b. ...but the pad still drives the front-end menus
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  const title = g.titleScreen;
+  const pad = {
+    index: 0, id: 'Xbox Wireless Controller (STANDARD GAMEPAD)', connected: true,
+    mapping: 'standard', axes: [0, 0, 0, 0],
+    buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })),
+  };
+  navigator.getGamepads = () => [pad];
+  const inp = g.input;
+  // Start from a clean slate: an earlier case leaves a mouse `fire` edge behind,
+  // and the title reads fire as confirm.
+  inp.pressed.clear(); inp.down.clear(); inp.menuEdge.clear();
+  inp.mousePressed = 0; inp.mouseButtons = 0;
+  inp.padIndex = -1; inp.padDown.clear(); inp.padMenuDown.clear();
+  title.page = 'menu'; title.sel = 0;
+  const hold = (i, on) => { pad.buttons[i] = { pressed: on, value: on ? 1 : 0 }; };
+  const tick = () => { inp.update(1 / 60); title.update(1 / 60, inp, g); inp.endFrame(); };
+  hold(13, true); tick(); hold(13, false); tick();     // d-pad down
+  const moved = title.sel;
+  const stillMenu = title.page;
+  hold(0, true); tick(); hold(0, false); tick();       // A = confirm
+  const opened = title.page;
+  hold(1, true); tick(); hold(1, false); tick();       // B = back
+  return { moved, stillMenu, opened, back: title.page };
+});
+check('the pad still drives the title menu',
+  s.moved === 1 && s.stillMenu === 'menu' && s.opened === 'howto' && s.back === 'menu',
+  `d-pad -> sel ${s.moved} (${s.stillMenu}), A -> ${s.opened}, B -> ${s.back}`);
+
+// ------------------------------------------ 30. arrow keys turn, slot 6 selects
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play');
+  const a0 = g.player.ang;
+  g.input.down.add('right');
+  for (let i = 0; i < 30; i++) g.update(1 / 60, g.input);
+  g.input.down.delete('right');
+  const turned = Math.abs(g.player.ang - a0);
+  g.player.owned.deadman = true;
+  const picked = g.player.selectSlot(6);
+  return { turned: +turned.toFixed(2), picked, want: g.player.pendingWeapon };
+});
+check('arrow-key turning works and slot 6 is selectable',
+  s.turned > 0.2 && s.picked && s.want === 'deadman',
+  `turned ${s.turned} rad, slot 6 -> ${s.want}`);
+
+// -------------------------------- 31. the exit stops nagging once decks are done
+s = await page.evaluate(() => {
+  const out = [];
+  const g = window.NUKEHAUS.game;
+  for (let L = 0; L < g.totalLevels; L++) {
+    g.loadLevel(L); g.setState('play');
+    out.push({ L, waves: ((g.level.def.siege || {}).waves || []).length,
+      groups: g.waveGroupCount(), triggers: g.triggerOrder.length });
+  }
+  return out;
+});
+{
+  const bad = s.filter((r) => r.groups > r.triggers);
+  check('outstanding decks are counted by trigger group, not raw wave count',
+    bad.length === 0,
+    s.map((r) => `L${r.L + 1} ${r.waves}w/${r.groups}g/${r.triggers}t`).join('  '));
+}
+
+// ------------------------------------ 32. the pipe-bomb satchel has a sprite
+s = await page.evaluate(() => {
+  const art = window.NUKEHAUS.art;
+  const f = art.sprites.weapon_pipebomb;
+  let opaque = 0;
+  if (f) for (let i = 0; i < f.data.length; i++) if ((f.data[i] >>> 24) === 255) opaque++;
+  return { has: !!f, w: f ? f.w : 0, h: f ? f.h : 0, opaque };
+});
+check('the pipe-bomb pickup is actually visible', s.has && s.opaque > 60,
+  `${s.w}x${s.h}, ${s.opaque} opaque pixels`);
+
+// --------------------------------- 33. one-shot lines come back for a new run
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.newGame(1);
+  const first = g.radio.say('ilsa', 'test_once', 'Only once.', { once: true });
+  const again = g.radio.say('ilsa', 'test_once', 'Only once.', { once: true });
+  g.loadLevel(1);
+  const nextFloor = g.radio.say('ilsa', 'test_once', 'Only once.', { once: true });
+  g.newGame(1);
+  const newRun = g.radio.say('ilsa', 'test_once', 'Only once.', { once: true });
+  return { first, again, nextFloor, newRun };
+});
+check('a `once` line is said once per campaign, and again on a fresh one',
+  s.first && !s.again && !s.nextFloor && s.newRun,
+  `run1 ${s.first}/${s.again}, floor2 ${s.nextFloor}, run2 ${s.newRun}`);
+
+// ------------------------------------------- 34. the Boot does not reach walls
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  const lv = g.level;
+  // Find a wall with open floor on both sides, and put the player and an enemy
+  // on opposite faces of it.
+  let spot = null;
+  for (let y = 1; y < lv.H - 1 && !spot; y++) {
+    for (let x = 2; x < lv.W - 2; x++) {
+      const i = y * lv.W + x;
+      if (!lv.wall[i] || lv.doorVert[i]) continue;
+      if (lv.blocked(x - 0.5, y + 0.5) || lv.blocked(x + 1.5, y + 0.5)) continue;
+      spot = [x, y]; break;
+    }
+  }
+  if (!spot) return { skipped: true };
+  const [wx, wy] = spot;
+  g.player.x = wx - 0.5; g.player.y = wy + 0.5;
+  g.player.ang = 0;                              // facing +x, into the wall
+  const e = g.enemies[0];
+  e.x = wx + 1.5; e.y = wy + 0.5; e.z = 0; e.state = 1;
+  const hp0 = e.hp;
+  g.player.kickCooldown = 0;
+  g.tryKick();
+  return { skipped: false, hp0, hp1: e.hp, los: lv.lineOfSight(g.player.x, g.player.y, e.x, e.y) };
+});
+check('the Boot cannot punt through a wall',
+  s.skipped || (s.hp1 === s.hp0 && !s.los),
+  s.skipped ? 'no suitable wall on this map' : `hp ${s.hp0} -> ${s.hp1}`);
+
 // ------------------------------------------------------------- report
 console.log('');
 if (errors.length) {

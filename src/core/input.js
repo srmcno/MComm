@@ -40,7 +40,11 @@ const PAD_BUTTONS = {
   15: 'weapNext',    // D-pad right
 };
 
-// D-pad and face buttons double as menu navigation.
+// D-pad and face buttons double as menu navigation. These are MENU-ONLY aliases
+// and never reach the gameplay action sets: folding them in meant B/Circle fired
+// `autoFuse` and `escape` together (and updatePlay reads escape first, so the
+// auto-ranger toggle paused the game), and the d-pad walked the player while it
+// dialled the fuse. Read them through menuJustPressed().
 const PAD_MENU = { 12: 'up', 13: 'down', 14: 'left', 15: 'right', 0: 'confirm', 1: 'escape', 9: 'confirm' };
 
 const TRIGGER_ON = 0.42;   // analog trigger press threshold
@@ -80,6 +84,8 @@ export class Input {
     this.padName = '';
     this.padKind = '';            // 'xbox' | 'playstation' | 'generic'
     this.padDown = new Set();
+    this.padMenuDown = new Set();   // menu-only aliases the pad is holding
+    this.menuEdge = new Set();      // menu-only edges for this frame
     this.padMoveX = 0; this.padMoveY = 0;
     this.padLookX = 0; this.padLookY = 0;
     this.padFire = 0;             // analog trigger, 0..1
@@ -157,7 +163,7 @@ export class Input {
       this.onPadConnected && this.onPadConnected(this.padName, this.padKind);
     });
     addEventListener('gamepaddisconnected', (e) => {
-      if (e.gamepad.index === this.padIndex) { this.padIndex = -1; this.pad = null; this.padDown.clear(); }
+      if (e.gamepad.index === this.padIndex) { this.padIndex = -1; this.pad = null; this._releasePad(); }
     });
   }
 
@@ -178,7 +184,13 @@ export class Input {
       }
     }
     this.pad = gp || null;
-    if (!gp) { this.padMoveX = this.padMoveY = this.padLookX = this.padLookY = 0; this.padFire = 0; return; }
+    if (!gp) {
+      this.padMoveX = this.padMoveY = this.padLookX = this.padLookY = 0; this.padFire = 0;
+      // A pad that vanished mid-hold must let go of what it was holding, or
+      // losing power with the trigger down leaves `fire` stuck on forever.
+      this._releasePad();
+      return;
+    }
 
     const ax = gp.axes || [];
     const bt = gp.buttons || [];
@@ -202,6 +214,7 @@ export class Input {
       if (held(+i)) { nextDown.add(PAD_BUTTONS[i]); anyButton = true; }
     }
     // Menu actions come from the same buttons, plus the left stick as a d-pad.
+    // They land in their own edge set, not in the gameplay ones.
     if (this._menuRepeat === undefined) this._menuRepeat = 0;
     this._menuRepeat -= dt;
     const stickMenu = [];
@@ -209,10 +222,13 @@ export class Input {
     if (this.padMoveY > 0.55) stickMenu.push('down');
     if (this.padMoveX < -0.55) stickMenu.push('left');
     if (this.padMoveX > 0.55) stickMenu.push('right');
-    for (const i in PAD_MENU) if (held(+i)) { nextDown.add(PAD_MENU[i]); anyButton = true; }
+    const nextMenu = new Set();
+    for (const i in PAD_MENU) if (held(+i)) { nextMenu.add(PAD_MENU[i]); anyButton = true; }
+    for (const a of nextMenu) if (!this.padMenuDown.has(a)) this.menuEdge.add(a);
+    this.padMenuDown = nextMenu;
     if (stickMenu.length) {
       if (this._menuRepeat <= 0) {
-        for (const a of stickMenu) { this.pressed.add(a); this.padActive = true; }
+        for (const a of stickMenu) { this.menuEdge.add(a); this.padActive = true; }
         this._menuRepeat = this._menuHeld ? 0.16 : 0.42;
         this._menuHeld = true;
       }
@@ -272,11 +288,33 @@ export class Input {
 
   isDown(a) { return this.down.has(a); }
   justPressed(a) { return this.pressed.has(a); }
+  /**
+   * A menu-context edge: the keyboard's own actions plus the pad's menu-only
+   * aliases. Front-end screens read this; gameplay reads justPressed and so
+   * never sees the d-pad or B/Circle wearing their menu hats.
+   */
+  menuJustPressed(a) { return this.pressed.has(a) || this.menuEdge.has(a); }
   /** Swallow an edge so two consumers cannot both act on one press. */
-  consume(a) { this.pressed.delete(a); }
+  consume(a) { this.pressed.delete(a); this.menuEdge.delete(a); }
+
+  /** Drop everything the pad was holding, without stealing the keyboard's. */
+  _releasePad() {
+    for (const a of this.padDown) {
+      this.released.add(a);
+      if (!this._keyHolds(a)) this.down.delete(a);
+    }
+    this.padDown.clear();
+    this.padMenuDown.clear();
+    this._menuHeld = false; this._menuRepeat = 0;
+    this.lookScale = 1;
+    this.padFine = 0;
+  }
   justReleased(a) { return this.released.has(a); }
   rawJustPressed(code) { return this.rawPressed.has(code); }
-  anyPressed() { return this.rawPressed.size > 0 || this.mousePressed !== 0 || this.pressed.size > 0; }
+  anyPressed() {
+    return this.rawPressed.size > 0 || this.mousePressed !== 0 ||
+           this.pressed.size > 0 || this.menuEdge.size > 0;
+  }
 
   /** Movement axes, -1..1, combining WASD, arrows and the left stick. */
   axes() {
@@ -285,8 +323,10 @@ export class Input {
     if (this.down.has('down')) fwd -= 1;
     if (this.down.has('strafeRight')) str += 1;
     if (this.down.has('strafeLeft')) str -= 1;
-    if (this.rawDown.has('KeyQ')) turn -= 1;
-    if (this.rawDown.has('KeyE')) turn += 1;
+    // Q/E and the left/right arrows both alias to these. Reading the raw codes
+    // meant the advertised arrow scheme had working forward/back and dead turns.
+    if (this.down.has('left')) turn -= 1;
+    if (this.down.has('right')) turn += 1;
     str += this.padMoveX;
     fwd -= this.padMoveY;
     const run = this.down.has('run') || Math.hypot(this.padMoveX, this.padMoveY) > 0.86;
@@ -304,6 +344,7 @@ export class Input {
   /** Consume this frame's edge-triggered state. Call once at the end of each update. */
   endFrame() {
     this.pressed.clear();
+    this.menuEdge.clear();
     this.released.clear();
     this.rawPressed.clear();
     this.mousePressed = 0;

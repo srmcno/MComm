@@ -2421,6 +2421,33 @@ function paintWeapon(kind) {
     capsule(f, 20, cy, 26, cy, 3.0, 2.6, PR.steel, {});
     capsule(f, 8, cy + 4, 5, cy + 11, 2.6, 2.2, PR.dark, {});
     blob(f, 14, cy - 1, 2.4, 2.2, flat(rgba(150, 240, 255, 255)));
+  } else if (kind === 'pipebomb') {
+    // a canvas satchel with three capped pipes and the detonator clipped on top.
+    // Ilsa's drop on the second floor had no sprite at all: the render pass
+    // skipped the missing frame, so the only pipe-bomb unlock in the game was
+    // invisible and found by walking into it.
+    box(f, 9, cy - 4, 26, 14, PR.olive, { grain: 0.11, seed: 1941 });
+    fillRect(f, 9, cy - 4, 26, 1, PR.olive[3]);
+    // flap and buckles
+    fillRect(f, 9, cy - 1, 26, 4, mix(PR.olive[1], PR.dark[2], 0.35));
+    box(f, 14, cy, 3, 3, PR.brass, {});
+    box(f, 27, cy, 3, 3, PR.brass, {});
+    capsule(f, 11, cy - 5, 33, cy - 5, 1.4, 1.2, PR.wood, { grain: 0.08, seed: 1942 });
+    // three pipes standing out of the mouth of the bag
+    for (let i = 0; i < 3; i++) {
+      const bx = 15 + i * 6, top = cy - 12 + (i === 1 ? -2 : 0);
+      capsule(f, bx, top, bx, cy - 5, 2.6, 2.4, PR.steel, { grain: 0.07, seed: 1950 + i });
+      blob(f, bx, top, 3.0, 1.8, PR.dark, { shift: 1 });
+      fillRect(f, bx - 2, top + 3, 5, 1, PR.copper[3]);
+      // the fuse
+      for (let k = 0; k < 5; k++) px(f, bx + Math.round(Math.sin(k * 1.1) * 2), top - 2 - k, PR.rust[2]);
+    }
+    // detonator: a plunger box with a live red lamp
+    box(f, 33, cy - 3, 10, 9, PR.dark, { grain: 0.06, seed: 1943 });
+    fillRect(f, 34, cy - 2, 8, 1, PR.steel[2]);
+    blob(f, 38, cy - 5, 2.6, 1.8, PR.red, { shift: 1 });
+    glow(f, 38, cy - 5, 5, rgba(255, 70, 60, 255), { halo: 0.28, seed: 1944, base: rgba(30, 8, 8, 255) });
+    stencil(f, 12, cy + 6, 'HE', mix(PR.hazard[3], PR.olive[0], 0.15), 0.9);
   } else {
     // deadman: boxy launcher with a big red plunger and a chain
     box(f, 8, cy - 7, 26, 15, PR.steel, { grain: 0.08, seed: 1931 });
@@ -2458,6 +2485,7 @@ function paintProps(out) {
   out.weapon_splitter = paintWeapon('splitter');
   out.weapon_nailer = paintWeapon('nailer');
   out.weapon_halo = paintWeapon('halo');
+  out.weapon_pipebomb = paintWeapon('pipebomb');
   out.weapon_deadman = paintWeapon('deadman');
 }
 

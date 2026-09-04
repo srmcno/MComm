@@ -165,6 +165,10 @@ export class Game {
     this.nextBonusCity = BONUS_CITY_EVERY;
     this._recorded = false;
     this.beatBest = false;
+    this.dmgLedger = {};
+    // A fresh campaign gets its one-shot lines back. reset() alone keeps them
+    // said, which is right between floors and wrong between runs.
+    this.radio.resetCampaign();
     this.loadLevel(0);
   }
 
@@ -523,7 +527,8 @@ export class Game {
   }
 
   updatePause(dt, input) {
-    if (input.justPressed('pause') || input.justPressed('escape')) {
+    const menu = (a) => (input.menuJustPressed ? input.menuJustPressed(a) : input.justPressed(a));
+    if (input.justPressed('pause') || menu('escape') || menu('confirm')) {
       this.setState(STATE.PLAY);
       input.requestLock();
     }
@@ -594,7 +599,7 @@ export class Game {
         this.sound.sfx('ui_move');
         this.hud.popup(p.autoFuse ? 'AUTO-RANGING ON' : 'MANUAL FUSE', { size: 11, life: 1.1, color: rgba(110, 236, 244, 255) });
       }
-      for (let s = 1; s <= 5; s++) if (input.justPressed('slot' + s)) {
+      for (let s = 1; s <= 6; s++) if (input.justPressed('slot' + s)) {
         if (p.selectSlot(s)) this.sound.sfx('weapon_switch');
       }
       if (input.justPressed('weapNext')) { if (p.cycleWeapon(1)) this.sound.sfx('weapon_switch'); }
@@ -778,6 +783,7 @@ export class Game {
   updateHazards(dt) {
     if (!this.hazards) this.hazards = [];
     const p = this.player;
+    let worst = null;
     for (let i = this.hazards.length - 1; i >= 0; i--) {
       const h = this.hazards[i];
       h.t += dt;
@@ -789,19 +795,25 @@ export class Game {
           0.2 + this.rng() * 0.5, 2, 0.8, [96, 150, 90]);
       }
       const d = dist(h.x, h.y, p.x, p.y);
-      if (d < h.r) {
-        h.tick = (h.tick || 0) + dt;
-        if (h.tick > 0.5) {
-          h.tick = 0;
-          p.hurt(h.dps * 0.5, this, 'hazard');
-          this.sound.sfx('acid_burn', { vol: 0.5 });
-          this.hud.damageFrom(Math.atan2(h.y - p.y, h.x - p.x));
-        }
-      }
+      // Only the worst cloud you are standing in burns you. Two gorgers dying in
+      // the same doorway used to stack into an unsurvivable square metre.
+      if (d < h.r && (!worst || h.dps > worst.dps)) worst = h;
       for (const e of this.enemies) {
         if (!e.alive || e.def.mutant) continue;
         if (dist(h.x, h.y, e.x, e.y) < h.r) e.hurt(h.dps * dt, this, h.x, h.y);
       }
+    }
+    if (worst) {
+      this.hazardTick = (this.hazardTick || 0) + dt;
+      if (this.hazardTick > 0.5) {
+        this.hazardTick = 0;
+        // Scaled like every other damage source. This was the one that wasn't.
+        p.hurt(worst.dps * 0.5 * this.diff.enemyDamage, this, 'hazard');
+        this.sound.sfx('acid_burn', { vol: 0.5 });
+        this.hud.damageFrom(Math.atan2(worst.y - p.y, worst.x - p.x));
+      }
+    } else {
+      this.hazardTick = 0;
     }
   }
 
@@ -953,9 +965,22 @@ export class Game {
     }
   }
 
+  /** How many distinct trigger groups this level's waves belong to. */
+  waveGroupCount() {
+    const sg = this.level.def.siege;
+    if (!sg || !sg.waves || !sg.waves.length) return 0;
+    const groups = new Set();
+    sg.waves.forEach((w, i) => groups.add(w.trigger === undefined ? i : w.trigger));
+    // Never claim more decks than the level actually has trigger cells.
+    return Math.min(groups.size, this.triggerOrder.length || groups.size);
+  }
+
   canExit() {
-    if (this.level.def.siege && this.level.def.siege.waves &&
-        this.level.def.siege.waves.length > this.triggersFired.size) {
+    // A trigger owns EVERY wave whose index matches it, so three waves can live
+    // on two decks. Comparing raw wave count to fired triggers meant Salt
+    // Cathedral, The Furnace and MUTTER shouted SILO DECKS STILL LIVE at a
+    // player who had cleared every one of them.
+    if (this.waveGroupCount() > this.triggersFired.size) {
       // Decks still unfought: let them leave anyway, but say something about it.
       if (!this._nagged) {
         this._nagged = true;
@@ -1132,6 +1157,9 @@ export class Game {
       if (Math.abs(e.z - p.z) > 1.3) continue;
       const cosA = (dx * ca + dy * sa) / (d || 1);
       if (cosA < Math.cos(BOOT.arc)) continue;
+      // A boot is not a wallhack. Range and arc alone let it punt whatever stood
+      // on the far side of a one-cell wall or a shut door.
+      if (!this.level.lineOfSight(p.x, p.y, e.x, e.y)) continue;
       const score = d - cosA * 1.5;
       if (score < bestScore) { bestScore = score; best = e; }
     }
@@ -1895,8 +1923,13 @@ export class Game {
           10 * this.diff.enemyDamage, e));
       }
     }
-    const cap = 6 + phase * 2;
-    if (this.sky.warheads.length < cap && this.rng() < 0.4 + phase * 0.15) {
+    // MUTTER fights on both axes, but it is a garnish on the floor's three
+    // scheduled flights, not a fourth one. This used to run at roughly one extra
+    // warhead every 3.5s in phase three, which was survivable only because the
+    // wall-clock flight timer meant flights two and three arrived late or not at
+    // all. With the schedule honest, the boss has to take less of the budget.
+    const cap = 4 + phase;
+    if (this.sky.warheads.length < cap && this.rng() < 0.16 + phase * 0.08) {
       const t = this.rng() < 0.35 ? 'buster' : this.rng() < 0.5 ? 'mirv' : 'screamer';
       const w = this.sky.spawnWarhead(t, 1 + phase * 0.06);
       this.onWarheadLaunched(w);

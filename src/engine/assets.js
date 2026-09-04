@@ -90,7 +90,7 @@ export function requiredSpriteKeys() {
   for (let i = 0; i < 3; i++) keys.push(`viscera${i}`, `acid${i}`);
   keys.push('key_red', 'key_blue', 'key_gold', 'medkit_small', 'medkit_big',
     'ammo_flak', 'ammo_crate', 'barrel', 'barrel_lit', 'pillar', 'lamp',
-    'weapon_splitter', 'weapon_nailer', 'weapon_halo', 'weapon_deadman',
+    'weapon_splitter', 'weapon_nailer', 'weapon_halo', 'weapon_pipebomb', 'weapon_deadman',
     'wh_stick', 'wh_mirv', 'wh_smart', 'wh_screamer', 'wh_buster', 'scorch');
   for (let i = 0; i < 4; i++) keys.push(`treasure${i}`, `skymine${i}`);
   for (let i = 0; i < 3; i++) keys.push(`flare${i}`);

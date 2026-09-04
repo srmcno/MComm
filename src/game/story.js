@@ -205,7 +205,31 @@ export class Radio {
     this.lineIdx = {};
   }
 
-  reset() { this.queue.length = 0; this.current = null; this.cooldown = 0; }
+  /** Between floors. One-shot lines stay said, because the campaign continues. */
+  reset() {
+    this.queue.length = 0;
+    this.current = null;
+    this.cooldown = 0;
+    this.cancelVoice();
+  }
+
+  /**
+   * A brand new campaign. Clears the one-shot set as well, or every `once` line
+   * — the first-siege tutorial, the mutant warning, the chain tip, the story
+   * exchanges — is silent for every run after the first in a page session.
+   */
+  resetCampaign() {
+    this.reset();
+    this.said.clear();
+    this.lineIdx = {};
+    this.distractIdx = 0;
+    this.exIdx = 0;
+  }
+
+  cancelVoice() {
+    const v = this.game && this.game.vox;
+    if (v && v.cancel) { try { v.cancel(); } catch { /* the mute path is fine */ } }
+  }
 
   /**
    * @param {string} speaker  brick | ilsa | mutter
@@ -223,6 +247,11 @@ export class Radio {
     if (this.current && pr > (this.current.priority || 0) + 1) {
       this.queue.length = 0;
       this.current = null;
+      // Dropping the portrait is not enough: the synthesiser is still mid-line,
+      // and the urgent message would queue its audio behind the one we just
+      // discarded, so the caption and the voice come apart and the warning
+      // arrives late. Cut the voice too.
+      this.cancelVoice();
     }
     if (this.queue.length > 2) this.queue.shift();
     this.queue.push({ speaker, key, text, priority: pr, args: opts.args, delay: opts.delay || 0 });

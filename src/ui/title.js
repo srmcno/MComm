@@ -73,10 +73,13 @@ export class TitleScreen {
     this.flashT = Math.max(0, (this.flashT || 0) - dt);
 
     let action = null;
-    const up = input.justPressed('up') || input.rawJustPressed('KeyW');
-    const down = input.justPressed('down') || input.rawJustPressed('KeyS');
-    const ok = input.justPressed('confirm') || input.justPressed('use') || input.justPressed('fire');
-    const back = input.justPressed('escape');
+    // Menu context: the pad's d-pad and face buttons wear their menu hats here,
+    // which they deliberately do not during play.
+    const M = (a) => (input.menuJustPressed ? input.menuJustPressed(a) : input.justPressed(a));
+    const up = M('up') || input.rawJustPressed('KeyW');
+    const down = M('down') || input.rawJustPressed('KeyS');
+    const ok = M('confirm') || input.justPressed('use') || input.justPressed('fire');
+    const back = M('escape');
 
     if (this.page === 'menu') {
       if (up) { this.sel = (this.sel + MENU.length - 1) % MENU.length; action = 'move'; }
@@ -96,8 +99,8 @@ export class TitleScreen {
         const opts = this.optionList(game);
         if (up) { this.optSel = (this.optSel + opts.length - 1) % opts.length; action = 'move'; }
         if (down) { this.optSel = (this.optSel + 1) % opts.length; action = 'move'; }
-        const l = input.justPressed('left') || input.rawJustPressed('KeyA');
-        const r = input.justPressed('right') || input.rawJustPressed('KeyD');
+        const l = M('left') || input.rawJustPressed('KeyA');
+        const r = M('right') || input.rawJustPressed('KeyD');
         if (l) { opts[this.optSel].adj(-1); action = 'move'; }
         if (r || ok) { opts[this.optSel].adj(1); action = 'move'; }
       }

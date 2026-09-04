@@ -50,7 +50,11 @@ export const ENEMY_TYPES = {
   },
   howler: {
     hp: 70, speed: 2.1, radius: 0.30, height: 1.02, eye: 0.72,
-    sight: 24, attack: 'spit', range: 17, damage: 13, windup: 0.72, cooldown: 2.0,
+    // Sustained chip damage at 17 cells, from as many howlers as the breach cap
+    // allows. It was tuned when the Boot could reach through walls to clear
+    // them; now that it cannot, breaking line of sight is the only counter and
+    // the spit has to leave room for a player who is doing that imperfectly.
+    sight: 24, attack: 'spit', range: 17, damage: 9, windup: 0.72, cooldown: 2.6,
     score: 380, alert: 'howler_alert', die: 'howler_die', pain: 0.24, gib: 6,
     mutant: true, acid: true,
     z: 0, walkFps: 6, deathFps: 10, strafes: true,
@@ -74,9 +78,10 @@ export const ENEMY_TYPES = {
     // Sits on the deck rather than hovering over it; MUTTER is bolted to the silo.
     hp: 2600, speed: 0, radius: 1.2, height: 2.9, eye: 1.6,
     // Damage per BOLT, and it fires five to nine at a time. It was tuned at 16
-    // back when a fixed downward slope buried the whole salvo in the deck; now
-    // that they actually reach you, a volley has to be survivable.
-    sight: 60, attack: 'boss', range: 60, damage: 8, windup: 0.9, cooldown: 2.1,
+    // back when a fixed downward slope buried the whole salvo in the deck; a
+    // volley that actually arrives has to leave you standing long enough to
+    // close on it, which is what the 0.9s windup is a tell for.
+    sight: 60, attack: 'boss', range: 60, damage: 6, windup: 0.9, cooldown: 2.1,
     score: 10000, alert: 'boss_roar', pain: 0.0, gib: 20, boss: true,
     z: 0.02, walkFps: 4, deathFps: 6,
   },
