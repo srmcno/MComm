@@ -294,7 +294,7 @@ const DICT = {
   // --- vocabulary added by the three-voice story (tools/vox-g2p.js --new) ---
   ABOUT: 'AH B AW1 T', ACROSS: 'AH K R AO1 S', AGO: 'AH G OW1',
   ALIVE: 'AH L AY1 V', ANNOYED: 'AH N OY1 D', ANNUAL: 'AE1 N Y UW AH L',
-  ANYBODY: 'EH1 N IY B AA D IY', ANYONE: 'EH1 N IY W AH N',
+  ANYONE: 'EH1 N IY W AH N',
   ANYWHERE: 'EH1 N IY W EH R', ANYWAY: 'EH1 N IY W EY',
   APOLOGISING: 'AH P AA1 L AH JH AY Z IH NG', APPLIED: 'AH P L AY1 D',
   APPROACH: 'AH P R OW1 CH', ARCHITECTURE: 'AA1 R K IH T EH K CH ER',

@@ -219,6 +219,17 @@ sheet('vm-faces.png', pick([
 sheet('vm-cities.png', pick([
   ...[0, 1, 2, 3, 4, 5].flatMap((i) => [`city${i}`, `city${i}_hit`, `city${i}_dead`]),
 ]), { cols: 3, scale: 1, pad: 5, bg: 0xff141018, sky: duskSky });
+sheet('vm-portraits.png', pick([
+  ...[0, 1, 2, 3].map((i) => `portrait_brick_${i}`),
+  ...[0, 1, 2, 3].map((i) => `portrait_ilsa_${i}`),
+  'portrait_frame', 'portrait_static0', 'portrait_static1', 'portrait_static2',
+]), { cols: 4, scale: 2, pad: 6, bg: 0xff141018 });
+sheet('vm-newfx.png', pick([
+  ...[0, 1, 2, 3, 4, 5].map((i) => `gib_burst${i}`),
+  ...[0, 1, 2, 3].map((i) => `acid_splash${i}`),
+  ...[0, 1, 2].map((i) => `kick_impact${i}`),
+  'pipebomb_prop', 'pipebomb_lit0', 'pipebomb_lit1', 'pipebomb_lit2',
+]), { cols: 6, scale: 2, pad: 6, bg: BG });
 sheet('vm-fx.png', pick([
   'flash_small', 'flash_medium', 'flash_large', 'flash_ring', 'flash_plume',
   'shockring0', 'shockring1', 'shockring2', 'shockring3',
@@ -343,6 +354,85 @@ function composite() {
   writePng(path.join(OUT, 'vm-composite.png'), W, H, out);
 }
 composite();
+
+/**
+ * vm-composite-radio.png - the story frame: both portraits in their bezels at
+ * the size the HUD will actually blit them, over a bunker-lit background, with
+ * the boot viewmodel underneath and the new FX in play.
+ */
+function compositeRadio() {
+  const W = 960, H = 600;
+  const out = new Uint32Array(W * H);
+  const put = (x, y, r, g, b) => {
+    x |= 0; y |= 0;
+    if (x < 0 || y < 0 || x >= W || y >= H) return;
+    out[y * W + x] = (255 << 24 | (b & 255) << 16 | (g & 255) << 8 | (r & 255)) >>> 0;
+  };
+  const over = (x, y, c) => {
+    x |= 0; y |= 0;
+    if (x < 0 || y < 0 || x >= W || y >= H) return;
+    const a = ((c >>> 24) & 255) / 255;
+    if (a <= 0) return;
+    const d = out[y * W + x];
+    put(x, y, (c & 255) * a + (d & 255) * (1 - a),
+      ((c >>> 8) & 255) * a + ((d >>> 8) & 255) * (1 - a),
+      ((c >>> 16) & 255) * a + ((d >>> 16) & 255) * (1 - a));
+  };
+  const add = (x, y, c, k = 1) => {
+    x |= 0; y |= 0;
+    if (x < 0 || y < 0 || x >= W || y >= H) return;
+    const a = (((c >>> 24) & 255) / 255) * k;
+    if (a <= 0) return;
+    const d = out[y * W + x];
+    put(x, y, Math.min(255, (d & 255) + (c & 255) * a),
+      Math.min(255, ((d >>> 8) & 255) + ((c >>> 8) & 255) * a),
+      Math.min(255, ((d >>> 16) & 255) + ((c >>> 16) & 255) * a));
+  };
+  // a corridor: dark concrete with a warm lamp pool
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const d = Math.hypot((x - W * 0.5) / 520, (y - 210) / 320);
+      const k = Math.pow(Math.max(0, 1 - d), 1.8);
+      const n = ((x * 7 + y * 13) % 23) / 23 - 0.5;
+      put(x, y, 24 + k * 92 + n * 5, 22 + k * 68 + n * 5, 26 + k * 44 + n * 5);
+    }
+  }
+  const stamp = (f, ox, oy, w, h, mode = 'over', k = 1) => {
+    if (!f) return;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const c = f.data[(((y / h) * f.h) | 0) * f.w + (((x / w) * f.w) | 0)] >>> 0;
+        if (!(c >>> 24)) continue;
+        if (mode === 'add') add(ox + x, oy + y, c, k); else over(ox + x, oy + y, c);
+      }
+    }
+  };
+  // FX in the world behind them
+  stamp(frames.gib_burst2, 120, 150, 144, 144, 'over');
+  stamp(frames.gib_burst5, 690, 96, 168, 168, 'over');
+  stamp(frames.kick_impact1, 300, 300, 150, 150, 'add', 0.9);
+  stamp(frames.acid_splash1, 640, 320, 110, 110, 'add', 0.95);
+  stamp(frames.acid_splash3, 520, 250, 120, 120, 'add', 0.8);
+  stamp(frames.pipebomb_prop, 430, 402, 56, 56);
+  for (let i = 0; i < 3; i++) stamp(frames['pipebomb_lit' + i], 500 + i * 66, 402, 56, 56);
+
+  // the two portraits, in bezels, at HUD size
+  const N = 96, BZ = 8;
+  stamp(frames.portrait_brick_1, 96, 40, N, N);
+  stamp(frames.portrait_frame, 96 - BZ, 40 - BZ, N + BZ * 2, N + BZ * 2);
+  stamp(frames.portrait_ilsa_2, W - 96 - N, 40, N, N);
+  stamp(frames.portrait_frame, W - 96 - N - BZ, 40 - BZ, N + BZ * 2, N + BZ * 2);
+  stamp(frames.portrait_static1, W - 96 - N, 40, N, N);
+
+  // the kick, bottom-centre, at the scale the game uses
+  const scale = 2.2;
+  const vm = frames.boot_fire0;
+  const vw = vm.w * scale, vh = vm.h * scale;
+  stamp(vm, ((W - vw) / 2) | 0, (H - vh + 22) | 0, vw, vh);
+
+  writePng(path.join(OUT, 'vm-composite-radio.png'), W, H, out);
+}
+compositeRadio();
 
 // ---------------------------------------------------------------------------
 // report

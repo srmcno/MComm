@@ -42,11 +42,14 @@ const BREACH_SCHEDULE = [
 
 export const DIFFICULTY = [
   { name: 'CLERICAL',   warheadSpeed: 0.80, enemyDamage: 0.55, enemyHp: 0.85,
-    waveCount: 0.75, maxAliveDelta: -1, blast: 1.18, health: 125, regen: 1.8 },
+    waveCount: 0.75, maxAliveDelta: -1, blast: 1.18, health: 125, regen: 1.8,
+    breachGap: 1.7, breachCap: 0.55 },
   { name: 'WARDEN',     warheadSpeed: 1.00, enemyDamage: 1.00, enemyHp: 1.00,
-    waveCount: 1.00, maxAliveDelta: 0,  blast: 1.00, health: 100, regen: 1.0 },
+    waveCount: 1.00, maxAliveDelta: 0,  blast: 1.00, health: 100, regen: 1.0,
+    breachGap: 1.0, breachCap: 1.0 },
   { name: 'LAST SHIFT', warheadSpeed: 1.28, enemyDamage: 1.45, enemyHp: 1.20,
-    waveCount: 1.30, maxAliveDelta: 2,  blast: 0.90, health: 100, regen: 0.5 },
+    waveCount: 1.30, maxAliveDelta: 2,  blast: 0.90, health: 100, regen: 0.5,
+    breachGap: 0.72, breachCap: 1.4 },
 ];
 
 /** Never let a missing audio module take the game down. */
@@ -81,6 +84,11 @@ function safeVox(v) {
 export class Game {
   constructor(art, sound, vox, input, post, text) {
     this.art = art;
+    // Tools and tests hand us a minimal input stub; fill in what the game calls.
+    if (input && !input.rumble) input.rumble = () => {};
+    if (input && !input.firing) input.firing = function () { return this.isDown('fire'); };
+    if (input && input.padActive === undefined) input.padActive = false;
+    if (input && input.lookScale === undefined) input.lookScale = 1;
     this.sound = safeSound(sound);
     this.vox = safeVox(vox);
     this.voxLines = (vox && vox.LINES) || {};
@@ -197,7 +205,15 @@ export class Game {
 
     // Level one stays clean until its siege; the leak announces itself there.
     const bs = BREACH_SCHEDULE[Math.min(this.levelIndex, BREACH_SCHEDULE.length - 1)];
-    this.breach = { ...bs, t: 0, next: undefined, mawDone: false };
+    const D = this.diff;
+    this.breach = {
+      ...bs, t: 0, next: undefined, mawDone: false,
+      first: bs.first * (D.breachGap || 1),
+      gapMin: bs.gapMin * (D.breachGap || 1),
+      gapMax: bs.gapMax * (D.breachGap || 1),
+      cap: Math.max(1, Math.round(bs.cap * (D.breachCap || 1))),
+    };
+    if (bs.cap === 0) this.breach.cap = 0;
     this.hazards = [];
 
     this.triggerOrder = [];
@@ -388,7 +404,6 @@ export class Game {
     const entry = lines[key];
     if (entry) text = Array.isArray(entry) ? entry[(this.rng() * entry.length) | 0] : entry;
     if (args) for (const a of args) text = text.replace('%s', a);
-    const shown = String(text).replace(/\{[^}]*\}/g, (m) => m.slice(1, -1).replace(/[0-9]/g, '').toLowerCase());
     this.sound.duck(0.45, 1.8);
     let dur = 0;
     try { dur = this.vox.sayLine(key, { voice, args }) || 0; } catch { dur = 0; }
@@ -418,8 +433,6 @@ export class Game {
     if (opts.args) {
       for (const a of opts.args) text = text.replace('%s', a);
     }
-    // Strip inline phoneme escapes before the text hits the screen.
-    const shown = String(text).replace(/\{[^}]*\}/g, (m) => m.slice(1, -1).replace(/[0-9]/g, '').toLowerCase());
     this.sound.duck(0.4, 1.6);
     const dur = this.vox.sayLine ? this.vox.sayLine(key, opts) : 0;
     let spoken = dur ? (this.vox.lastLine || text) : text;
@@ -553,7 +566,8 @@ export class Game {
       if (input.justPressed('kick')) this.tryKick();
       if (input.justPressed('bomb')) this.tryBomb();
       if (input.justPressed('use')) this.tryUse();
-      if (input.firing()) this.tryFire();
+      // Tolerate a minimal input object (tools and tests supply one).
+      if (input.firing ? input.firing() : input.isDown('fire')) this.tryFire();
     }
 
     p.update(dt, input, lv, this);
@@ -666,8 +680,12 @@ export class Game {
     if (this.breach.t < this.breach.next) return;
     // Never let the floor become a slaughterhouse; cap what is alive at once.
     const aliveMutants = this.enemies.filter((e) => e.alive && e.def.mutant).length;
-    this.breach.next = this.breach.t + randRange(this.rng, this.breach.gapMin, this.breach.gapMax);
-    if (aliveMutants >= this.breach.cap) return;
+    // A siege already drops its own crew onto the deck. Breaching at full rate
+    // on top of that turns the set piece into a scrum.
+    const siege = this.sky.active;
+    this.breach.next = this.breach.t +
+      randRange(this.rng, this.breach.gapMin, this.breach.gapMax) * (siege ? 1.8 : 1);
+    if (aliveMutants >= (siege ? Math.ceil(this.breach.cap / 2) : this.breach.cap)) return;
     const pack = 1 + ((this.rng() * this.breach.pack) | 0);
     let spawned = 0;
     for (let i = 0; i < pack; i++) {

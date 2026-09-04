@@ -1999,7 +1999,7 @@ const WEAPON_FIT = {
   nailer: { s: 1.24, cx: 100, cy: 100, tx: 100, ty: 95 },
   halo: { s: 1.16, cx: 100, cy: 92, tx: 100, ty: 86 },
   deadman: { s: 1.24, cx: 104, cy: 118, tx: 100, ty: 108 },
-  boot: { s: 1.06, cx: 100, cy: 100, tx: 100, ty: 100 },
+  boot: { s: 0.96, cx: 100, cy: 100, tx: 100, ty: 104 },
   pipebomb: { s: 1.06, cx: 100, cy: 100, tx: 100, ty: 98 },
 };
 
@@ -2061,7 +2061,7 @@ const WEAPON_POSES = {
     },
     fire1: { dx: 3, dy: 8, rot: -0.05, flash: 0.10, P: { ext: 0.86, mud: 0.6, blood: 0.6, dust: 0.9 } },
     fire2: { dx: 1, dy: 12, rot: 0.02, flash: 0, P: { ext: 0.84, mud: 0.55, blood: 0.4, dust: 0.45 } },
-    reload0: { dx: -3, dy: 4, rot: -0.04, flash: 0, P: { ext: 0.86, mud: 0.55, blood: 0.25, dust: 0.22 } },
+    reload0: { dx: -3, dy: 2, rot: -0.04, flash: 0, P: { ext: 0.92, mud: 0.55, blood: 0.25, dust: 0.22 } },
     reload1: { dx: 0, dy: 0, rot: 0, flash: 0, P: { rest: 1, lift: 20 } },
   },
   // The pipe bomb: held cocked back, thrown, then the off hand fetches another.
@@ -2661,6 +2661,13 @@ export function buildViewmodels() {
   }
   frames.portrait_frame = drawPortraitFrame();
   for (let i = 0; i < 3; i++) frames['portrait_static' + i] = drawPortraitStatic(i);
+
+  // --- expansion FX ---
+  for (let i = 0; i < 6; i++) frames['gib_burst' + i] = drawGibBurst(96, i);
+  for (let i = 0; i < 4; i++) frames['acid_splash' + i] = drawAcidSplash(64, i);
+  for (let i = 0; i < 3; i++) frames['kick_impact' + i] = drawKickImpact(96, i);
+  frames.pipebomb_prop = drawPipebombProp(0);
+  for (let i = 0; i < 3; i++) frames['pipebomb_lit' + i] = drawPipebombProp((i + 1) / 3);
   setModel();
 
   return { frames };
@@ -4464,7 +4471,7 @@ function pEye(cv, x, y, o = {}) {
     const u = i / (w * 1.05);
     const ly = y - h * (1 - u * u * 0.34) - 0.5 + (1 - clamp(open, 0, 1)) * h * 1.9;
     for (let d2 = 0; d2 < 2.8; d2 += 0.5) tint(cv, x + i, ly - d2, mix(shadeC, skin, 0.35 + d2 * 0.16), 0.92);
-    if (lash) for (let d2 = 0; d2 < 1.4; d2 += 0.5) tint(cv, x + i, ly + d2 - 0.4, deep, 0.55 * lash);
+    if (lash) for (let d2 = 0; d2 < 1.8; d2 += 0.5) tint(cv, x + i, ly + d2 - 0.5, deep, 0.80 * lash * (1 - abs(u) * 0.3));
     const by = y + h * (1 - u * u * 0.30) + 0.5 - squint * h * 1.5;
     tint(cv, x + i, by, mix(shadeC, deep, 0.35), 0.75);
     tint(cv, x + i, by + 1.2, mix(skin, shadeC, 0.45), 0.5);
@@ -4814,11 +4821,11 @@ const ILSA = {
   lit: rgba(216, 176, 142, 255),
   shade: rgba(124, 82, 66, 255),
   deep: rgba(78, 46, 40, 255),
-  hair: rgba(96, 68, 54, 255),
-  hairHi: rgba(158, 120, 90, 255),
+  hair: rgba(124, 90, 68, 255),
+  hairHi: rgba(190, 150, 110, 255),
   lens: rgba(198, 206, 190, 255),
-  suit: rgba(106, 112, 118, 255),
-  suitD: rgba(66, 72, 80, 255),
+  suit: rgba(122, 128, 134, 255),
+  suitD: rgba(78, 84, 92, 255),
   grease: rgba(74, 66, 62, 255),
 };
 
@@ -4852,16 +4859,16 @@ function drawIlsa(cv, idx) {
   hfBox(H, 33, 42, 43, 80, 26, 2, { round: 7 });                // pulled back behind the ears
   hfBox(H, 85, 42, 95, 80, 26, 2, { round: 7 });
   hfEllipsoid(H, 64, 92, 16, 12, 18, 2);                        // the tail at the nape
-  hfEllipsoid(H, 64, 56, 24, 30, 27, 1, { over: true, taper: 0.46 });   // the face itself
-  hfBump(H, 64, 83, 14, 11, 3.0, { only: 1 });                  // chin
-  hfBump(H, 47, 64, 12, 10, 2.8, { only: 1 });
-  hfBump(H, 81, 64, 12, 10, 2.8, { only: 1 });
-  hfBump(H, 53, 50, 12, 5.5, 2.8, { only: 1 });                 // brow ridge
-  hfBump(H, 75, 50, 12, 5.5, 2.8, { only: 1 });
-  hfBump(H, 64, 57, 4.4, 14, 5.6, { only: 1, p: 1.15 });        // nose bridge
-  hfBump(H, 64, 67, 6.0, 5.0, 3.2, { only: 1, p: 1.3 });        // nose tip
-  hfBump(H, 54, 57, 9, 6, -3.0, { only: 1, p: 1.3 });
-  hfBump(H, 74, 57, 9, 6, -3.0, { only: 1, p: 1.3 });
+  hfEllipsoid(H, 64, 60, 24, 27, 27, 1, { over: true, taper: 0.46 });   // the face itself
+  hfBump(H, 64, 82, 14, 10, 3.2, { only: 1 });                  // chin
+  hfBump(H, 47, 66, 12, 10, 2.8, { only: 1 });
+  hfBump(H, 81, 66, 12, 10, 2.8, { only: 1 });
+  hfBump(H, 53, 52, 12, 5.5, 2.8, { only: 1 });                 // brow ridge
+  hfBump(H, 75, 52, 12, 5.5, 2.8, { only: 1 });
+  hfBump(H, 64, 60, 4.4, 13, 5.6, { only: 1, p: 1.15 });        // nose bridge
+  hfBump(H, 64, 69, 6.0, 5.0, 3.2, { only: 1, p: 1.3 });        // nose tip
+  hfBump(H, 54, 59, 9, 6, -3.0, { only: 1, p: 1.3 });
+  hfBump(H, 74, 59, 9, 6, -3.0, { only: 1, p: 1.3 });
   // safety glasses pushed up onto the hair
   hfBox(H, 42, 14, 86, 25, 35, 3, { round: 5, dome: 0.45 });
 
@@ -4958,7 +4965,7 @@ function drawIlsa(cv, idx) {
   blob(cv, 93, 58, 1.8, { col: rgba(120, 255, 150, 255), gloss: 0.2, grain: 0, em: 0.9 });
 
   // ---- eyes, brows ----
-  const eyeY = 59;
+  const eyeY = 60;
   pEye(cv, 54, eyeY, {
     open: M.open, squint: M.squint || 0, w: 7.6, iris: rgba(74, 96, 70, 255),
     skin: ILSA.skin, shade: ILSA.shade, deep: ILSA.deep, lash: 1, socket: 0.24,
@@ -4973,7 +4980,7 @@ function drawIlsa(cv, idx) {
     for (let i2 = -9; i2 <= 9; i2 += 0.5) {
       const u = i2 / 9;
       for (let d = 0; d < 3; d += 0.5) {
-        tint(cv, ex + i2, eyeY - 5.6 + u * u * 1.6 - d, ILSA.shade, (0.30 - d * 0.07) * (1 - abs(u) * 0.5));
+        tint(cv, ex + i2, eyeY - 5.8 + u * u * 1.6 - d, ILSA.shade, (0.34 - d * 0.07) * (1 - abs(u) * 0.5));
       }
     }
   }
@@ -4991,10 +4998,10 @@ function drawIlsa(cv, idx) {
   // wisps that have escaped forward over the temples
   for (let x = 42; x <= 86; x += 0.5) {
     const u = (x - 64) / 22;
-    for (let d = 0; d < 3; d += 0.5) tint(cv, x, 33 + u * u * 4.5 + d, ILSA.shade, 0.30 - d * 0.06);
+    for (let d = 0; d < 4; d += 0.5) tint(cv, x, 36 + u * u * 4.5 + d, ILSA.deep, 0.42 - d * 0.07);
   }
   for (const sx of [-1, 1]) {
-    let fx = 64 + sx * 21, fy = 34;
+    let fx = 64 + sx * 21, fy = 38;
     for (let t = 1; t <= 4; t++) {
       const nx2 = fx + sx * 2.2, ny2 = fy + 3.4;
       capsule(cv, fx, fy, nx2, ny2, 1.7, 1.1, {
@@ -5006,23 +5013,28 @@ function drawIlsa(cv, idx) {
   }
 
   // ---- nose, mouth ----
-  for (let y = 52; y <= 71; y++) {
-    const k = clamp((y - 52) / 19, 0, 1);
+  for (let y = 54; y <= 73; y++) {
+    const k = clamp((y - 54) / 19, 0, 1);
     for (let i2 = 0; i2 < 0.8 + k * 2.6; i2 += 0.5) tint(cv, 64 + 2.8 + k * 2.0 + i2, y, ILSA.shade, 0.28 + k * 0.30);
     tint(cv, 64 - 1.2, y, mix(ILSA.skin, ILSA.lit, 0.5), 0.26);
   }
-  for (const sx of [-1, 1]) ellipseFill(cv, 64 + sx * 3.4, 70, 1.8, 1.2, { bulge: 0, gloss: 0, grain: 0, shader: () => ILSA.deep });
-  for (let x = 59; x <= 69; x += 0.5) tint(cv, x, 72 + pow(abs(x - 64) / 5, 2) * 1.2, ILSA.shade, 0.4);
+  for (const sx of [-1, 1]) ellipseFill(cv, 64 + sx * 3.4, 72, 1.8, 1.2, { bulge: 0, gloss: 0, grain: 0, shader: () => ILSA.deep });
+  for (let x = 59; x <= 69; x += 0.5) tint(cv, x, 74 + pow(abs(x - 64) / 5, 2) * 1.2, ILSA.shade, 0.4);
   // cheek hollows and a jaw line, so the lower face has structure
   for (const sx of [-1, 1]) {
     for (let t = 0; t <= 1; t += 0.03) {
-      tint(cv, 64 + sx * lerp(20, 12, t), lerp(64, 82, t), ILSA.shade, 0.34 * (1 - abs(t - 0.4)));
+      tint(cv, 64 + sx * lerp(20, 11, t), lerp(66, 84, t), ILSA.shade, 0.36 * (1 - abs(t - 0.4)));
     }
   }
-  for (let a = 0.45; a < PI - 0.45; a += 0.03) {
-    for (let d = 0; d < 2.5; d += 0.5) tint(cv, 64 + cos(a) * -22, 56 + sin(a) * 29 - d, ILSA.shade, 0.18);
+  // jaw line, then the shadow it casts on the neck
+  for (let a = 0.40; a < PI - 0.40; a += 0.025) {
+    for (let d = 0; d < 2.5; d += 0.5) tint(cv, 64 + cos(a) * -22, 60 + sin(a) * 27 - d, ILSA.shade, 0.22);
   }
-  pMouth(cv, 64, 77, M.mouth, {
+  for (let x = 48; x <= 80; x += 0.5) {
+    const u = (x - 64) / 16;
+    for (let d = 0; d < 4; d += 0.5) tint(cv, x, 90 + u * u * 4 + d, ILSA.deep, 0.30 - d * 0.05);
+  }
+  pMouth(cv, 64, 79, M.mouth, {
     w: 13, skin: ILSA.skin, lip: rgba(164, 106, 94, 255), shade: ILSA.shade,
     dark: rgba(44, 20, 20, 255), skew: M.skew || 0,
   });
@@ -5053,8 +5065,8 @@ function drawIlsa(cv, idx) {
 
   // ---- grease, worn across one cheek with the back of a wrist ----
   for (let k = 0; k < 4; k++) {
-    const gy = 70 + k * 2.6;
-    for (let x = 78; x < 94; x += 0.5) {
+    const gy = 72 + k * 2.6;
+    for (let x = 78; x < 92; x += 0.5) {
       const n = fbm(seed + 121, x / 4, gy / 3, 2, 8);
       if (n < 0.42) continue;
       tint(cv, x, gy + sin(x * 0.4) * 1.2, ILSA.grease, 0.30 + n * 0.42);
@@ -5093,11 +5105,11 @@ function crtPass(f, seed) {
       r += br; g += bg; b += bb;
       // phosphor: pull toward green, lift the blacks the way a CRT does
       const lum = (r * 0.3 + g * 0.6 + b * 0.1);
-      r = lerp(r, lum * 0.84, 0.18);
-      g = lerp(g, lum * 1.08, 0.18) + 5;
-      b = lerp(b, lum * 0.88, 0.18) + 1;
+      r = lerp(r, lum * 0.86, 0.16) * 1.06;
+      g = lerp(g, lum * 1.10, 0.16) * 1.10 + 4;
+      b = lerp(b, lum * 0.90, 0.16) * 1.04;
       // scanlines, plus a slow horizontal band that is a touch brighter
-      const scan = (y & 1) ? 0.91 : 1.03;
+      const scan = (y & 1) ? 0.94 : 1.02;
       const band = 1 + 0.07 * sin((y + (seed % 17)) * 0.10);
       const jitter = ((y % 5) === 0) ? 1.03 : 1;
       const k2 = scan * band * jitter;
@@ -5114,11 +5126,13 @@ function buildPortrait(who, idx) {
   const tilt = who === 'ilsa' ? (ILSA_MODES[idx].tilt || 0) : (idx === 1 ? -0.03 : 0);
   const posed = tilt ? poseCv(cv, tilt, 64, 96, 0, 0) : cv;
   const f = bake(posed, {
-    key: norm3(-0.42, -0.70, 0.58),
+    key: who === 'brick' ? norm3(-0.42, -0.70, 0.58) : norm3(-0.52, -0.62, 0.58),
     keyCol: who === 'brick' ? [1.0, 0.93, 0.84] : [0.94, 0.98, 1.0],
-    fill: 0.30, fillCol: who === 'brick' ? [0.60, 0.58, 0.66] : [0.54, 0.60, 0.70],
-    rim: 0.26, env: 0.30, exposure: who === 'brick' ? 1.0 : 0.90,
-    bounce: 0.20, bounceCol: who === 'brick' ? [1.0, 0.72, 0.52] : [0.72, 0.90, 0.80],
+    fill: who === 'brick' ? 0.30 : 0.26,
+    fillCol: who === 'brick' ? [0.60, 0.58, 0.66] : [0.46, 0.56, 0.62],
+    rim: 0.26, env: 0.30, exposure: who === 'brick' ? 1.0 : 1.14,
+    bounce: who === 'brick' ? 0.20 : 0.14,
+    bounceCol: who === 'brick' ? [1.0, 0.72, 0.52] : [0.72, 0.90, 0.80],
   });
   rimOutline(f, rgba(12, 10, 14, 255));
   if (who === 'ilsa') crtPass(f, 9301 + idx);
@@ -5191,5 +5205,268 @@ function drawPortraitStatic(k) {
       blend(f, x, y, rgba(v * 0.72, v, v * 0.80, 255), min(a, 0.85));
     }
   }
+  return f;
+}
+
+// ---------------------------------------------------------------------------
+// EXPANSION FX
+// ---------------------------------------------------------------------------
+
+const GORE = [
+  [0.00, 255, 236, 232],
+  [0.14, 255, 150, 150],
+  [0.34, 214, 58, 52],
+  [0.58, 146, 24, 28],
+  [0.80, 84, 16, 22],
+  [1.00, 38, 12, 16],
+];
+
+/** Meat ramp: t=0 the hot wet centre, t=1 dried and dark. */
+function goreGradient(t) {
+  t = clamp(t, 0, 1);
+  for (let i = 1; i < GORE.length; i++) {
+    const a = GORE[i - 1], b = GORE[i];
+    if (t <= b[0]) {
+      const u = (t - a[0]) / (b[0] - a[0] || 1);
+      return [lerp(a[1], b[1], u), lerp(a[2], b[2], u), lerp(a[3], b[3], u)];
+    }
+  }
+  return [38, 12, 16];
+}
+
+/**
+ * A body coming apart: dense and hot at frame 0, then chunks, strings and a
+ * settling mist thrown outward. Not an explosion - no yellow, no soot.
+ */
+function drawGibBurst(size, k) {
+  const f = makeFrame(size, size);
+  const c = size / 2;
+  const t = k / 5;
+  const seed = 9701 + k * 47;
+  const rng = makeRng(seed);
+  const R = lerp(9, 40, pow(t, 0.62));
+  const edge = size * 0.46;
+
+  // --- the wet core, shrinking and cooling ---
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = x - c, dy = y - c;
+      const d = hypot(dx, dy);
+      if (d > edge) continue;
+      const ang = atan2(dy, dx);
+      const warp = fbm(seed, cos(ang) * 3 + 4, sin(ang) * 3 + 4, 3, 8);
+      const blob2 = fbm(seed + 5, x / 5.5, y / 5.5, 3, 8);
+      const rr = R * (0.52 + warp * 0.72);
+      let dens = pow(max(0, 1 - d / rr), 0.95) * (0.62 + blob2 * 1.15) * (1.30 - t * 0.80);
+      dens *= smoothstep(edge, edge * 0.62, d);
+      if (dens < 0.03) continue;
+      const heat = clamp(0.16 + (d / max(1, rr)) * 0.55 + t * 0.5, 0, 1);
+      const g = goreGradient(heat);
+      blend(f, x, y, rgba(g[0], g[1], g[2], 255), clamp(dens, 0, 0.96));
+    }
+  }
+  // --- chunks: actual pieces with a lit top and a dark underside ---
+  const n = 16 + k * 5;
+  for (let i = 0; i < n; i++) {
+    const a = rng() * TAU;
+    const r = R * (0.5 + rng() * 1.15) * (0.35 + t * 1.1);
+    const cx2 = c + cos(a) * r, cy2 = c + sin(a) * r * 0.92 + t * t * 12;
+    if (hypot(cx2 - c, cy2 - c) > edge) continue;
+    const rad = (1.8 + rng() * 4.6) * (1 - t * 0.30);
+    const asp = 0.6 + rng() * 1.1, ca2 = cos(rng() * PI), sa2 = sin(rng() * PI);
+    for (let j = -rad * 2; j <= rad * 2; j++) {
+      for (let ii = -rad * 2; ii <= rad * 2; ii++) {
+        // an oriented lump, roughened so it is not a bead
+        const rx2 = (ii * ca2 + j * sa2) / rad, ry2 = (-ii * sa2 + j * ca2) / (rad * asp);
+        const dd = hypot(rx2, ry2) * (0.86 + fbm(seed + i, (cx2 + ii) / 2.2, (cy2 + j) / 2.2, 2, 8) * 0.36);
+        if (dd > 1) continue;
+        const g = goreGradient(clamp(0.16 + dd * 0.55 + t * 0.26, 0, 1));
+        const lit = clamp(1 - (j / rad) * 0.42, 0.45, 1.5);
+        blend(f, cx2 + ii, cy2 + j, rgba(g[0] * lit, g[1] * lit, g[2] * lit, 255), clamp(1 - dd * 0.22, 0, 0.99));
+      }
+    }
+    // a bone chip or two
+    if (rng() < 0.16) {
+      blend(f, cx2, cy2 - rad * 0.4, rgba(232, 224, 202, 255), 0.9);
+      blend(f, cx2 + 1, cy2 - rad * 0.4, rgba(196, 186, 166, 255), 0.8);
+    }
+  }
+  // --- strings and spatter trails ---
+  for (let i = 0; i < 10 + k * 3; i++) {
+    const a = rng() * TAU;
+    const len = R * (0.6 + rng() * 1.2);
+    let px2 = c + cos(a) * R * 0.3, py2 = c + sin(a) * R * 0.3;
+    for (let sgi = 0; sgi < 7; sgi++) {
+      const nx2 = px2 + cos(a + sin(sgi * 1.7 + i) * 0.5) * (len / 7);
+      const ny2 = py2 + sin(a + sin(sgi * 1.7 + i) * 0.5) * (len / 7) + t * 2;
+      if (hypot(nx2 - c, ny2 - c) < edge) {
+        const g = goreGradient(0.30 + sgi * 0.07 + t * 0.3);
+        blend(f, nx2, ny2, rgba(g[0], g[1], g[2], 255), (0.85 - sgi * 0.09) * (1 - t * 0.4));
+      }
+      px2 = nx2; py2 = ny2;
+    }
+  }
+  // --- fine mist that lingers ---
+  if (t > 0.25) {
+    for (let i = 0; i < 90; i++) {
+      const a = rng() * TAU, r = R * (0.7 + rng() * 1.25);
+      const x = c + cos(a) * r, y = c + sin(a) * r + t * 10;
+      if (hypot(x - c, y - c) > edge) continue;
+      const g = goreGradient(0.5 + rng() * 0.4);
+      blend(f, x, y, rgba(g[0], g[1], g[2], 255), (0.5 - t * 0.28) * rng());
+    }
+  }
+  return f;
+}
+
+const ACID = rgba(120, 255, 140, 255);
+
+/** Glowing green acid impact: hot core, running droplets, a fading pool. */
+function drawAcidSplash(size, k) {
+  const f = makeFrame(size, size);
+  const c = size / 2;
+  const t = k / 3;
+  const seed = 9801 + k * 53;
+  const rng = makeRng(seed);
+  const R = lerp(8, 26, pow(t, 0.6));
+  const edge = size * 0.46;
+  const env = makeEnvelope(seed, 5, 0.55);
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = x - c, dy = y - c;
+      const d = hypot(dx, dy);
+      if (d > edge) continue;
+      let ang = atan2(dy, dx); if (ang < 0) ang += TAU;
+      const rr = R * env(ang);
+      let inten = pow(max(0, 1 - d / rr), 1.15) * (1.25 - t * 0.55);
+      inten += pow(max(0, 1 - d / (R * 0.34)), 1.8) * (1.8 - t * 1.35);
+      inten *= smoothstep(edge, edge * 0.66, d);
+      if (inten < 0.02) continue;
+      // white-hot centre falling off to a deep bottle green
+      const wh = clamp((inten - 1.35) * 0.85, 0, 1);
+      const cool = clamp(1 - inten * 0.95, 0, 1);
+      const r2 = lerp(lerp(120, 34, cool), 250, wh);
+      const g2 = lerp(lerp(255, 132, cool * 0.8), 255, wh);
+      const b2 = lerp(lerp(140, 52, cool), 240, wh);
+      blend(f, x, y, rgba(r2, g2, b2, 255), clamp(pow(inten, 0.8) * 0.95, 0, 0.95));
+    }
+  }
+  // flung droplets, each with a short tail
+  for (let i = 0; i < 14 + k * 4; i++) {
+    const a = rng() * TAU;
+    const r = R * (0.85 + rng() * (0.6 + t * 0.9));
+    const x = c + cos(a) * r, y = c + sin(a) * r * 0.95 + t * t * 6;
+    if (hypot(x - c, y - c) > edge) continue;
+    const rad = 0.9 + rng() * 2.2 * (1 - t * 0.4);
+    for (let j = -rad; j <= rad; j++) for (let ii = -rad; ii <= rad; ii++) {
+      const dd = hypot(ii, j) / rad;
+      if (dd > 1) continue;
+      blend(f, x + ii, y + j, mix(ACID, rgba(46, 150, 70, 255), dd * 0.8), (1 - dd * 0.4) * (0.95 - t * 0.4));
+    }
+    for (let s2 = 1; s2 < 4; s2++) {
+      blend(f, x - cos(a) * s2 * 1.4, y - sin(a) * s2 * 1.4, ACID, (0.5 - s2 * 0.12) * (1 - t * 0.5));
+    }
+  }
+  return f;
+}
+
+/** A boot connecting: a stylised concussion ring, dust, and a few streaks. */
+function drawKickImpact(size, k) {
+  const f = makeFrame(size, size);
+  const c = size / 2;
+  const t = k / 2;
+  const seed = 9901 + k * 59;
+  const rng = makeRng(seed);
+  const R = lerp(13, 38, pow(t, 0.62));
+  const thick = lerp(4.4, 2.0, t);
+  const bright = lerp(1.0, 0.42, t);
+  const edge = size * 0.47;
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = x - c, dy = y - c;
+      const d = hypot(dx, dy * 1.22);          // squashed: the blow lands flat
+      if (d > edge) continue;
+      const ang = atan2(dy, dx);
+      const wob = 1 + (fbm(seed, cos(ang) * 3 + 4, sin(ang) * 3 + 4, 2, 8) - 0.5) * 0.20;
+      const off = abs(d - R * wob);
+      const core = pow(max(0, 1 - off / thick), 1.3) * 1.15 * bright;
+      const halo = pow(max(0, 1 - off / (thick * 6)), 2.0) * 0.46 * bright;
+      let inten = core + halo;
+      inten *= smoothstep(edge, edge * 0.7, d);
+      if (inten < 0.015) continue;
+      const wh = clamp((inten - 0.85) * 1.2, 0, 1);
+      blend(f, x, y, rgba(lerp(214, 255, wh), lerp(202, 250, wh), lerp(178, 236, wh), 255),
+        clamp(inten * 0.85, 0, 0.92));
+    }
+  }
+  // dust kicked off the floor, heavier at the bottom of the ring
+  for (let i = 0; i < 12 + k * 6; i++) {
+    const a = rng() * TAU;
+    const r = R * (0.75 + rng() * 0.7);
+    const x = c + cos(a) * r, y = c + sin(a) * r * 0.72 + t * 6;
+    const rad = (3 + rng() * 7) * (0.6 + t * 0.8);
+    for (let j = -rad; j <= rad; j++) for (let ii = -rad; ii <= rad; ii++) {
+      const dd = hypot(ii, j) / rad;
+      if (dd > 1) continue;
+      if (hypot(x + ii - c, y + j - c) > edge) continue;
+      const nn = fbm(seed + i, (x + ii) / 5, (y + j) / 5, 2, 8);
+      const g = 118 + nn * 54;
+      blend(f, x + ii, y + j, rgba(g, g * 0.96, g * 0.86, 255),
+        pow(1 - dd, 1.5) * (0.20 + nn * 0.28) * (1 - t * 0.35));
+    }
+  }
+  // a couple of hard radial streaks, because it is a kick and not a puff
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * TAU + 0.4 + t * 0.3;
+    for (let s2 = 0; s2 < 22; s2++) {
+      const rr = R * 0.55 + s2 * 1.5;
+      const x = c + cos(a) * rr, y = c + sin(a) * rr * 0.75;
+      if (hypot(x - c, y - c) > edge) continue;
+      blend(f, x, y, rgba(238, 230, 210, 255), (0.55 - s2 * 0.022) * bright);
+    }
+  }
+  return f;
+}
+
+/** The bomb as a world object: lying on the floor, timer face up. */
+function drawPipebombProp(lit) {
+  const S = 28;
+  const cv = makeCv(S, S);
+  setModel();
+  // pipe lying across the tile
+  capsule(cv, 5, 17, 23, 15, 5.2, 5.2, { shader: pipeShader(9951), gloss: 0.5, grain: 0, seed: 9953 });
+  for (const [x0, x1] of [[5, 7.5], [23, 20.5]]) {
+    capsule(cv, x0, x0 < 10 ? 17 : 15, x1, x1 < 10 ? 17 : 15.4, 6.0, 5.7, {
+      gloss: 0.55, grain: 0.07, seed: 9955,
+      shader: (t, u) => mix(shade(PIPE_D, 0.72), STEEL_B, clamp(0.48 - u * 0.8, 0, 1)),
+    });
+  }
+  tapeWrap(cv, 8.5, 16.6, 11, 16.4, 5.4, 9957);
+  tapeWrap(cv, 18, 15.6, 20.5, 15.4, 5.4, 9959);
+  // timer dial, face up toward the player
+  blob(cv, 14, 10, 6.2, { col: rgba(200, 194, 178, 255), gloss: 0.3, grain: 0.08, seed: 9961 });
+  ringTube(cv, 14, 10, 5.6, 1.4, {
+    gloss: 0.55, grain: 0.07, seed: 9963,
+    shader: (a, u) => mix(shade(STEEL_D, 0.6), STEEL_B, clamp(0.55 - cos(a + 0.5) * 0.5 - u * 0.4, 0, 1)),
+  });
+  blob(cv, 14, 10, 4.4, { col: DIAL_FACE, gloss: 0.22, grain: 0.05, seed: 9965 });
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * TAU;
+    for (let r = 2.6; r <= 4.0; r += 0.5) tint(cv, 14 + cos(a) * r, 10 + sin(a) * r, rgba(52, 44, 36, 255), 0.85);
+  }
+  const ha = -PI / 2 + lit * 2.0;
+  for (let r = -0.6; r <= 3.6; r += 0.4) tint(cv, 14 + cos(ha) * r, 10 + sin(ha) * r, rgba(190, 46, 36, 255), 0.95);
+  // arming lamp: dark on the prop, brightening once the fuse is running
+  const lampC = lit > 0
+    ? mix(rgba(90, 26, 22, 255), rgba(255, 170, 120, 255), lit)
+    : rgba(76, 24, 22, 255);
+  blob(cv, 22, 9, 2.2, { col: lampC, gloss: 0.4, grain: 0, em: 0.15 + lit * 0.85 });
+  // fuse stub
+  capsule(cv, 5, 17, 1.5, 21, 1.8, 1.2, { col: rgba(148, 132, 96, 255), gloss: 0.14, grain: 0.14, seed: 9967 });
+  scuff(cv, 2, 4, 24, 20, 9969, 8, 0.3);
+  const f = bake(cv, { fill: 0.28, rim: 0.34, env: 0.8, exposure: 1.04 });
+  rimOutline(f, rgba(10, 9, 12, 255));
   return f;
 }

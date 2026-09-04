@@ -36,6 +36,8 @@ const report = await page.evaluate(async (difficulty) => {
     fwd: 0, strafe: 0, run: true,
     isDown: () => false, justPressed: () => false, justReleased: () => false,
     rawJustPressed: () => false, anyPressed: () => false,
+    firing: () => false, rumble: () => {}, update: () => {},
+    padActive: false, lookScale: 1, mouseMoved: false, padSeen: false,
     axes() { return { fwd: this.fwd, strafe: this.strafe, turn: 0, run: this.run }; },
     endFrame() { this.mouseDX = 0; this.mouseDY = 0; this.wheel = 0; },
     requestLock() {}, releaseLock() {},
@@ -111,6 +113,11 @@ const report = await page.evaluate(async (difficulty) => {
       // into a wrench.
       let evade = 0, evadeStrafe = 0;
       if (close && cd < 4.2) { evade = -0.8; evadeStrafe = (Math.floor(t * 0.6) % 2) ? 0.9 : -0.9; }
+      // Anything inside boot range gets the boot; it costs nothing and it works.
+      if (close && cd < 2.1 && p.kickCooldown <= 0) {
+        p.ang = Math.atan2(close.y - p.y, close.x - p.x);
+        g.tryKick();
+      }
       if (close && g.sky.warheads.length) {
         if (p.owned.nailer && p.ammo.nail > 4) p.weapon = 'nailer';
         p.ang = Math.atan2(close.y - p.y, close.x - p.x);
