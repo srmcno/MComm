@@ -2059,9 +2059,9 @@ const WEAPON_POSES = {
       dx: -2, dy: 0, rot: 0.03, flash: 0.42, flashR: 150, flashCol: [1.0, 0.92, 0.80],
       P: { ext: 1.0, mud: 0.6, blood: 0.75, dust: 0.5 },
     },
-    fire1: { dx: 3, dy: 8, rot: -0.05, flash: 0.10, P: { ext: 0.86, mud: 0.6, blood: 0.6, dust: 0.9 } },
-    fire2: { dx: 1, dy: 12, rot: 0.02, flash: 0, P: { ext: 0.84, mud: 0.55, blood: 0.4, dust: 0.45 } },
-    reload0: { dx: -3, dy: 2, rot: -0.04, flash: 0, P: { ext: 0.92, mud: 0.55, blood: 0.25, dust: 0.22 } },
+    fire1: { dx: 3, dy: 6, rot: -0.05, flash: 0.10, P: { ext: 0.90, mud: 0.6, blood: 0.6, dust: 0.9 } },
+    fire2: { dx: 1, dy: 10, rot: 0.02, flash: 0, P: { ext: 0.80, mud: 0.55, blood: 0.4, dust: 0.45 } },
+    reload0: { dx: -3, dy: 10, rot: -0.04, flash: 0, P: { ext: 0.74, mud: 0.55, blood: 0.25, dust: 0.2 } },
     reload1: { dx: 0, dy: 0, rot: 0, flash: 0, P: { rest: 1, lift: 20 } },
   },
   // The pipe bomb: held cocked back, thrown, then the off hand fetches another.
@@ -5277,7 +5277,10 @@ function drawGibBurst(size, k) {
     const cx2 = c + cos(a) * r, cy2 = c + sin(a) * r * 0.92 + t * t * 12;
     if (hypot(cx2 - c, cy2 - c) > edge) continue;
     const rad = (1.8 + rng() * 4.6) * (1 - t * 0.30);
-    const asp = 0.6 + rng() * 1.1, ca2 = cos(rng() * PI), sa2 = sin(rng() * PI);
+    // one angle, not two: cos(a) and sin(b) is not a rotation, and when both
+    // land near zero the lump degenerates into a filled rectangle.
+    const a3 = rng() * PI;
+    const asp = 0.6 + rng() * 1.1, ca2 = cos(a3), sa2 = sin(a3);
     for (let j = -rad * 2; j <= rad * 2; j++) {
       for (let ii = -rad * 2; ii <= rad * 2; ii++) {
         // an oriented lump, roughened so it is not a bead

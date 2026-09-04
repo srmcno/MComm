@@ -109,7 +109,9 @@ ok(baselineChecked === Object.keys(VM_BASELINE).length,
 // The kick is a leg, not a gun: at rest it is meant to be almost entirely out
 // of frame, so boot_idle carries its own documented floor. Everything else
 // keeps the original thresholds.
-const OPAQUE_FLOOR = { boot_idle: 1800, boot_fire2: 4200, boot_reload1: 2600 };
+// boot_idle is the leg at rest, almost entirely below the frame; reload0 is the
+// most retracted point of the kick. Both are deliberately sparse.
+const OPAQUE_FLOOR = { boot_idle: 1800, boot_fire2: 4200, boot_reload0: 3200, boot_reload1: 2600 };
 const BOTTOM_FLOOR = { boot_fire0: 1400 };   // full extension lifts the boot up-frame
 for (const w of WEAPONS) for (const p of POSES) {
   const k = `${w}_${p}`, s = S[k]; if (!s) continue;
