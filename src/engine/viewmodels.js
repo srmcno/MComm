@@ -4870,7 +4870,9 @@ function drawIlsa(cv, idx) {
   hfBump(H, 54, 59, 9, 6, -3.0, { only: 1, p: 1.3 });
   hfBump(H, 74, 59, 9, 6, -3.0, { only: 1, p: 1.3 });
   // safety glasses pushed up onto the hair
-  hfBox(H, 42, 14, 86, 25, 35, 3, { round: 5, dome: 0.45 });
+  hfBox(H, 43, 14, 62, 25, 35, 3, { round: 5, dome: 0.55 });
+  hfBox(H, 66, 14, 85, 25, 35, 3, { round: 5, dome: 0.55 });
+  hfBox(H, 60, 17, 68, 22, 33, 3, { round: 2, dome: 0.2 });
 
   // ---- albedo ----
   for (let y = 0; y < PW; y++) {
@@ -4907,17 +4909,19 @@ function drawIlsa(cv, idx) {
   hfNormals(cv, H, 0.58);
 
   // ---- safety glasses: a bright lower lip and a raked highlight ----
-  for (let x = 43; x <= 85; x++) {
-    const u = (x - 64) / 21;
-    tint(cv, x, 16.2 + u * u * 1.8, rgba(214, 232, 214, 255), 0.62 - abs(u) * 0.34);
-    tint(cv, x, 23.8 + u * u * 1.2, rgba(72, 88, 76, 255), 0.62);
+  for (const sx of [-1, 1]) {
+    for (let x = 0; x <= 19; x++) {
+      const lx = 64 + sx * (5 + x), u = (x - 9.5) / 9.5;
+      tint(cv, lx, 16.4 + u * u * 1.4, rgba(216, 234, 216, 255), 0.66 - abs(u) * 0.34);
+      tint(cv, lx, 23.6 - u * u * 1.0, rgba(70, 86, 74, 255), 0.62);
+    }
   }
   // frame rim and the strap ends, so it reads as safety glasses not a visor
   for (const sx of [-1, 1]) {
     capsule(cv, 64 + sx * 21, 16, 64 + sx * 25, 28, 2.2, 1.8,
       { col: rgba(52, 56, 50, 255), gloss: 0.5, grain: 0.06, seed: 9351 });
   }
-  metalPanelRot(cv, 64, 20, 7, 4, 0, { col: rgba(70, 76, 68, 255), gloss: 0.5, seed: 9353 });
+  metalPanelRot(cv, 64, 19, 9, 4, 0, { col: rgba(66, 72, 64, 255), gloss: 0.55, seed: 9353 });
   pOcclude(cv, Array.from({ length: 132 }, (_, i) => [43 + (i % 44), 25 + ((i / 44) | 0)]), 0.80);
   // loose strands that have escaped the tie
   for (let k = 0; k < 4; k++) {
@@ -4929,9 +4933,9 @@ function drawIlsa(cv, idx) {
     for (let t = 1; t <= 6; t++) {
       const nx2 = x0 + sx * t * 0.9 + sin(t * 0.9 + k) * 1.6;
       const ny2 = y0 + (t / 6) * len;
-      capsule(cv, px2, py2, nx2, ny2, 1.5, 1.0, {
-        gloss: 0.34, grain: 0.06, seed: seed + 70 + k,
-        shader: (tt, u) => mix(shade(ILSA.hair, 0.8), ILSA.hairHi, clamp(0.5 - u * 0.9, 0, 1)),
+      capsule(cv, px2, py2, nx2, ny2, 1.6, 1.1, {
+        gloss: 0.16, grain: 0.06, seed: seed + 70 + k,
+        shader: (tt, u) => mix(shade(ILSA.hair, 0.7), mix(ILSA.hair, ILSA.hairHi, 0.5), clamp(0.5 - u * 0.9, 0, 1)),
       });
       px2 = nx2; py2 = ny2;
     }
@@ -5005,8 +5009,8 @@ function drawIlsa(cv, idx) {
     for (let t = 1; t <= 4; t++) {
       const nx2 = fx + sx * 2.2, ny2 = fy + 3.4;
       capsule(cv, fx, fy, nx2, ny2, 1.7, 1.1, {
-        gloss: 0.28, grain: 0.06, seed: seed + 130 + t,
-        shader: (tt, u) => mix(shade(ILSA.hair, 0.8), ILSA.hairHi, clamp(0.5 - u * 0.9, 0, 1)),
+        gloss: 0.16, grain: 0.06, seed: seed + 130 + t,
+        shader: (tt, u) => mix(shade(ILSA.hair, 0.72), mix(ILSA.hair, ILSA.hairHi, 0.55), clamp(0.5 - u * 0.9, 0, 1)),
       });
       fx = nx2; fy = ny2;
     }
