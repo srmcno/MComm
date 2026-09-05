@@ -150,8 +150,9 @@ export class Hud {
         lineBuf(buf, W, H, mx + dx * 3 * s, my + dy * 3 * s, mx + dx * 8 * s, my + dy * 8 * s,
           rgba(190, 230, 250, 255), 0.6, true);
       }
-      // Low on the screen: the radio panel owns the top-left.
-      this.text.draw(buf, W, H, W / 2, H * 0.63, 'CLICK TO CAPTURE THE MOUSE', {
+      // Low on the screen: the radio panel owns the top-left, and the range
+      // readout under the reticle owns the band just below centre.
+      this.text.draw(buf, W, H, W / 2, H * 0.735, 'CLICK TO CAPTURE THE MOUSE', {
         size: Math.round(8 * s), color: rgba(150, 200, 220, 255), align: 'center',
         track: Math.round(3 * s), alpha: 0.35 + 0.25 * Math.abs(Math.sin(this.tick * 2.2)),
       });

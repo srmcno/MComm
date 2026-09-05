@@ -22,6 +22,30 @@ export const STATE = {
   INTERMISSION: 'intermission', GAMEOVER: 'gameover', VICTORY: 'victory',
 };
 
+export const PAUSE_MENU = [
+  { id: 'resume', label: 'BACK TO WORK' },
+  { id: 'options', label: 'CALIBRATION' },
+  { id: 'restart', label: 'RESTART THIS FLOOR' },
+  { id: 'quit', label: 'ABANDON THE SHIFT' },
+];
+
+/**
+ * How a floor went, in one letter. MUTTER grades you; it does not grade
+ * kindly. Weights favour what the game is actually about: the six cities and
+ * clearing the floor, with time and secrets as the polish on top.
+ */
+export const GRADE_REMARKS = {
+  S: 'I have nothing to add. This is unprecedented and I resent it.',
+  A: 'Adequate. I am filing it under adequate.',
+  B: 'You will be pleased to know the average is unaffected.',
+  C: 'Several cities would like a word. I have taken messages.',
+  D: 'I have rated your performance. The rating is not printable.',
+};
+export function gradeFor(killPct, secretPct, cityPct, timeFactor) {
+  const q = 0.30 * killPct + 0.15 * secretPct + 0.35 * cityPct + 0.20 * timeFactor;
+  return q >= 0.92 ? 'S' : q >= 0.80 ? 'A' : q >= 0.66 ? 'B' : q >= 0.50 ? 'C' : 'D';
+}
+
 const SKY_PALETTES = ['dusk', 'ash', 'night', 'furnace', 'terminal'];
 
 // What the three exposure settings on the title screen actually change.
@@ -166,6 +190,7 @@ export class Game {
     this._recorded = false;
     this.beatBest = false;
     this.dmgLedger = {};
+    this.grades = [];
     // A fresh campaign gets its one-shot lines back. reset() alone keeps them
     // said, which is right between floors and wrong between runs.
     this.radio.resetCampaign();
@@ -282,6 +307,7 @@ export class Game {
 
     this.enemyTotal = this.enemies.length;
     this.levelKills = 0;
+    this.levelStartScore = this.player.score;
     this.secretTotal = secretTotal;
     this.treasureTotal = treasureTotal;
     // The player's own counters run for the whole campaign; the end-of-floor
@@ -303,6 +329,7 @@ export class Game {
 
   setState(s) {
     this.state = s;
+    if (s === STATE.PAUSE) { this.pauseSel = 0; this.pausePage = 'menu'; this.pauseOptSel = 0; this.pauseT = 0; }
     if (s === STATE.PLAY) {
       this.sound.music(this.sky.active ? 'siege' : this.corridorTrack(),
         { fadeIn: 1.2, intensity: this.sky.intensity });
@@ -333,6 +360,8 @@ export class Game {
     // anything reads the score again, including the victory screen.
     this.interStats.carried = this.player.score;
     this.player.score += this.interStats.total;
+    if (!this.grades) this.grades = [];
+    this.grades[this.levelIndex] = this.interStats.grade;
     if (this.levelIndex + 1 >= this.totalLevels) { this.win(); return; }
     this.totalScoreCarry = this.player.score;
     this.setState(STATE.INTERMISSION);
@@ -350,8 +379,12 @@ export class Game {
     const killPct = this.enemyTotal ? this.levelKills / this.enemyTotal : 1;
     const secretPct = this.secretTotal ? this.levelSecrets / this.secretTotal : 1;
     const perfect = (killPct >= 1 ? 5000 : 0) + (secretPct >= 1 ? 5000 : 0);
+    const cityPct = this.sky.livingCities().length / 6;
+    const timeFactor = clamp((this.level.def.par || 1) / Math.max(1, this.levelTime), 0, 1);
+    const grade = gradeFor(killPct, secretPct, cityPct, timeFactor);
     return {
-      time: this.levelTime, timeBonus, cityBonus, perfect,
+      time: this.levelTime, timeBonus, cityBonus, perfect, grade, remark: GRADE_REMARKS[grade],
+      par: this.level.def.par,
       kills: this.levelKills, enemyTotal: this.enemyTotal,
       secrets: this.levelSecrets, secretTotal: this.secretTotal,
       treasure: this.levelTreasure, treasureTotal: this.treasureTotal,
@@ -359,6 +392,15 @@ export class Game {
       skyKills: p.skyKills,
       total: timeBonus + cityBonus + perfect,
     };
+  }
+
+  /** The campaign in one letter: the mean of the floors, rounded down. */
+  overallGrade() {
+    const order = ['D', 'C', 'B', 'A', 'S'];
+    const g = (this.grades || []).filter(Boolean);
+    if (!g.length) return null;
+    const mean = g.reduce((a, x) => a + order.indexOf(x), 0) / g.length;
+    return order[Math.max(0, Math.min(4, Math.floor(mean + 0.25)))];
   }
 
   win() {
@@ -528,10 +570,55 @@ export class Game {
 
   updatePause(dt, input) {
     const menu = (a) => (input.menuJustPressed ? input.menuJustPressed(a) : input.justPressed(a));
-    if (input.justPressed('pause') || menu('escape') || menu('confirm')) {
-      this.setState(STATE.PLAY);
-      input.requestLock();
+    const up = menu('up') || input.rawJustPressed('KeyW');
+    const down = menu('down') || input.rawJustPressed('KeyS');
+    const ok = menu('confirm') || input.justPressed('use');
+    const back = menu('escape') || input.justPressed('pause');
+    this.pauseT = (this.pauseT || 0) + dt;
+
+    if (this.pausePage === 'options') {
+      const opts = this.titleScreen ? this.titleScreen.optionList(this) : [];
+      if (!opts.length) { this.pausePage = 'menu'; return; }
+      if (up) { this.pauseOptSel = (this.pauseOptSel + opts.length - 1) % opts.length; this.sound.sfx('ui_move'); }
+      if (down) { this.pauseOptSel = (this.pauseOptSel + 1) % opts.length; this.sound.sfx('ui_move'); }
+      const l = menu('left') || input.rawJustPressed('KeyA');
+      const r = menu('right') || input.rawJustPressed('KeyD');
+      if (l) { opts[this.pauseOptSel].adj(-1); this.sound.sfx('ui_move'); }
+      if (r || ok) { opts[this.pauseOptSel].adj(1); this.sound.sfx('ui_move'); }
+      if (back) { this.pausePage = 'menu'; this.sound.sfx('ui_back'); }
+      return;
     }
+
+    const n = PAUSE_MENU.length;
+    if (up) { this.pauseSel = (this.pauseSel + n - 1) % n; this.sound.sfx('ui_move'); }
+    if (down) { this.pauseSel = (this.pauseSel + 1) % n; this.sound.sfx('ui_move'); }
+    // Escape or Start resumes from anywhere on the top page, as it always did.
+    if (back) { this.resume(input); return; }
+    if (!ok) return;
+    switch (PAUSE_MENU[this.pauseSel].id) {
+      case 'resume': this.resume(input); break;
+      case 'options': this.pausePage = 'options'; this.pauseOptSel = 0; this.sound.sfx('ui_select'); break;
+      case 'restart':
+        // The floor as you first walked onto it: the score you carried in, the
+        // level as loaded. What you were holding, you keep.
+        this.sound.sfx('ui_start');
+        this.player.score = this.levelStartScore || 0;
+        input.releaseLock();
+        this.loadLevel(this.levelIndex);
+        break;
+      case 'quit':
+        this.sound.sfx('ui_back');
+        this.recordThisRun(false);
+        this.pendingState = 'title';
+        break;
+      default: break;
+    }
+  }
+
+  resume(input) {
+    this.sound.sfx('ui_select');
+    this.setState(STATE.PLAY);
+    input.requestLock();
   }
 
   updateIntermission(dt, input) {
@@ -1768,7 +1855,23 @@ export class Game {
       this.speak('boss_death', {}, 'Oh. Oh, that is not... that is not covered by...');
       this.post.flash = 1.1;
       this.shake = 8;
-      this.sky.endWave();
+      // The moment lands: the world stops for a beat, then everything MUTTER
+      // had in the air comes apart, lowest first, one after another. Its
+      // launches stop with it. endWave() used to just delete them, which is
+      // the least satisfying way a boss fight can end.
+      this.hitStop = Math.max(this.hitStop, 0.42);
+      const doomed = this.sky.collapse();
+      const n = doomed.length;
+      doomed.forEach((w, i) => {
+        this.after(0.55 + (n > 1 ? 1.6 * (i / (n - 1)) : 0), () => {
+          if (!w.alive) return;
+          this.sky.scuttle(w);
+          this.player.score += 150;
+          this.particles.airburst(w.x, w.y, w.z, 9, 0);
+          this.sound.sfx('airburst_small', { pan: this.panAt(w.x, w.y), vol: 0.75, rate: 0.9 + this.rng() * 0.2 });
+          this.hud.popup('+150', { size: 10, life: 0.8, color: rgba(126, 232, 128, 255) });
+        });
+      });
       this.radio.say('ilsa', 'ilsa_almost_there',
         "The bulkhead just released. Hardigan, I can hear the door. Come and get me.",
         { priority: 4, delay: 1.2 });

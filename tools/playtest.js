@@ -1041,6 +1041,108 @@ check('the roof is opaque until it grinds back',
   s.skipped ? 'no deck on this map'
     : `parapet-sky columns over 8 yaws: shut ${s.shut}, open ${s.open} (${s.parapets} parapets, ${s.deck} deck cells)`);
 
+// ---------------------------------------- 36. the pause menu does its four jobs
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  const inp = g.input;
+  const press = (a) => { inp.pressed.add(a); g.update(1 / 60, inp); inp.endFrame(); };
+  g.newGame(1);
+  g.player.score = 4242;                    // what we walk onto the floor with...
+  g.loadLevel(1); g.setState('play');
+  const startScore = g.levelStartScore;
+  g.player.score = 9999;                    // ...then we earn some on it
+  // Pause, and arrow to CALIBRATION, open it, back out.
+  press('pause');
+  const paused = g.state;
+  press('down'); press('confirm');
+  const onOptions = g.pausePage;
+  const vol0 = g.volMaster;                 // first row of the calibration list
+  press('right');
+  const volMoved = g.volMaster !== vol0;
+  press('escape');
+  const backOnMenu = g.pausePage;
+  // Escape from the top page resumes.
+  press('escape');
+  const resumed = g.state;
+  // Pause again, RESTART THIS FLOOR: score returns to the floor-start value.
+  press('pause'); press('down'); press('down'); press('confirm');
+  const afterRestart = { state: g.state, score: g.player.score, level: g.levelIndex };
+  g.setState('play');
+  // Pause, ABANDON THE SHIFT: hands off to the title.
+  press('pause'); press('down'); press('down'); press('down'); press('confirm');
+  const quit = g.pendingState;
+  g.pendingState = null;
+  return { paused, onOptions, volMoved, backOnMenu, resumed, afterRestart, startScore, quit };
+});
+check('the pause menu resumes, calibrates, restarts the floor and quits',
+  s.paused === 'pause' && s.onOptions === 'options' && s.volMoved && s.backOnMenu === 'menu' &&
+  s.resumed === 'play' && s.afterRestart.state === 'brief' && s.afterRestart.level === 1 &&
+  s.afterRestart.score === s.startScore && s.startScore === 4242 && s.quit === 'title',
+  `pause ${s.paused}, options ${s.onOptions}/${s.volMoved}, resume ${s.resumed}, restart -> ${s.afterRestart.state} @${s.afterRestart.score} (start ${s.startScore}), quit -> ${s.quit}`);
+
+// --------------------------------------------- 37. floors are graded, and sanely
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.newGame(1); g.loadLevel(0); g.setState('play');
+  // A perfect floor: everything dead, every secret, all six cities, under par.
+  g.levelKills = g.enemyTotal; g.levelSecrets = g.secretTotal; g.levelTime = 10;
+  const perfect = g.buildStats();
+  // A disaster: nothing killed, no secrets, one city, way over par.
+  g.levelKills = 0; g.levelSecrets = 0; g.levelTime = 9999;
+  for (const c of g.sky.cities.slice(1)) c.hp = 0;
+  const awful = g.buildStats();
+  g.nextLevel();
+  return { perfect: perfect.grade, awful: awful.grade, remark: awful.remark, recorded: g.grades[0], state: g.state };
+});
+check('a perfect floor grades S and a disaster grades D, with a remark',
+  s.perfect === 'S' && s.awful === 'D' && typeof s.remark === 'string' && s.remark.length > 10 && s.recorded === 'D' && s.state === 'intermission',
+  `perfect ${s.perfect}, disaster ${s.awful} ("${s.remark}")`);
+
+// ---------------------------------- 38. killing MUTTER brings the whole sky down
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.newGame(1); g.loadLevel(4); g.setState('play'); g._god = true;
+  const boss = g.enemies.find((e) => e.def.boss);
+  if (!boss) return { skipped: true };
+  for (let i = 0; i < 5; i++) g.sky.spawnWarhead('stick', 1);
+  g.sky.active = true;
+  const before = g.sky.warheads.length;
+  const score0 = g.player.score;
+  boss.shielded = false;
+  while (boss.alive) boss.hurt(500, g, 0, 0);
+  const rightAfter = g.sky.warheads.length;   // still in the air: they fall, they do not vanish
+  const killed0 = g.sky.killed, leaked0 = g.sky.leaked;
+  window.T.step(3.5);
+  return { skipped: false, before, rightAfter, after: g.sky.warheads.length,
+    scuttled: g.sky.killed - killed0, leaked: g.sky.leaked - leaked0,
+    gained: g.player.score - score0, active: g.sky.active };
+});
+check("MUTTER's death takes every inbound warhead apart, in sequence",
+  s.skipped || (s.before === 5 && s.rightAfter === 5 && s.after === 0 && s.scuttled === 5 && s.leaked === 0 && !s.active),
+  s.skipped ? 'no boss on the last floor' : `${s.before} inbound -> ${s.rightAfter} at the kill -> ${s.after} after 3.5s; ${s.scuttled} scuttled, ${s.leaked} leaked, +${s.gained}`);
+
+// ------------------------------ 39. every warhead is born somewhere in the sky
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.newGame(1); g.loadLevel(4); g.setState('play');
+  let bad = 0, strays = 0, worst = 0;
+  // Outside a salvo, the way MUTTER fires: this path had no bearing for strays.
+  for (let i = 0; i < 400; i++) {
+    const w = g.sky.spawnWarhead(i % 3 === 0 ? 'screamer' : 'stick', 1);
+    if (w.stray) strays++;
+    const ok = Number.isFinite(w.x) && Number.isFinite(w.y) && Number.isFinite(w.z) &&
+               Number.isFinite(w.vx) && Number.isFinite(w.vy) && Number.isFinite(w.vz) &&
+               Math.hypot(w.vx, w.vy, w.vz) <= w.speed * 1.01;
+    if (!ok) bad++;
+    worst = Math.max(worst, Math.abs(w.vz));
+    g.sky.warheads.length = 0;
+  }
+  return { bad, strays, worst: +worst.toFixed(1) };
+});
+check('no warhead is ever born at NaN with a vertical speed in the hundreds',
+  s.bad === 0 && s.strays > 40,
+  `${s.bad} bad of 400 (${s.strays} strays), steepest descent ${s.worst}/s`);
+
 // ------------------------------------------------------------- report
 console.log('');
 if (errors.length) {

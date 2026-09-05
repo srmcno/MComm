@@ -6,7 +6,7 @@ import { clamp, lerp, damp, commas, mmss, dist3, TAU } from '../core/math.js';
 import { Text, fillRectBuf, addRectBuf, lineBuf, blitFrame } from '../ui/text.js';
 import { WARHEAD_TYPES } from './sky.js';
 import { ST } from './entities.js';
-import { STATE } from './game.js';
+import { STATE, PAUSE_MENU } from './game.js';
 import { WEAPONS } from './weapons.js';
 
 const AMBER = rgba(255, 186, 64, 255);
@@ -309,6 +309,12 @@ export function drawBrief(game, buf, W, H) {
     size: Math.round(9 * s), color: BONE, align: 'center', track: Math.round(4 * s), alpha: t * 0.8,
   });
   fillRectBuf(buf, W, H, W / 2 - 130 * s, y + 40 * s, 260 * s, 1, AMBER, t * 0.5);
+  if (lv.def.par) {
+    // The time bonus is paid against this. Saying so makes it a target.
+    T.draw(buf, W, H, W / 2 + 130 * s, y + 50 * s, `PAR ${mmss(lv.def.par)}`, {
+      size: Math.round(7 * s), color: DIM, align: 'right', track: 2.4, alpha: t * 0.8,
+    });
+  }
 
   const brief = lv.def.brief || '';
   const words = brief.split(' ');
@@ -366,6 +372,9 @@ export function drawIntermission(game, buf, W, H) {
     ['CITIES STANDING', `${game.sky.livingCities().length} / 6`, `+${commas(st.cityBonus)}`],
   ];
   const reveal = clamp(game.interT * 2.2, 0, rows.length + 1);
+  // The grade lands after the rows, off to the right where the card is empty.
+  const gradeA = clamp((game.interT - rows.length / 2.2 - 0.2) * 2.4, 0, 1);
+  if (gradeA > 0) drawGrade(game, buf, W, H, s, W * 0.86, y0 + 52 * s + 50 * s, st.grade, null, gradeA, 44);
   rows.forEach((r, i) => {
     if (i > reveal) return;
     const y = y0 + 52 * s + i * 20 * s;
@@ -385,6 +394,13 @@ export function drawIntermission(game, buf, W, H) {
       size: Math.round(18 * s), color: AMBER, align: 'center', track: Math.round(3 * s),
       glow: 0.8, glowColor: AMBER,
     });
+    // MUTTER's verdict, one line, under the number it is judging.
+    if (st.remark && gradeA > 0) {
+      T.draw(buf, W, H, W / 2, y0 + 52 * s + rows.length * 20 * s + 42 * s,
+        `MUTTER:  ${st.remark}`, {
+        size: Math.round(8 * s), color: rgba(190, 236, 255, 255), align: 'center', track: 0.6, alpha: gradeA * 0.9,
+      });
+    }
     T.draw(buf, W, H, W / 2, H * 0.90, 'PRESS ANYTHING TO DESCEND', {
       size: Math.round(9 * s), color: AMBER, align: 'center', track: Math.round(6 * s),
       alpha: 0.4 + 0.5 * Math.abs(Math.sin(game.time * 3.4)),
@@ -458,6 +474,24 @@ export function drawVictory(game, buf, W, H) {
     `SECRETS ${game.player.secretsFound}   ·   LAUNCH KEYS ${game.player.treasure}   ·   BEST CHAIN ×${game.sky.bestChain}`, {
     size: Math.round(9 * s), color: DIM, align: 'center', track: 2, alpha: t,
   });
+  // The shift, graded: one letter per floor along the bottom, and the whole
+  // campaign in one letter on the right.
+  const grades = (game.grades || []).filter(Boolean);
+  if (grades.length) {
+    const gw = 22 * s, gx0 = W / 2 - ((grades.length - 1) * gw) / 2;
+    grades.forEach((g, i) => {
+      const col = GRADE_COL[g] || BONE;
+      T.draw(buf, W, H, gx0 + i * gw, H * 0.805, g, {
+        size: Math.round(13 * s), color: col, align: 'center', display: true, alpha: t, glow: 0.5 * t, glowColor: col,
+      });
+    });
+    T.draw(buf, W, H, W / 2, H * 0.772, 'FLOORS', {
+      size: Math.round(6.5 * s), color: DIM, align: 'center', track: 3, alpha: t * 0.8,
+    });
+    const overall = game.overallGrade();
+    const oa = clamp((game.victoryT - 1.8) * 1.6, 0, 1);
+    if (oa > 0) drawGrade(game, buf, W, H, s, W * 0.88, H * 0.27, overall, null, oa, 52);
+  }
   if (game.beatBest) {
     T.draw(buf, W, H, W / 2, H * 0.74, 'A NEW RECORD FOR THIS CABINET', {
       size: Math.round(9 * s), color: AMBER, align: 'center', track: Math.round(2.6 * s),
@@ -465,9 +499,53 @@ export function drawVictory(game, buf, W, H) {
     });
   }
   if (game.victoryT > 3) {
-    T.draw(buf, W, H, W / 2, H * 0.84, 'PRESS ANYTHING', {
+    T.draw(buf, W, H, W / 2, H * 0.88, 'PRESS ANYTHING', {
       size: Math.round(9 * s), color: AMBER, align: 'center', track: Math.round(6 * s),
       alpha: 0.4 + 0.5 * Math.abs(Math.sin(game.time * 3.2)),
+    });
+  }
+}
+
+const GRADE_COL = {
+  S: rgba(255, 236, 150, 255), A: rgba(126, 232, 128, 255), B: rgba(110, 236, 244, 255),
+  C: rgba(255, 186, 64, 255), D: rgba(255, 74, 62, 255),
+};
+
+/** A big letter with a ring and MUTTER's remark under it. */
+function drawGrade(game, buf, W, H, s, cx, cy, grade, remark, alpha, size = 44) {
+  if (!grade) return;
+  const T = game.text;
+  const col = GRADE_COL[grade] || BONE;
+  const r = size * 0.78 * s;
+  for (let k = 0; k < 2; k++) {
+    const rr = r + k * 2.5 * s;
+    const n = Math.max(48, (rr * 1.6) | 0);
+    for (let i = 0; i < n; i++) {
+      const a0 = (i / n) * TAU, a1 = ((i + 1) / n) * TAU;
+      lineBuf(buf, W, H, cx + Math.cos(a0) * rr, cy + Math.sin(a0) * rr,
+        cx + Math.cos(a1) * rr, cy + Math.sin(a1) * rr, col, alpha * (k ? 0.35 : 0.8), true);
+    }
+  }
+  T.draw(buf, W, H, cx, cy + size * 0.36 * s, grade, {
+    size: Math.round(size * s), color: col, align: 'center', display: true, track: 0,
+    alpha, glow: alpha * 0.9, glowColor: col,
+  });
+  if (remark) {
+    T.draw(buf, W, H, cx, cy + r + 16 * s, 'MUTTER', {
+      size: Math.round(6.5 * s), color: DIM, align: 'center', track: 3, alpha: alpha * 0.8,
+    });
+    // Wrap the remark to a narrow column beneath the ring.
+    const words = remark.split(' ');
+    const lines = [];
+    let cur = '';
+    for (const w of words) {
+      if ((cur + ' ' + w).length > 26) { lines.push(cur); cur = w; } else cur = cur ? cur + ' ' + w : w;
+    }
+    if (cur) lines.push(cur);
+    lines.forEach((l, i) => {
+      T.draw(buf, W, H, cx, cy + r + 27 * s + i * 10.5 * s, l, {
+        size: Math.round(7.5 * s), color: BONE, align: 'center', track: 0.4, alpha: alpha * 0.9,
+      });
     });
   }
 }
@@ -475,16 +553,64 @@ export function drawVictory(game, buf, W, H) {
 export function drawPause(game, buf, W, H) {
   const s = H / 450;
   const T = game.text;
-  fillRectBuf(buf, W, H, 0, 0, W, H, INK, 0.7);
-  T.draw(buf, W, H, W / 2, H * 0.42, 'HOLDING', {
-    size: Math.round(28 * s), color: HOT, align: 'center', display: true, track: Math.round(6 * s),
-    glow: 0.7, glowColor: AMBER,
+  const t = clamp((game.pauseT || 0) / 0.18, 0, 1);
+  fillRectBuf(buf, W, H, 0, 0, W, H, INK, 0.72 * t);
+  const pad = game.input && game.input.padSeen;
+
+  // Panel, in the same idiom as the front door.
+  const pw = W * 0.5, ph = H * 0.56, px = W / 2 - pw / 2, py = H * 0.20;
+  fillRectBuf(buf, W, H, px, py, pw, ph, INK, 0.84 * t);
+  fillRectBuf(buf, W, H, px, py, pw, 1.5 * s, AMBER, 0.75 * t);
+  fillRectBuf(buf, W, H, px, py + ph - 1.5 * s, pw, 1.5 * s, AMBER, 0.35 * t);
+
+  T.draw(buf, W, H, W / 2, py + 26 * s, 'HOLDING', {
+    size: Math.round(24 * s), color: HOT, align: 'center', display: true, track: Math.round(6 * s),
+    glow: 0.7 * t, glowColor: AMBER, alpha: t,
   });
-  T.draw(buf, W, H, W / 2, H * 0.52, 'ESC OR P TO RESUME', {
-    size: Math.round(10 * s), color: BONE, align: 'center', track: Math.round(4 * s),
+  T.draw(buf, W, H, W / 2, py + 40 * s, `${game.level.name}   ·   ${commas(game.player.score)}`, {
+    size: Math.round(8 * s), color: DIM, align: 'center', track: 2, alpha: t,
   });
-  T.draw(buf, W, H, W / 2, H * 0.58, `${game.level.name}   ·   ${commas(game.player.score)}`, {
-    size: Math.round(9 * s), color: DIM, align: 'center', track: 2,
+
+  if (game.pausePage === 'options') {
+    const opts = game.titleScreen ? game.titleScreen.optionList(game) : [];
+    opts.forEach((o, i) => {
+      const on = i === game.pauseOptSel;
+      const y = py + 62 * s + i * 15 * s;
+      if (on) fillRectBuf(buf, W, H, px + 10 * s, y - 9.5 * s, pw - 20 * s, 13 * s, rgba(40, 28, 18, 255), 0.66 * t);
+      T.draw(buf, W, H, px + 22 * s, y, o.label, {
+        size: Math.round(8 * s), color: on ? HOT : DIM, track: 2, alpha: t,
+      });
+      T.draw(buf, W, H, px + pw - 22 * s, y, o.value(), {
+        size: Math.round(8 * s), color: on ? AMBER : rgba(120, 108, 90, 255), align: 'right', track: 1.4, alpha: t,
+      });
+    });
+    T.draw(buf, W, H, W / 2, py + ph - 12 * s,
+      pad ? 'D-PAD ADJUST   ·   B BACK' : 'ARROWS ADJUST   ·   ESC BACK', {
+      size: Math.round(7 * s), color: DIM, align: 'center', track: 3, alpha: 0.7 * t,
+    });
+    return;
+  }
+
+  const y0 = py + 78 * s;
+  PAUSE_MENU.forEach((m, i) => {
+    const on = i === game.pauseSel;
+    const y = y0 + i * 26 * s;
+    if (on) {
+      const pulse = 0.55 + 0.45 * Math.sin(game.time * 5.2);
+      fillRectBuf(buf, W, H, px + 12 * s, y - 12 * s, pw - 24 * s, 20 * s, rgba(30, 22, 16, 255), 0.6 * t);
+      fillRectBuf(buf, W, H, px + 12 * s, y - 12 * s, 2 * s, 20 * s, AMBER, pulse * t);
+      fillRectBuf(buf, W, H, px + pw - 14 * s, y - 12 * s, 2 * s, 20 * s, AMBER, pulse * t);
+    }
+    const danger = m.id === 'quit' || m.id === 'restart';
+    T.draw(buf, W, H, W / 2, y + 3 * s, m.label, {
+      size: Math.round(12 * s), color: on ? (danger ? rgba(255, 120, 100, 255) : HOT) : DIM,
+      align: 'center', track: Math.round(4 * s), glow: on ? 0.8 : 0,
+      glowColor: danger ? RED : AMBER, alpha: t,
+    });
+  });
+  T.draw(buf, W, H, W / 2, py + ph - 12 * s,
+    pad ? 'D-PAD   ·   A SELECT   ·   B OR START RESUME' : 'ARROWS / W S   ·   ENTER SELECT   ·   ESC RESUME', {
+    size: Math.round(7 * s), color: DIM, align: 'center', track: 3, alpha: 0.7 * t,
   });
 }
 

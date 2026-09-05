@@ -330,6 +330,12 @@ export class TitleScreen {
   drawMenu(buf, W, H, s, game) {
     const T = game.text;
     const y0 = H * 0.58;
+    // One plate under the whole block, so the items read as a menu and not as
+    // four captions floating over the skyline.
+    const plateTop = y0 - 16 * s, plateH = MENU.length * 22 * s + 10 * s;
+    fillRectBuf(buf, W, H, W / 2 - 170 * s, plateTop, 340 * s, plateH, INK, 0.42);
+    fillRectBuf(buf, W, H, W / 2 - 170 * s, plateTop, 340 * s, 1, AMBER, 0.22);
+    fillRectBuf(buf, W, H, W / 2 - 170 * s, plateTop + plateH - 1, 340 * s, 1, AMBER, 0.22);
     MENU.forEach((m, i) => {
       const on = i === this.sel;
       const y = y0 + i * 22 * s;

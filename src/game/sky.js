@@ -75,7 +75,10 @@ export class Warhead {
   _aim() {
     const t = this.target;
     const dx = t.x - this.x, dy = t.y - this.y, dz = (t.z || 0) - this.z;
-    const L = Math.hypot(dx, dy, dz) || 1;
+    let L = Math.hypot(dx, dy, dz);
+    // `|| 1` used to swallow NaN as well as zero, and a NaN length turned a
+    // 9-unit missile into a 400-unit one. Refuse to aim from nowhere.
+    if (!Number.isFinite(L) || L < 1e-6) { this.vx = 0; this.vy = 0; this.vz = -this.speed; return; }
     this.vx = (dx / L) * this.speed;
     this.vy = (dy / L) * this.speed;
     this.vz = (dz / L) * this.speed;
@@ -190,6 +193,28 @@ export class SkyWar {
     this.warheads.length = 0;
   }
 
+  /**
+   * Stop every launch but leave what is already in the air flying, and hand
+   * it back lowest-first so the caller can take it apart in order. The boss
+   * death uses this: the sky falls, it does not blink out.
+   */
+  collapse() {
+    this.active = false;
+    this.wave = null;
+    this.pending.length = 0;
+    return this.warheads.slice().sort((a, b) => a.z - b.z);
+  }
+
+  /** Remove one warhead from the sky as a kill, without a blast doing it. */
+  scuttle(w) {
+    if (!w.alive) return false;
+    w.alive = false;
+    const i = this.warheads.indexOf(w);
+    if (i >= 0) this.warheads.splice(i, 1);
+    this.killed++;
+    return true;
+  }
+
   get waveComplete() {
     return this.active && this.pending.length === 0 && this.warheads.length === 0 &&
            this.waveTime > 1.5;
@@ -227,9 +252,16 @@ export class SkyWar {
     }
     if (lead) { target = lead.target; stray = !!lead.stray; }
     if (lead && lead.stray === undefined) lead.stray = stray;
+    // A city carries the bearing it sits on; a stray's target is a bare point
+    // and has none. Reading target.az for a stray outside a salvo gave NaN,
+    // which put the warhead nowhere with a vertical speed in the hundreds, and
+    // it counted as a leak on the frame it was born. MUTTER launches its own
+    // shots outside salvos, so about a quarter of its stick and screamer fire
+    // on the last floor was phantom.
+    const baseAz = lead ? lead.az : (target.az === undefined ? this.rng() * TAU : target.az);
     const az = type === 'buster' ? this.rng() * TAU
-      : lead ? lead.az + (this.rng() - 0.5) * 0.055
-      : target.az + (this.rng() - 0.5) * 1.5;
+      : lead ? baseAz + (this.rng() - 0.5) * 0.055
+      : baseAz + (this.rng() - 0.5) * 1.5;
     const rad = lead ? lead.rad + (this.rng() - 0.5) * 5 : randRange(this.rng, SPAWN_RADIUS_MIN, SPAWN_RADIUS_MAX);
     const x = this.cx + Math.cos(az) * rad;
     const y = this.cy + Math.sin(az) * rad;
