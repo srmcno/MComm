@@ -1,8 +1,14 @@
 # Publishes NUKEHAUS to GitHub Pages.
 #
 # The site is the single-file build: one request, everything inlined, no
-# external fetches. It is rebuilt from source on every push to main so the
-# page can never drift from the code.
+# external fetches. It is rebuilt from source on every push to main, so the
+# published game can never drift from the code.
+#
+# This deploys by committing the built file to the gh-pages branch rather than
+# through actions/deploy-pages. The Pages REST API refuses the workflow token
+# ("Resource not accessible by integration" — creating a Pages site needs repo
+# admin rights, which GITHUB_TOKEN does not have), so the artifact route cannot
+# bootstrap the site on its own. Pushing a branch needs only contents: write.
 name: Publish NUKEHAUS to Pages
 
 on:
@@ -11,9 +17,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 # One deploy at a time; let a run in progress finish rather than cancelling it.
 concurrency:
@@ -21,18 +25,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       # esbuild is the only thing the bundle needs. Playwright's browser
-      # download is the slow part of a plain `npm ci` and the build never
-      # opens a browser, so it is skipped here.
+      # download is the slow part of a plain `npm ci`, and the build never
+      # opens a browser.
       - name: Install build dependencies
         run: npm install --no-save esbuild@^0.28.2
         env:
@@ -46,24 +50,27 @@ jobs:
           mkdir -p _site
           cp dist/nukehaus.html _site/index.html
           cp dist/nukehaus.html _site/nukehaus.html
+          # Without this, Pages runs the file through Jekyll.
+          touch _site/.nojekyll
           test -s _site/index.html
 
-      # enablement: true turns Pages on for the repository if it is off, so
-      # this workflow is the only step needed to get the game on the web.
-      - uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Publish to gh-pages
+        run: |
+          set -euo pipefail
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git fetch origin gh-pages --depth=1 || true
+          git worktree add /tmp/ghp gh-pages 2>/dev/null \
+            || git worktree add --orphan -b gh-pages /tmp/ghp
+          # The site is only ever these files; drop anything stale.
+          find /tmp/ghp -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +
+          cp _site/index.html _site/nukehaus.html /tmp/ghp/
+          touch /tmp/ghp/.nojekyll
+          cd /tmp/ghp
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'Site is already current; nothing to publish.'
+            exit 0
+          fi
+          git commit -m "Publish ${GITHUB_SHA::7}"
+          git push origin gh-pages
