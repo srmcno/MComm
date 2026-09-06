@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>NUKEHAUS</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230a0810'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%23ffba40'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%23120c08'/%3E%3C/svg%3E">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #06050a; color: #d8d2c4;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    -webkit-font-smoothing: none;
+  }
+  #wrap { position: fixed; inset: 0; display: grid; place-items: center; background: #06050a; }
+  canvas#screen {
+    display: block; width: 100%; height: 100%;
+    image-rendering: pixelated; image-rendering: crisp-edges;
+    cursor: none; touch-action: none;
+  }
+  #overlay {
+    position: fixed; inset: 0; display: grid; place-items: center;
+    pointer-events: none; z-index: 10;
+  }
+  #click-to-play {
+    pointer-events: auto; text-align: center; letter-spacing: .3em;
+    font-size: 13px; color: #ffcf5c; text-transform: uppercase;
+    text-shadow: 0 0 18px rgba(255,160,40,.7); animation: pulse 1.6s ease-in-out infinite;
+    background: rgba(6,5,10,.55); padding: 18px 30px; border: 1px solid rgba(255,160,40,.35);
+  }
+  @keyframes pulse { 0%,100% { opacity: .45 } 50% { opacity: 1 } }
+  #fatal {
+    position: fixed; inset: 0; z-index: 50; display: none; padding: 40px;
+    background: #0a0208; color: #ff8d7a; font-size: 13px; line-height: 1.6;
+    overflow: auto; white-space: pre-wrap;
+  }
+  #fatal h1 { color: #ffcf5c; letter-spacing: .3em; font-size: 15px; }
+  #glitch {
+    position: fixed; left: 12px; bottom: 12px; z-index: 40; display: none;
+    max-width: 46ch; padding: 8px 12px; font-size: 11px; line-height: 1.5;
+    color: #ffb08a; background: rgba(10,2,8,.85); border: 1px solid rgba(255,140,90,.35);
+  }
+</style>
+</head>
+<body>
+  <div id="wrap"><canvas id="screen"></canvas></div>
+  <div id="overlay"></div>
+  <div id="fatal"><h1>NUKEHAUS HAS FAILED TO BOOT</h1><div id="fatal-body"></div></div>
+  <div id="glitch"></div>
+<script type="module">
+  const text = (err) => (err && (err.stack || err.message)) || String(err);
+
+  const fatal = (err) => {
+    document.getElementById('fatal-body').textContent = text(err);
+    document.getElementById('fatal').style.display = 'block';
+    console.error(err);
+  };
+
+  // Once the game is up it stays up. A stray runtime error gets a corner note
+  // and a console trace, not a full-screen sign saying the game never booted —
+  // that sign was a lie the moment the title screen had already drawn.
+  let glitches = 0;
+  const glitch = (err) => {
+    console.error(err);
+    const el = document.getElementById('glitch');
+    el.textContent = `HAIRLINE FRACTURE (${++glitches}) — ${String(text(err)).split('\n')[0]}`;
+    el.style.display = 'block';
+    clearTimeout(glitch.t);
+    glitch.t = setTimeout(() => { el.style.display = 'none'; }, 6000);
+  };
+
+  const report = (err) => (window.NUKEHAUS && window.NUKEHAUS.booted ? glitch : fatal)(err);
+  window.addEventListener('error', (e) => report(e.error || e.message));
+  window.addEventListener('unhandledrejection', (e) => report(e.reason));
+  window.__NUKEHAUS_FATAL__ = fatal;
+  import('./src/main.js').then((m) => m.boot()).catch(fatal);
+</script>
+</body>
+</html>
