@@ -1220,6 +1220,57 @@ check('a badly dialled fuse gets coached once, a good one is left alone',
   s.wrong === 1 && s.right === 0,
   `coached ${s.wrong}x on a wrong fuse, ${s.right}x on a matched one`);
 
+// ------------------------ 42. looking away pauses the fight instead of losing it
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  const out = {};
+  g.newGame(1); g.loadLevel(0); g.setState('play');
+  dispatchEvent(new Event('blur'));
+  out.afterBlur = g.state;
+
+  g.setState('play');
+  const desc = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState');
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+  document.dispatchEvent(new Event('visibilitychange'));
+  out.afterHide = g.state;
+  if (desc) Object.defineProperty(document, 'visibilityState', desc);
+  else delete document.visibilityState;
+
+  // On the title screen there is nothing to pause, and nothing should change.
+  g.setState('title');
+  dispatchEvent(new Event('blur'));
+  out.afterTitleBlur = g.state;
+  return out;
+});
+check('switching away pauses a run in progress, and leaves the title alone',
+  s.afterBlur === 'pause' && s.afterHide === 'pause' && s.afterTitleBlur === 'title',
+  `blur -> ${s.afterBlur}, hidden -> ${s.afterHide}, title stays ${s.afterTitleBlur}`);
+
+// ------------------- 43. a tab the browser has suspended still finishes loading
+// No browser fires requestAnimationFrame for a hidden, backgrounded or occluded
+// tab. Asset loading awaited one between every build stage, so opening the game
+// in a background tab stopped it dead at the first stage: no error, no overlay,
+// no title screen, forever. This boots a second page with rAF stubbed out,
+// which is exactly what a suspended tab does.
+{
+  const bg = await browser.newPage({ viewport: { width: 800, height: 600 } });
+  await bg.addInitScript(() => { window.requestAnimationFrame = () => 0; });
+  const bgErrors = [];
+  bg.on('pageerror', (e) => bgErrors.push(e.message));
+  await bg.goto(`http://127.0.0.1:${PORT}/index.html`);
+  let up = true;
+  try {
+    // polling: 'raf' is the default, and rAF is the very thing stubbed out here.
+    await bg.waitForFunction(() => window.NUKEHAUS && window.NUKEHAUS.game,
+      null, { timeout: 40000, polling: 250 });
+  } catch { up = false; }
+  const where = await bg.evaluate(() => (window.NUKEHAUS_BOOT || {}).stage || 'never started');
+  await bg.close();
+  check('a suspended tab still boots', up && !bgErrors.length,
+    up ? `reached the title with no rAF (last stage "${where}")`
+       : `stalled at "${where}"`);
+}
+
 // ------------------------------------------------------------- report
 console.log('');
 if (errors.length) {

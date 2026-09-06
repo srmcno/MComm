@@ -51,24 +51,58 @@ const html = `<title>NUKEHAUS</title>
     overflow: auto; white-space: pre-wrap;
   }
   #fatal h1 { color: #ffcf5c; letter-spacing: .3em; font-size: 15px; }
+  #glitch {
+    position: fixed; left: 12px; bottom: 12px; z-index: 40; display: none;
+    max-width: 46ch; padding: 8px 12px; font-size: 11px; line-height: 1.5;
+    color: #ffb08a; background: rgba(10,2,8,.85); border: 1px solid rgba(255,140,90,.35);
+  }
 </style>
 <div id="wrap"><canvas id="screen"></canvas></div>
 <div id="overlay"></div>
 <div id="fatal"><h1>NUKEHAUS HAS FAILED TO BOOT</h1><div id="fatal-body"></div></div>
+<div id="glitch"></div>
 <script>
 (function () {
+  var text = function (err) { return (err && (err.stack || err.message)) || String(err); };
   var fatal = function (err) {
-    var el = document.getElementById('fatal');
-    document.getElementById('fatal-body').textContent = (err && (err.stack || err.message)) || String(err);
-    el.style.display = 'block';
+    document.getElementById('fatal-body').textContent = text(err);
+    document.getElementById('fatal').style.display = 'block';
     console.error(err);
   };
-  window.addEventListener('error', function (e) { fatal(e.error || e.message); });
-  window.addEventListener('unhandledrejection', function (e) { fatal(e.reason); });
+  // Once the game is up it stays up. A stray runtime error gets a corner note,
+  // not a full-screen sign claiming it never booted.
+  var glitches = 0, glitchTimer = 0;
+  var glitch = function (err) {
+    console.error(err);
+    var el = document.getElementById('glitch');
+    el.textContent = 'HAIRLINE FRACTURE (' + (++glitches) + ') - ' + String(text(err)).split('\\n')[0];
+    el.style.display = 'block';
+    clearTimeout(glitchTimer);
+    glitchTimer = setTimeout(function () { el.style.display = 'none'; }, 6000);
+  };
+  var report = function (err) {
+    (window.NUKEHAUS && window.NUKEHAUS.booted ? glitch : fatal)(err);
+  };
+  window.addEventListener('error', function (e) { report(e.error || e.message); });
+  window.addEventListener('unhandledrejection', function (e) { report(e.reason); });
+  window.__NUKEHAUS_FATAL__ = fatal;
+
+  // A stalled boot is otherwise invisible: no error, no rejection, just the
+  // loading screen forever. Name the stage it reached instead.
+  var watchdog = setTimeout(function () {
+    if (window.NUKEHAUS && window.NUKEHAUS.booted) return;
+    var at = window.NUKEHAUS_BOOT;
+    fatal('Loading stalled' + (at ? ' at "' + at.stage + '" (' + at.at + 'ms in).'
+                                 : ' before the first stage.') +
+      '\\n\\nThis usually means the browser suspended the page mid-load.' +
+      '\\nBring this tab to the front and reload.');
+  }, 45000);
+  var stopWatchdog = function () { clearTimeout(watchdog); };
+
   try {
 ${js.split('\n').map((l) => '    ' + l).join('\n')}
-    NUKEHAUS_MAIN.boot().catch(fatal);
-  } catch (e) { fatal(e); }
+    NUKEHAUS_MAIN.boot().then(stopWatchdog).catch(function (e) { stopWatchdog(); fatal(e); });
+  } catch (e) { stopWatchdog(); fatal(e); }
 })();
 </script>
 `;
