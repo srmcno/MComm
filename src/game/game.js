@@ -191,6 +191,7 @@ export class Game {
     this.beatBest = false;
     this.dmgLedger = {};
     this.grades = [];
+    this.fuseCoach = { misses: 0, said: false };
     // A fresh campaign gets its one-shot lines back. reset() alone keeps them
     // said, which is right between floors and wrong between runs.
     this.radio.resetCampaign();
@@ -245,9 +246,10 @@ export class Game {
       first: bs.first * (D.breachGap || 1),
       gapMin: bs.gapMin * (D.breachGap || 1),
       gapMax: bs.gapMax * (D.breachGap || 1),
-      cap: Math.max(1, Math.round(bs.cap * (D.breachCap || 1))),
+      // A schedule that asks for no breaches at all means it: level one is
+      // quiet until its siege, and no difficulty gets to round that up to one.
+      cap: bs.cap === 0 ? 0 : Math.max(1, Math.round(bs.cap * (D.breachCap || 1))),
     };
-    if (bs.cap === 0) this.breach.cap = 0;
     this.hazards = [];
     this.timers = [];
 
@@ -1416,6 +1418,7 @@ export class Game {
     // there to keep you alive in a busy sky, not to pay you for it.
     const ideal = (this.rangeLock && !this.player.autoFuse) ? this.rangeLock.range : -1;
     spec = this.diff.blast === 1 ? spec : { ...spec, blastRadius: spec.blastRadius * this.diff.blast };
+    if (ideal > 0) this.coachFuse(ideal, spec);
     for (let i = 0; i < spec.pellets; i++) {
       let dx = a.x, dy = a.y, dz = a.z;
       if (spec.spread) {
@@ -1429,6 +1432,33 @@ export class Game {
       }
       this.sky.fireFlak(m.x, m.y, m.z, dx, dy, dz, spec, this.player.fuse, ideal);
     }
+  }
+
+  /**
+   * The fuse is the whole game, and it is the one control the player can hold
+   * wrong forever without being told. The ranger already paints the true range
+   * on the intercept; this notices that the ring is nowhere near it while a
+   * warhead sits squarely in the sights, and says which way to turn — once per
+   * campaign, and only for someone dialling it by hand.
+   */
+  coachFuse(ideal, spec) {
+    const c = this.fuseCoach;
+    if (!c || c.said) return;
+    const err = this.player.fuse - ideal;
+    // Inside the blast, the shot would have killed it: nothing to teach.
+    if (Math.abs(err) <= (spec.blastRadius || 8) * 1.2) { c.misses = 0; return; }
+    if (++c.misses < 3) return;
+    c.said = true;
+    const short = err < 0;
+    const dial = this.input && this.input.padActive ? 'the d-pad' : 'the wheel';
+    this.hud.popup(short ? 'FUSE SHORT' : 'FUSE LONG',
+      { size: 13, life: 2.4, color: rgba(255, 207, 92, 255) });
+    // ilsa_fuse_tip was written and voiced for exactly this moment and had no
+    // trigger, so it had never once been heard. This is that trigger.
+    this.radio.say('ilsa', 'ilsa_fuse_tip', short
+      ? `You are bursting short, Hardigan. Roll ${dial} up until the ring meets the bracket.`
+      : `You are bursting long. Roll ${dial} down until the ring meets the bracket.`,
+      { priority: 2, delay: 0.3, once: true });
   }
 
   fireHalo(spec, a, m) {
@@ -1542,7 +1572,9 @@ export class Game {
     const p = this.player;
     const dp = dist(x, y, p.x, p.y);
     if (dp < radius) {
-      p.hurt(damage * 0.5 * (1 - dp / radius), this, 'own-explosion');
+      // Same dial as the airburst above: a barrel you set off is still the
+      // world hurting you, and the world is gentler on CLERICAL.
+      p.hurt(damage * 0.5 * (1 - dp / radius) * (this.diff.enemyDamage || 1), this, 'own-explosion');
       this.hud.damageFrom(Math.atan2(y - p.y, x - p.x));
     }
   }
@@ -1709,7 +1741,12 @@ export class Game {
   onBlastHurtPlayer(b, d) {
     if (b.deadman) return;
     const p = this.player;
-    const dmg = clamp(26 * (1 - d / (b.r * 0.85)), 4, 30);
+    // Difficulty scales everything that hurts you — except, until now, the one
+    // thing you fire yourself. CLERICAL widens the blast by 18% to make the sky
+    // easier, which quietly made your own airburst the deadliest thing on the
+    // gentlest setting: it was the top damage source on every floor of a
+    // clerical run. Self-inflicted harm belongs on the same dial as the rest.
+    const dmg = clamp(26 * (1 - d / (b.r * 0.85)), 4, 30) * (this.diff.enemyDamage || 1);
     p.hurt(dmg, this, 'own-airburst');
     this.hud.damageFrom(Math.atan2(b.y - p.y, b.x - p.x));
     this.sound.sfx('player_hurt');

@@ -75,6 +75,8 @@ export class Input {
     this.mouseY = 0.5;
     this.mouseMoved = false;
     this.locked = false;
+    /** A pointer-lock request a gesture-strict browser has not granted yet. */
+    this._wantLock = false;
     this.sensitivity = 1.0;
     this.invertY = false;
 
@@ -107,6 +109,9 @@ export class Input {
       this.padActive = false;
       const a = KEY_ALIASES[e.code];
       if (a && !this.down.has(a)) { this.down.add(a); this.pressed.add(a); }
+      // We are inside a user gesture here, which is the only place Safari
+      // will hand over the mouse. Redeem anything the frame loop asked for.
+      if (this._wantLock) this._tryLock();
     });
     addEventListener('keyup', (e) => {
       this.rawDown.delete(e.code);
@@ -124,6 +129,7 @@ export class Input {
       if (e.button === 0) { this.down.add('fire'); this.pressed.add('fire'); }
       if (e.button === 2) { this.down.add('altfire'); this.pressed.add('altfire'); }
       if (e.button === 1) { this.down.add('kick'); this.pressed.add('kick'); }
+      if (this._wantLock) this._tryLock();
     });
     addEventListener('mouseup', (e) => {
       this.mouseButtons &= ~(1 << e.button);
@@ -152,7 +158,8 @@ export class Input {
 
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.canvas;
-      if (!this.locked) this.onUnlock && this.onUnlock();
+      if (this.locked) this._wantLock = false;
+      else this.onUnlock && this.onUnlock();
     });
 
     addEventListener('gamepadconnected', (e) => {
@@ -278,13 +285,37 @@ export class Input {
     } catch { /* older actuator API, or no permission */ }
   }
 
+  /**
+   * Ask for the mouse.
+   *
+   * Safari only grants pointer lock from inside a user-gesture handler and
+   * throws a SecurityError anywhere else — and this is called from the frame
+   * loop, which is not one. So the request can never be allowed to throw, and
+   * a refusal has to be remembered: `_wantLock` stays set and the next real
+   * keypress or click (see `_bind`) redeems it. Chrome locks on the spot.
+   */
   requestLock() {
     if (this.locked) return;
-    const p = this.canvas.requestPointerLock({ unadjustedMovement: true });
-    if (p && p.catch) p.catch(() => { try { this.canvas.requestPointerLock(); } catch { /* ignore */ } });
+    this._wantLock = true;
+    this._tryLock();
   }
 
-  releaseLock() { if (document.pointerLockElement) document.exitPointerLock(); }
+  /** The guarded request itself. Never throws, whatever the browser thinks. */
+  _tryLock() {
+    if (this.locked || !this.canvas.requestPointerLock) return;
+    try {
+      const p = this.canvas.requestPointerLock({ unadjustedMovement: true });
+      if (p && p.catch) p.catch(() => { try { this.canvas.requestPointerLock(); } catch { /* ignore */ } });
+    } catch {
+      // Either no gesture (Safari) or the dictionary form is unsupported.
+      try { this.canvas.requestPointerLock(); } catch { /* wait for a gesture */ }
+    }
+  }
+
+  releaseLock() {
+    this._wantLock = false;
+    try { if (document.pointerLockElement) document.exitPointerLock(); } catch { /* ignore */ }
+  }
 
   isDown(a) { return this.down.has(a); }
   justPressed(a) { return this.pressed.has(a); }

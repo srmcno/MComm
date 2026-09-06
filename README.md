@@ -20,7 +20,12 @@ Every pixel, every sound and every note of music in this game is generated from
 code at load time. There are no image files. There are no audio files. The
 announcer is a formant synthesiser.
 
-## Run it
+## Play it
+
+**<https://srmcno.github.io/MComm/>** — the single-file build, published from
+`main` on every push. Click once to wake the audio, then take the mouse.
+
+## Run it locally
 
 Any modern browser. It needs to be served over HTTP (it uses ES modules), not
 opened as a `file://` URL.
@@ -28,6 +33,9 @@ opened as a `file://` URL.
 ```
 python3 -m http.server 8080
 ```
+
+The built single file (`dist/nukehaus.html`, via `node tools/bundle.js`) has no
+module loading and no external requests, so that one *does* open from `file://`.
 
 Then open <http://localhost:8080>. Click once to wake the audio, and go.
 

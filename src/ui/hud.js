@@ -150,12 +150,25 @@ export class Hud {
         lineBuf(buf, W, H, mx + dx * 3 * s, my + dy * 3 * s, mx + dx * 8 * s, my + dy * 8 * s,
           rgba(190, 230, 250, 255), 0.6, true);
       }
-      // Low on the screen: the radio panel owns the top-left, and the range
-      // readout under the reticle owns the band just below centre.
-      this.text.draw(buf, W, H, W / 2, H * 0.735, 'CLICK TO CAPTURE THE MOUSE', {
-        size: Math.round(8 * s), color: rgba(150, 200, 220, 255), align: 'center',
-        track: Math.round(3 * s), alpha: 0.35 + 0.25 * Math.abs(Math.sin(this.tick * 2.2)),
-      });
+    }
+    // Low on the screen: the radio panel owns the top-left, and the range
+    // readout under the reticle owns the band just below centre.
+    //
+    // Two different messages live here. Once the mouse has moved, this is a
+    // gentle reminder for someone who pressed Escape. But a gesture-strict
+    // browser (Safari) refuses the mouse until the player clicks, and that
+    // player has not necessarily moved it yet — for them this is the only
+    // instruction that matters, so it gets said loudly.
+    const pending = !game.input.locked && game.input._wantLock;
+    if (!game.input.locked && (pending || game.input.mouseMoved)) {
+      this.text.draw(buf, W, H, W / 2, H * 0.735,
+        pending ? 'CLICK TO TAKE THE MOUSE' : 'CLICK TO CAPTURE THE MOUSE', {
+          size: Math.round((pending ? 11 : 8) * s),
+          color: pending ? rgba(255, 207, 92, 255) : rgba(150, 200, 220, 255),
+          align: 'center', track: Math.round(3 * s),
+          glow: pending ? 0.7 : 0, glowColor: rgba(255, 160, 40, 255),
+          alpha: (pending ? 0.72 : 0.35) + 0.25 * Math.abs(Math.sin(this.tick * 2.2)),
+        });
     }
     const spec = p.spec;
     const T = this.text;
@@ -221,10 +234,12 @@ export class Hud {
     this.drawHitMark(buf, W, H, s, cx, cy);
 
     // Numeric fuse readout under the ring.
-    T.draw(buf, W, H, cx, cy + R + 13 * s, `${p.fuse.toFixed(0)}m`, {
+    T.draw(buf, W, H, cx, cy + R + 12 * s, `${p.fuse.toFixed(0)}m`, {
       size: Math.round(10 * s), color: col, align: 'center', glow: 0.7, glowColor: col, track: 0.5,
     });
-    T.draw(buf, W, H, cx, cy + R + 23 * s, p.autoFuse ? 'AUTO-RANGING' : 'MANUAL  ×2', {
+    // Clear of the readout above: 10*s of glyph plus its glow needs more than
+    // a 10*s gap, or the ranging mode sits inside the metres.
+    T.draw(buf, W, H, cx, cy + R + 30 * s, p.autoFuse ? 'AUTO-RANGING' : 'MANUAL  ×2', {
       size: Math.round(7 * s), color: p.autoFuse ? CYAN : GREEN, align: 'center',
       track: 2, alpha: 0.8,
     });

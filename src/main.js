@@ -156,8 +156,22 @@ export async function boot() {
   let smoothedFrame = 16.7;
   let resCooldown = 2;
 
+  // A frame that throws must not take the whole run with it. One bad frame is
+  // survivable — the next one usually redraws over it — but a frame that fails
+  // every time it runs is a broken build, and that earns the boot screen.
+  let sickFrames = 0;
   function loop(now) {
     requestAnimationFrame(loop);
+    try {
+      frameBody(now);
+      sickFrames = 0;
+    } catch (e) {
+      if (++sickFrames === 1 || sickFrames % 120 === 0) console.error('[frame]', e);
+      if (sickFrames === 120 && window.__NUKEHAUS_FATAL__) window.__NUKEHAUS_FATAL__(e);
+    }
+  }
+
+  function frameBody(now) {
     let dt = (now - last) / 1000;
     last = now;
     if (dt > 0.1) dt = 0.1;      // a tab that was backgrounded must not teleport anyone
@@ -242,7 +256,7 @@ export async function boot() {
   requestAnimationFrame(loop);
 
   // Handy for poking at the game from the console or a test harness.
-  window.NUKEHAUS = { game, title, input, post, art,
+  window.NUKEHAUS = { game, title, input, post, art, booted: true,
     // Render one world frame on demand, so a harness can assert on what the
     // raycaster actually produced rather than on the state that fed it.
     renderOnce: () => { renderWorld(game, iw, ih); return game.rc; },

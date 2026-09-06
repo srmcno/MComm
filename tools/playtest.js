@@ -79,19 +79,30 @@ await page.evaluate(() => {
     /** Stand somewhere walkable with a clear line to a point. */
     standNear(x, y, minD = 2, maxD = 7) {
       const lv = g.level;
-      let best = null, bestErr = 1e9;
-      for (let yy = 1; yy < lv.H - 1; yy++) for (let xx = 1; xx < lv.W - 1; xx++) {
-        const cx = xx + 0.5, cy = yy + 0.5;
-        if (lv.blocked(cx, cy)) continue;
-        const d = Math.hypot(cx - x, cy - y);
-        if (d < minD || d > maxD) continue;
-        if (!lv.lineOfSight(cx, cy, x, y)) continue;
-        const err = Math.abs(d - (minD + maxD) / 2);
-        if (err < bestErr) { bestErr = err; best = [cx, cy]; }
+      const want = (minD + maxD) / 2;
+      // A randomly placed enemy can land in a nook where nothing in the band
+      // we asked for can see it. Widen the band rather than fail the test that
+      // depends on the placement; the scoring still prefers the asked-for
+      // distance, so a successful search returns the same cell it always did.
+      for (const [lo, hi] of [[minD, maxD], [minD * 0.6, maxD * 1.8], [0.8, 1e9]]) {
+        let best = null, bestErr = 1e9;
+        for (let yy = 1; yy < lv.H - 1; yy++) for (let xx = 1; xx < lv.W - 1; xx++) {
+          const cx = xx + 0.5, cy = yy + 0.5;
+          if (lv.blocked(cx, cy)) continue;
+          const d = Math.hypot(cx - x, cy - y);
+          if (d < lo || d > hi) continue;
+          if (!lv.lineOfSight(cx, cy, x, y)) continue;
+          const err = Math.abs(d - want);
+          if (err < bestErr) { bestErr = err; best = [cx, cy]; }
+        }
+        if (best) {
+          g.player.x = best[0]; g.player.y = best[1];
+          g.player.ang = Math.atan2(y - g.player.y, x - g.player.x);
+          return true;
+        }
       }
-      if (best) { g.player.x = best[0]; g.player.y = best[1]; }
       g.player.ang = Math.atan2(y - g.player.y, x - g.player.x);
-      return !!best;
+      return false;
     },
   };
   // Freeze health while we're testing systems rather than survival.
@@ -1142,6 +1153,72 @@ s = await page.evaluate(() => {
 check('no warhead is ever born at NaN with a vertical speed in the hundreds',
   s.bad === 0 && s.strays > 40,
   `${s.bad} bad of 400 (${s.strays} strays), steepest descent ${s.worst}/s`);
+
+// ------------------- 40. a browser that only grants the mouse on a gesture
+// Safari refuses requestPointerLock outside a user-gesture handler and throws
+// SecurityError. That throw came out of the frame loop, so choosing a
+// difficulty put "NUKEHAUS HAS FAILED TO BOOT" over a game that was running
+// perfectly well underneath. Asking must never throw, and the request has to
+// survive until a gesture can redeem it.
+s = await page.evaluate(() => {
+  const input = window.NUKEHAUS.input;
+  const canvas = input.canvas;
+  const native = canvas.requestPointerLock;
+  let asked = 0;
+  canvas.requestPointerLock = () => {
+    asked++;
+    const e = new Error('The requestPointerLock() method must be called from a user gesture handler.');
+    e.name = 'SecurityError';
+    throw e;
+  };
+  let threw = false;
+  try { input.releaseLock(); input.locked = false; input.requestLock(); } catch { threw = true; }
+  const pending = input._wantLock;
+
+  // A real keypress is a gesture; that is where the request gets redeemed.
+  let redeemedOnGesture = false;
+  canvas.requestPointerLock = () => { redeemedOnGesture = true; };
+  dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', bubbles: true }));
+
+  canvas.requestPointerLock = native;
+  input._wantLock = false;
+  return { threw, asked, pending, redeemedOnGesture };
+});
+check('a gesture-strict browser cannot crash the game out of the frame loop',
+  !s.threw && s.asked > 0 && s.pending && s.redeemedOnGesture,
+  s.threw ? 'requestLock() threw' : `refused ${s.asked}x, held the request, redeemed it on the next keypress`);
+
+// ------------------------------- 41. the fuse coach speaks, once, and only
+// when the player is holding the fuse wrong with a warhead in the sights.
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  const run = (wrongFuse) => {
+    g.newGame(1); g.loadLevel(0); g.setState('play'); g._god = true;
+    window.T.arm('pistol');
+    const said = [];
+    const real = g.radio.say.bind(g.radio);
+    g.radio.say = (who, key, text, o) => { said.push(key); return real(who, key, text, o); };
+    for (let i = 0; i < 6; i++) {
+      g.sky.warheads.length = 0;
+      const w = g.sky.spawnWarhead('stick', 1);
+      window.T.aimLead(w);
+      g.player.autoFuse = false;
+      window.T.step(0.05);
+      window.T.aimLead(w);
+      g.player.autoFuse = false;
+      const lock = g.rangeLock ? g.rangeLock.range : 60;
+      g.player.fuse = wrongFuse ? Math.max(6, lock - 60) : lock;
+      window.T.fireNow();
+      window.T.step(0.3);
+    }
+    g.radio.say = real;
+    return said.filter((k) => k === "ilsa_fuse_tip").length;
+  };
+  return { wrong: run(true), right: run(false) };
+});
+check('a badly dialled fuse gets coached once, a good one is left alone',
+  s.wrong === 1 && s.right === 0,
+  `coached ${s.wrong}x on a wrong fuse, ${s.right}x on a matched one`);
 
 // ------------------------------------------------------------- report
 console.log('');
