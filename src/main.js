@@ -65,6 +65,14 @@ export async function boot() {
   let booted = false;
   const loadStart = performance.now();
 
+  // A boot that stalls silently is the worst kind: no error, no overlay, just a
+  // loading screen forever. This says how far it got, so a stall can be named
+  // from the console instead of guessed at.
+  const stage = (name) => {
+    window.NUKEHAUS_BOOT = { stage: name, at: +(performance.now() - loadStart).toFixed(0) };
+  };
+  stage('start');
+
   function loadingFrame() {
     if (booted) return;
     sizeCanvas(); sizeInternal();
@@ -74,7 +82,8 @@ export async function boot() {
   }
   requestAnimationFrame(loadingFrame);
 
-  const art = await loadAssets((p, label) => { progress = p; progressLabel = label; });
+  const art = await loadAssets((p, label) => { progress = p; progressLabel = label; stage(label); });
+  stage('assets');
   progress = 0.95; progressLabel = 'CLEARING THE STAIRWELL';
 
   // Audio is optional; the game runs mute if either module fails to construct.
@@ -83,11 +92,13 @@ export async function boot() {
   try { vox = { ctor: Vox, LINES: VOX_LINES || {} }; VoxLines = VOX_LINES || {}; }
   catch (e) { console.warn('[audio] vox unavailable', e); }
 
+  stage('audio-constructed');
   const game = new Game(art, sound, null, input, post, text);
   game.voxLines = VoxLines;
   const title = new TitleScreen();
   game.titleScreen = title;
   game.skyDome.rebuild(game.sky.cities);
+  stage('game-constructed');
 
   if (art.warnings.length) console.warn('[assets]', art.warnings);
 
@@ -137,6 +148,20 @@ export async function boot() {
 
   booted = true;
   progress = 1;
+
+  // Switching away mid-fight should not cost you six cities. Losing the pointer
+  // lock already pauses (below), but a player steering with the cursor never had
+  // a lock to lose, and on that path the run just kept going out of sight.
+  const pauseIfPlaying = () => {
+    if (game.state === STATE.PLAY) {
+      game.setState(STATE.PAUSE);
+      game.sound.duck(0.9);
+    }
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') pauseIfPlaying();
+  });
+  addEventListener('blur', pauseIfPlaying);
 
   input.onUnlock = () => {
     if (game.state === STATE.PLAY) {

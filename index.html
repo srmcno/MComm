@@ -75,7 +75,23 @@
   window.addEventListener('error', (e) => report(e.error || e.message));
   window.addEventListener('unhandledrejection', (e) => report(e.reason));
   window.__NUKEHAUS_FATAL__ = fatal;
-  import('./src/main.js').then((m) => m.boot()).catch(fatal);
+
+  // A stalled boot used to be invisible: no error to catch, no rejection to
+  // report, just the loading screen forever. If the game has not come up well
+  // after the slowest plausible load, say so and name the stage it reached.
+  const watchdog = setTimeout(() => {
+    if (window.NUKEHAUS && window.NUKEHAUS.booted) return;
+    const at = window.NUKEHAUS_BOOT;
+    fatal('Loading stalled' + (at ? ` at "${at.stage}" (${at.at}ms in).` : ' before the first stage.') +
+      '\n\nThis usually means the browser suspended the page mid-load.' +
+      '\nBring this tab to the front and reload.');
+  }, 45000);
+  const stopWatchdog = () => clearTimeout(watchdog);
+
+  import('./src/main.js').then((m) => m.boot()).then(stopWatchdog).catch((e) => {
+    stopWatchdog();
+    fatal(e);
+  });
 </script>
 </body>
 </html>

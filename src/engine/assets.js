@@ -366,10 +366,24 @@ export function parseLevelDef(def, index) {
  * Generation is one long synchronous burn otherwise, and the player stares at a
  * blank canvas for the whole of it before the game appears fully formed.
  */
+/**
+ * Hand the browser a frame between build stages so the loading screen can
+ * animate and the tab stays alive.
+ *
+ * This raced nothing and simply awaited requestAnimationFrame, which no browser
+ * fires for a hidden, backgrounded or occluded tab. Open the game in a new tab
+ * behind the one you are reading, or let another window cover it while the art
+ * is generating, and loading stopped dead: no error, no overlay, no title
+ * screen, forever. So the timer is not a fallback for browsers without rAF —
+ * it is what makes loading finish when rAF is asleep. Whichever fires first
+ * wins, and on a visible tab that is still rAF.
+ */
 function yieldFrame() {
   return new Promise((resolve) => {
-    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
-    else setTimeout(resolve, 0);
+    let done = false;
+    const fire = () => { if (!done) { done = true; resolve(); } };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fire);
+    setTimeout(fire, 32);
   });
 }
 
