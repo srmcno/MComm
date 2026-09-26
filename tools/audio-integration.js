@@ -298,6 +298,12 @@ check('the VOICE option exists and reports what is playing', !!r.label && r.mode
     let stored = null;
     try { stored = localStorage.getItem('nukehaus.voice.v1'); } catch { stored = 'blocked'; }
     out.back = { mode: g.voiceMode, engine: g.vox.engine, stored };
+    // Walking back to the title (after victory or game over) stops the cast.
+    g.setState('play');
+    g.speakAs('mutter', 'boot', '');
+    const c2 = window.speechSynthesis.cancels;
+    g.setState('title');
+    out.titleCancelled = window.speechSynthesis.cancels > c2 && !g.vox.busy;
     const all = window.__speechLog.map((e) => e.text).join(' ');
     out.leak = /[{}|]|\b[A-Z]{1,2}[012]\b|%s/.test(all + ' ' + out.caption);
     return out;
@@ -314,6 +320,7 @@ check('the VOICE option exists and reports what is playing', !!r.label && r.mode
   check('natural voices: pausing cancels speech and holds the radio line', v.pauseCancelled && v.held >= 1, `held ${v.held}`);
   check('VOICE: ROBOT switches to the formant synth', v.robot.mode === 'robot' && v.robot.engine === 'robot' && v.robot.label === 'ROBOT');
   check('VOICE: OFF is silent', v.off.mode === 'off' && v.off.said === 0);
+  check('natural voices: going back to the title stops speech', v.titleCancelled);
   check('VOICE: back to NATURAL, and the choice is stored', v.back.mode === 'natural' && v.back.engine === 'natural' &&
     (v.back.stored === 'natural' || v.back.stored === 'blocked'), `${v.back.stored}`);
 }

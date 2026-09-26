@@ -228,8 +228,24 @@ const nameRe = (n) => new RegExp(`(^|[^a-z])${n.replace(/[-]/g, '\\-')}([^a-z]|$
 const FEMALE_RE = FEMALE_NAMES.map(nameRe);
 const MALE_RE = MALE_NAMES.map(nameRe);
 
+// Voice objects are stable for a page's life (Chrome hands back the same ones
+// on every getVoices()), and a recast scores each one three times against
+// ~140 name patterns: remember the answer per object.
+const INFO_CACHE = typeof WeakMap === 'function' ? new WeakMap() : null;
+
 /** What can be inferred about a voice from the little the API reports. */
 export function voiceInfo(v) {
+  if (INFO_CACHE && v && typeof v === 'object') {
+    const hit = INFO_CACHE.get(v);
+    if (hit && hit.name === String(v.name || '') && hit.rawLang === String(v.lang || '')) return hit;
+    const info = readVoice(v);
+    INFO_CACHE.set(v, info);
+    return info;
+  }
+  return readVoice(v);
+}
+
+function readVoice(v) {
   const name = String((v && v.name) || '');
   const n = name.toLowerCase();
   const lang = String((v && v.lang) || '').replace(/_/g, '-').toLowerCase();
@@ -244,7 +260,7 @@ export function voiceInfo(v) {
   if (/espeak|pico|mbrola|festival|flite/.test(n)) quality = 0;
   if (ELOQUENCE.test(n)) quality = 0;
   if (NOVELTY.test(n)) quality = -2;
-  return { name, n, lang, gender, quality, de: /^de\b/.test(lang), en: /^en\b/.test(lang),
+  return { name, rawLang: String((v && v.lang) || ''), n, lang, gender, quality, de: /^de\b/.test(lang), en: /^en\b/.test(lang),
     enUS: /^en-us\b/.test(lang), enGB: /^en-gb\b/.test(lang) };
 }
 
@@ -271,10 +287,14 @@ const PREFS = {
     'conrad', 'markus', 'yannick', 'stefan', 'zarvox'],
 };
 
+// Compiled once: a recast scores every voice for every part.
+const PREFS_RE = {};
+for (const r of Object.keys(PREFS)) PREFS_RE[r] = PREFS[r].map(nameRe);
+
 function prefBonus(role, n) {
-  const list = PREFS[role];
+  const list = PREFS_RE[role];
   for (let i = 0; i < list.length; i++) {
-    if (nameRe(list[i]).test(n)) return 24 - i * 0.7;
+    if (list[i].test(n)) return 24 - i * 0.7;
   }
   return 0;
 }
@@ -321,6 +341,12 @@ function prosodyFor(role, v) {
   // three characters still sound like three people.
   if (role === 'brick' && I.gender === 'f') pitch = 0.5;
   if (role === 'mutter' && I.gender === 'f') pitch = 0.66;
+  // A name that gives nothing away ("English United States" on Android) is,
+  // more often than not, the platform's default woman. Lean low anyway: on a
+  // man it only sounds deeper, on a woman it is the difference between Brick
+  // and his aunt.
+  if (role === 'brick' && I.gender === null) pitch = 0.62;
+  if (role === 'mutter' && I.gender === null) pitch = 0.5;
   if (role === 'ilsa' && I.gender === 'm') pitch = 1.38;
   if (role === 'ilsa' && I.gender === null) pitch = 1.14;
   // Accented English is harder to follow; give it a hair more time.
@@ -361,11 +387,20 @@ export function castVoices(list) {
     out[r] = { voice: c.v, name: String(c.v.name || ''), lang: String(c.v.lang || 'en-US'),
       ...prosodyFor(r, c.v), score: +c.s.toFixed(1) };
   }
-  // One man's voice for both men: spread them apart, Brick up towards his
-  // own voice and MUTTER down into the basement.
+  // One voice for both men: spread them apart. On a man's voice Brick goes up
+  // towards its own register and MUTTER down into the basement; on a woman's
+  // (or one we cannot tell) Brick has to stay low, so MUTTER goes lower still
+  // and leans on its slower rate.
   if (out.brick.voice === out.mutter.voice) {
-    out.brick.pitch = Math.max(out.brick.pitch, 0.88);
-    out.mutter.pitch = Math.min(out.mutter.pitch, 0.5);
+    const male = out.brick.voice && voiceInfo(out.brick.voice).gender === 'm';
+    if (male) {
+      out.brick.pitch = Math.max(out.brick.pitch, 0.88);
+      out.mutter.pitch = Math.min(out.mutter.pitch, 0.5);
+    } else {
+      out.brick.pitch = Math.min(out.brick.pitch, 0.64);
+      out.mutter.pitch = Math.min(out.mutter.pitch, 0.4);
+      out.mutter.rate = Math.min(out.mutter.rate, 0.84);
+    }
   }
   return out;
 }
@@ -387,8 +422,16 @@ export function detectSpeech(scope) {
 
 const VOICE_WAIT = 1.5;        // seconds to wait for a voice list before giving up
 const DEAD_AIR = 2.6;          // seconds after speak() with no sign of life
+const SLOW_START = 2.4;        // extra grace when the line is still queued at that point
 const DEAD_STRIKES = 2;        // that many in a row and the API is written off
-const LAYER_VOL = 0.24;        // the formant under MUTTER, relative to its own level
+const RETRY_DEAD = 90;         // seconds before a written-off engine gets one more try
+const RETRY_NET = 120;         // seconds before the network voices are tried again
+// The formant under MUTTER, relative to its own level: about -20 dB, a hum of
+// machinery under the words rather than a second reading of them.
+const LAYER_VOL = 0.1;
+// The formant synth as the main voice (ROBOT, fallback) talks a touch slower:
+// its consonants are the weak point, and they scale with the rate.
+const ROBOT_RATE = 0.93;
 
 /**
  * Speech: the object main.js hands the game as `game.vox`. Same surface as the
@@ -426,6 +469,9 @@ export class Speech {
     this._route = 'natural';
     this._strikes = 0;
     this._dead = false;
+    this._deadAt = 0;
+    this._netDown = false;
+    this._netDownAt = 0;
     this._serial = 0;
     this._timers = new Set();
     this._born = this._now();
@@ -482,8 +528,12 @@ export class Speech {
     try { list = Array.from(this.synth.getVoices() || []); } catch { list = []; }
     const sig = list.map((v) => v && v.name).join('|');
     if (sig === this._sig) return;
+    const had = this._sig !== undefined && this._voices.length > 0;
     this._sig = sig;
     this._voices = list;
+    // A new voice list is a new engine as far as we know (voices installed,
+    // the network back, speech-dispatcher finally up): forgive the old one.
+    if (had) { this._dead = false; this._strikes = 0; this._netDown = false; }
     this._recast();
   }
 
@@ -501,12 +551,30 @@ export class Speech {
   get engine() {
     if (this.mode === 'off') return 'off';
     if (this.mode === 'robot') return this.formant ? 'robot' : 'off';
+    if (this._dead && this._now() - this._deadAt > RETRY_DEAD) {
+      // One more try, on probation: a single further failure writes it off again.
+      this._dead = false;
+      this._strikes = DEAD_STRIKES - 1;
+    }
     if (this.synth && !this._dead) {
       if (!this._voices.length) this._refreshVoices();
       if (this._voices.length) return 'natural';
       if (this._now() - this._born < VOICE_WAIT) return 'pending';
     }
     return this.formant ? 'robot' : 'off';
+  }
+
+  /**
+   * Why a NATURAL request is on the robot, for the options label:
+   * '' (it is not), 'noapi', 'novoices' or 'silent' (voices exist but the
+   * engine produced nothing).
+   */
+  get fallback() {
+    if (this.mode !== 'natural') return '';
+    const e = this.engine;
+    if (e === 'natural' || e === 'pending') return '';
+    if (!this.synth) return 'noapi';
+    return this._dead ? 'silent' : 'novoices';
   }
 
   /** Who is voicing whom, for the options page and the diagnostics. */
@@ -643,7 +711,7 @@ export class Speech {
     if (!f) return 0;
     this._route = 'formant';
     let d = 0;
-    try { d = f.say(raw, o) || 0; } catch { d = 0; }
+    try { d = f.say(raw, { ...o, rate: num(o.rate, 1) * ROBOT_RATE }) || 0; } catch { d = 0; }
     if (d) this._lastVoice = this._role(o);
     return d;
   }
@@ -697,6 +765,10 @@ export class Speech {
   _speakNatural(raw, o, prio) {
     const synth = this.synth, U = this.Utterance;
     if (!synth || !U) return 0;
+    if (this._netDown && this._now() - this._netDownAt > RETRY_NET) {
+      this._netDown = false;     // maybe the network is back; one failure puts it off again
+      this._recast();
+    }
     this._serial++;
     const role = this._role(o);
     const cast = this.cast[role] || {};
@@ -711,7 +783,7 @@ export class Speech {
 
     const now = this._now();
     const a = {
-      priority: prio, role, raw, est, start: now, endAt: now + est, voice: cast.voice || null,
+      priority: prio, role, raw, est, opts: o, start: now, endAt: now + est, voice: cast.voice || null,
       hardEnd: now + est * 1.7 + 1.5, started: false, ended: false, dead: false,
       utts: [], layered: false, id: this._serial,
     };
@@ -728,6 +800,7 @@ export class Speech {
     const fire = () => {
       if (a.dead || this._active !== a) return;
       chunks.forEach((text, i) => {
+        if (a.dead) return;      // an earlier chunk was refused and the line handed on
         let u;
         try { u = new U(text); } catch { return; }
         try {
@@ -789,12 +862,26 @@ export class Speech {
     }, 4000);
   }
 
-  /** No start event and nothing speaking: the engine is not really there. */
+  /**
+   * No start event yet. Blink reports speaking from the moment speak() is
+   * called, so there this only ever catches a truly wedged engine; Gecko and a
+   * cold speech-dispatcher report nothing until audio starts, so a line still
+   * sitting in the queue gets a second look before anyone is blamed.
+   */
   _watch(a) {
     if (a.dead || a.started || a.ended) return;
-    let speaking = false;
-    try { speaking = !!this.synth.speaking; } catch { speaking = false; }
+    let speaking = false, pending = false;
+    try { speaking = !!this.synth.speaking; pending = !!this.synth.pending; } catch { /* treat as silent */ }
     if (speaking) { a.started = true; return; }
+    if (pending && !a.graced) {
+      a.graced = true;
+      this._later(() => this._watch(a), SLOW_START * 1000);
+      return;
+    }
+    // Nothing queued, nothing playing, and the line has outlived its own
+    // estimate: it may well have played on an engine that sends no events.
+    // That is not evidence of anything, and a replay now would be late.
+    if (!pending && this._now() >= a.endAt) { this._finish(a); return; }
     this._strike(a);
   }
 
@@ -802,24 +889,34 @@ export class Speech {
     if (a.struck) return;
     a.struck = true;
     const v = a.voice;
+    const now = this._now();
     const hasLocal = this._voices.some((x) => x && x.localService !== false);
+    let net = false;
     if (v && v.localService === false && !this._netDown && hasLocal) {
       // A network voice (Edge's Online set, Google's) failing means no
       // network, not no speech: the local voices still work. Recast onto
       // them, and do not hold it against the API.
       this._netDown = true;
+      this._netDownAt = now;
       this._recast();
+      net = true;
     } else {
       this._strikes++;
-      if (this._strikes >= DEAD_STRIKES) this._dead = true;
+      if (this._strikes >= DEAD_STRIKES) { this._dead = true; this._deadAt = now; }
     }
-    this._finish(a);
-    // Say it anyway, in the other voice, if nothing has taken the floor since
-    // and it is still fresh enough to matter.
     const free = !this._active || this._active === a;
-    if (!a.dead && free && this.formant && this._now() - a.start < DEAD_AIR + 0.5) {
-      this._sayFormant(a.raw, { voice: a.role, priority: a.priority });
-    }
+    const wasDead = a.dead;
+    a.dead = true;             // whatever this utterance reports from here on is stale
+    this._finish(a);
+    if (wasDead || !free) return;
+    // The engine may yet wake up and start it: make sure it cannot, so the
+    // replay below is never read twice over itself.
+    try { this.synth.cancel(); } catch { /* ignore */ }
+    // Say it anyway, if it is still fresh enough to matter: on a local voice
+    // when only the network failed, otherwise on the formant synth.
+    if (now >= a.endAt) return;
+    if (net && this.engine === 'natural') this._speakNatural(a.raw, a.opts || { voice: a.role }, a.priority);
+    else if (this.formant) this._sayFormant(a.raw, { ...(a.opts || {}), voice: a.role, priority: a.priority });
   }
 
   /**

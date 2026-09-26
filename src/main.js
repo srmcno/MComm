@@ -149,15 +149,29 @@ export async function boot() {
     hideGate();
   };
   function wrapVox(v) {
+    // VOICE: OFF is honoured here as well as in Speech, because when Speech
+    // failed to construct the bare formant Vox is all there is, and it has no
+    // notion of modes.
+    const off = () => game.voiceMode === 'off';
     return {
-      say: (...a) => { try { return v.say(...a) || 0; } catch { return 0; } },
-      sayLine: (...a) => { try { return (v.sayLine ? v.sayLine(...a) : v.say(...a)) || 0; } catch { return 0; } },
+      say: (...a) => { if (off()) return 0; try { return v.say(...a) || 0; } catch { return 0; } },
+      sayLine: (...a) => {
+        if (off()) return 0;
+        try { return (v.sayLine ? v.sayLine(...a) : v.say(...a)) || 0; } catch { return 0; }
+      },
       cancel: () => { try { v.cancel && v.cancel(); } catch { /* ignore */ } },
       setVolume: (x) => { try { v.setVolume && v.setVolume(x); } catch { /* ignore */ } },
-      setMode: (m) => { try { v.setMode && v.setMode(m); } catch { /* ignore */ } },
+      setMode: (m) => {
+        try { if (v.setMode) v.setMode(m); else if (m === 'off' && v.cancel) v.cancel(); } catch { /* ignore */ }
+      },
       get busy() { try { return !!v.busy; } catch { return false; } },
       // natural | robot | pending | off: what the VOICE option reports.
-      get engine() { try { return v.engine || 'robot'; } catch { return 'off'; } },
+      get engine() { if (off()) return 'off'; try { return v.engine || 'robot'; } catch { return 'off'; } },
+      // Why NATURAL is playing the robot: '' | noapi | novoices | silent.
+      get fallback() {
+        try { return typeof v.fallback === 'string' ? v.fallback : (game.voiceMode === 'natural' ? 'noapi' : ''); }
+        catch { return ''; }
+      },
       get casting() { try { return v.casting || null; } catch { return null; } },
       // The announcer picks which variant of a line to speak. Forward it so the
       // subtitle shows the words that were actually said, not a second draw.

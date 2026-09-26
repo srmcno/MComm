@@ -653,7 +653,11 @@ function voiceLabel(game) {
   const m = VOICE_MODES.includes(game.voiceMode) ? game.voiceMode : 'natural';
   // Asked for the browser's voices on a browser that has none: say what is
   // actually playing instead of pretending.
-  if (m === 'natural' && game.vox && game.vox.engine === 'robot') return 'ROBOT (NO BROWSER VOICES)';
+  if (m === 'natural' && game.vox && game.vox.engine === 'robot') {
+    // Voices that exist but never made a sound are a different complaint
+    // from a browser that has none.
+    return game.vox.fallback === 'silent' ? 'ROBOT (BROWSER VOICE MUTE)' : 'ROBOT (NO BROWSER VOICES)';
+  }
   return VOICE_LABEL[m];
 }
 

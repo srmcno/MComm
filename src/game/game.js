@@ -349,9 +349,10 @@ export class Game {
     this.state = s;
     if (s === STATE.PAUSE) { this.pauseSel = 0; this.pausePage = 'menu'; this.pauseOptSel = 0; this.pauseT = 0; }
     // The browser speaks on its own clock, so the hard stops stop it too. A
-    // pause keeps the radio line to replay; game over and the floor card drop it.
+    // pause keeps the radio line to replay; game over, the floor card and the
+    // walk back to the title drop it.
     if (s === STATE.PAUSE) this.radio.hold();
-    else if (s === STATE.GAMEOVER || s === STATE.INTERMISSION) this.radio.reset();
+    else if (s === STATE.GAMEOVER || s === STATE.INTERMISSION || s === STATE.TITLE) this.radio.reset();
     if (s === STATE.PLAY) {
       this.sound.music(this.sky.active ? 'siege' : this.corridorTrack(),
         { fadeIn: 1.2, intensity: this.sky.intensity });
@@ -496,9 +497,7 @@ export class Game {
     if (!dur && text) { try { dur = this.vox.say(text, { voice }) || 0; } catch { dur = 0; } }
     if (args && spoken) for (const a of args) spoken = spoken.replace('%s', a);
     const caption = plainText(spoken);
-    // Hold the music down for the whole line, not a fixed second and a half:
-    // a natural voice takes its time and the siege score is loud.
-    if (dur > 0) this.sound.duck(0.45, Math.min(12, Math.max(1.8, dur)));
+    this.duckForVoice(voice, dur, 0.45);
     this.lastSpoken = { voice, text: caption };
     if (this.subtitlesOn && caption) this.hud.say(caption, Math.max(2.6, dur || 3.2));
     return dur;
@@ -523,10 +522,26 @@ export class Game {
     let dur = this.vox.sayLine ? this.vox.sayLine(key, opts) : 0;
     let spoken = dur ? (this.vox.lastRequested || this.vox.lastLine || text) : text;
     if (!dur && text) dur = this.vox.say(text, opts) || 0;
-    if (dur > 0) this.sound.duck(0.4, Math.min(12, Math.max(1.6, dur)));
+    this.duckForVoice(opts.voice || 'mutter', dur, 0.4);
     if (opts.args && spoken) for (const a of opts.args) spoken = String(spoken).replace('%s', a);
     const caption = plainText(spoken);
     if (this.subtitlesOn && caption) this.hud.say(caption, Math.max(2.6, (dur || 3.2)));
+  }
+
+  /**
+   * Make room in the score for a line. Ilsa's radio is plot and gets the
+   * music held down for all of it; everyone else gets a hard dip on the first
+   * words, where a line is won or lost, then only a light one, so a long
+   * MUTTER aside does not sit on the siege track for ten seconds.
+   */
+  duckForVoice(voice, dur, depth) {
+    if (!(dur > 0)) return;
+    this.duckTok = (this.duckTok || 0) + 1;
+    if (voice === 'ilsa' || dur <= 2.2) { this.sound.duck(depth, Math.min(12, Math.max(1.6, dur))); return; }
+    const tok = this.duckTok;
+    this.sound.duck(depth, 1.3);
+    // A newer line owns the duck by then; do not undercut its hard dip.
+    this.after(1.3, () => { if (this.duckTok === tok) this.sound.duck(0.22, Math.min(8, dur - 1.3)); });
   }
 
   // ---------------------------------------------------------------- update

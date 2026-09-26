@@ -346,8 +346,7 @@ export class Radio {
         // natural voice can run long, and the next speaker must not start
         // over the end of it. Hold the floor while it talks, within reason.
         if (this.current.t < this.current.life + 4 && this.voiceBusy()) return;
-        // Ilsa keys off: the squelch closes behind her.
-        if (this.current.speaker === 'ilsa') this.game.sound.sfx('radio_close', { vol: 0.42 });
+        if (this.current.natural && !this.current.closed) this.game.sound.sfx('radio_close', { vol: 0.42 });
         this.current = null;
         this.cooldown = 0.28;
         return;
@@ -355,7 +354,15 @@ export class Radio {
       // A browser voice is studio-clean, and Ilsa is on a radio in a reactor
       // core. A little crackle now and then puts her back there.
       const c = this.current;
-      if (c.crackleAt !== undefined && c.t >= c.crackleAt && c.t < c.life - 0.5) {
+      // She keys off when she stops talking, not when the caption's estimate
+      // runs out. Only for a browser voice: the formant Ilsa carries her own
+      // squelch tail, and with the voice OFF a click after a silent caption is
+      // just a click.
+      if (c.natural && !c.closed && c.t > 0.6 && !this.voiceBusy()) {
+        c.closed = true;
+        this.game.sound.sfx('radio_close', { vol: 0.42 });
+      }
+      if (c.crackleAt !== undefined && !c.closed && c.t >= c.crackleAt && c.t < c.life - 0.5) {
         this.game.sound.sfx('radio_static', { vol: 0.13 });
         c.crackleAt += 1.6 + this.game.rng() * 1.8;
       }
@@ -379,12 +386,14 @@ export class Radio {
     const dur = g.speakAs(sp.voice, m.exact ? null : m.key, m.text, m.args);
     // Show the line the announcer actually chose, not the fallback we queued.
     const said = (g.lastSpoken && g.lastSpoken.text) || m.text;
+    const natural = m.speaker === 'ilsa' && dur > 0 && !!g.vox && g.vox.engine === 'natural';
     this.current = {
       // A long transmission is allowed its length; the old 7.5 s cap cut the
       // caption (and the portrait's mouth) off while the voice went on.
       ...m, text: said, t: 0, life: Math.max(2.4, Math.min(14, dur || estimate(said))),
       speakerDef: sp,
-      crackleAt: m.speaker === 'ilsa' && g.vox && g.vox.engine === 'natural' ? 0.8 + g.rng() * 1.2 : undefined,
+      natural,
+      crackleAt: natural ? 0.8 + g.rng() * 1.2 : undefined,
     };
   }
 

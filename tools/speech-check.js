@@ -59,21 +59,24 @@ class MockUtterance {
 
 /**
  * behaviour: { voices, voicesAt (sec after construction, or Infinity), noStart,
- * noEnd, speed (actual seconds per estimated second), throwSpeak, pendingStuck }
+ * noEnd, speed (actual seconds per estimated second), throwSpeak, pendingStuck,
+ * startDelay (Gecko-style: queued as pending, speaking only once audio starts,
+ * this many seconds late), noEvents (plays, but never reports speaking, pending
+ * or any event) }
  */
 function makeSynth(clock, behaviour = {}) {
   const b = { voices: [], voicesAt: 0, speed: 0.8, ...behaviour };
   const born = clock.now();
   const listeners = [];
   const s = {
-    spoken: [], cancels: 0, resumes: 0, queue: [], speaking: false, pending: !!b.pendingStuck, paused: false,
+    spoken: [], audible: [], cancels: 0, resumes: 0, queue: [], speaking: false, pending: !!b.pendingStuck, paused: false,
     getVoices() { return clock.now() - born >= b.voicesAt ? b.voices.slice() : []; },
     addEventListener(type, fn) { if (type === 'voiceschanged') listeners.push(fn); },
     speak(u) {
       if (b.throwSpeak) throw new Error('not allowed');
       s.spoken.push(u);
       s.queue.push(u);
-      if (!s.speaking) s._next();
+      if (!s.speaking && !s.current) s._next();
     },
     _next() {
       const u = s.queue.shift();
@@ -83,10 +86,18 @@ function makeSynth(clock, behaviour = {}) {
         clock.setTimeout(() => { u.onerror && u.onerror({ error: 'network' }); s._next(); }, 30);
         return;
       }
-      s.speaking = true; s.pending = false;
       const dur = estimateSeconds(u.text, u.rate) * b.speed;
+      if (b.noEvents) {
+        s.current = u;
+        s.audible.push({ text: u.text, at: clock.now(), until: clock.now() + dur });
+        clock.setTimeout(() => { if (s.current === u) { s.current = null; s._next(); } }, dur * 1000);
+        return;
+      }
+      if (b.startDelay) s.pending = true; else { s.speaking = true; s.pending = false; }
       clock.setTimeout(() => {
         if (s.current !== u) return;
+        s.speaking = true; s.pending = false;
+        s.audible.push({ text: u.text, at: clock.now(), until: clock.now() + dur });
         u.onstart && u.onstart({ type: 'start' });
         clock.setTimeout(() => {
           if (s.current !== u) return;
@@ -94,11 +105,12 @@ function makeSynth(clock, behaviour = {}) {
           if (!b.noEnd) u.onend && u.onend({ type: 'end' });
           s._next();
         }, dur * 1000);
-      }, 30);
+      }, b.startDelay ? b.startDelay * 1000 : 30);
       s.current = u;
     },
     cancel() {
       s.cancels++;
+      for (const a of s.audible) if (a.until > clock.now()) a.until = clock.now();
       const q = [s.current, ...s.queue].filter(Boolean);
       s.queue.length = 0; s.current = null; s.speaking = false; s.pending = false;
       for (const u of q) u.onerror && u.onerror(b.bareErrors ? {} : { error: 'interrupted' });
@@ -110,11 +122,13 @@ function makeSynth(clock, behaviour = {}) {
   return s;
 }
 
+const plainish = (t) => String(t).toLowerCase().replace(/[^a-z]+/g, ' ').trim();
+
 /** A formant Vox stand-in that records what it was asked to say. */
 function makeFormant(clock) {
   const f = {
     said: [], cancels: 0, vol: 1, _end: 0, lastLine: '', lastVoice: 'mutter',
-    say(text, o = {}) { const d = 1 + String(text).length * 0.05; f.said.push({ text, o }); f.lastLine = text; f.lastVoice = o.voice || 'mutter'; f._end = clock.now() + d; return d; },
+    say(text, o = {}) { const d = 1 + String(text).length * 0.05; f.said.push({ text, o, at: clock.now() }); f.lastLine = text; f.lastVoice = o.voice || 'mutter'; f._end = clock.now() + d; return d; },
     sayLine(key, o) { return f.say(key, o); },
     cancel() { f.cancels++; f._end = 0; },
     setVolume(v) { f.vol = v; },
@@ -248,6 +262,26 @@ const PLATFORMS = {
   check('MUTTER sits lowest when it shares a register with Brick', pitchOrder.length === 0);
   const pitchesOk = Object.values(cast).every((c) => ROLES.every((r) => c[r].pitch > 0 && c[r].pitch <= 2 && c[r].rate >= 0.5 && c[r].rate <= 2));
   check('every cast pitch and rate is inside the Web Speech range', pitchesOk);
+  {
+    const a = cast['Android / Chrome'];
+    check('Android: a name-only voice still gets Brick and MUTTER low', a.brick.pitch <= 0.65 && a.mutter.pitch <= 0.52 &&
+      a.mutter.pitch < a.brick.pitch, show('Android / Chrome'));
+    const one = castVoices([V('English United States', 'en-US', { default: true })]);
+    check('one unknown voice for everybody: Brick stays low, MUTTER lower and slower',
+      one.brick.pitch <= 0.65 && one.mutter.pitch < one.brick.pitch - 0.15 && one.mutter.rate < one.brick.rate &&
+      one.ilsa.pitch > 1, `b${one.brick.pitch} m${one.mutter.pitch} i${one.ilsa.pitch}`);
+  }
+  {
+    // A recast happens on voiceschanged, possibly mid-game on a phone.
+    const big = [];
+    const names = ['Microsoft David', 'Google US English', 'Samantha', 'Daniel', 'Anna', 'English United States', 'Katja'];
+    for (let i = 0; i < 200; i++) big.push(V(`${names[i % names.length]} ${i}`, ['en-US', 'en-GB', 'de-DE', 'fr-FR'][i % 4]));
+    castVoices(big);
+    const t0 = performance.now();
+    for (let i = 0; i < 5; i++) castVoices(big);
+    const ms = (performance.now() - t0) / 5;
+    check('a 200-voice recast stays cheap (under 8 ms)', ms < 8, `${ms.toFixed(2)} ms`);
+  }
   const empty = castVoices([]);
   check('an empty voice list casts nobody without throwing', ROLES.every((r) => empty[r].voice === null));
   check('voiceInfo reads gender off Google UK English Female correctly', voiceInfo(V('Google UK English Female', 'en-GB')).gender === 'f');
@@ -432,7 +466,7 @@ function rig(plat, behaviour = {}, opts = {}) {
   sp.say('Good morning. The bunker is operating normally.', { voice: 'mutter' });
   clock.advance(0.2);
   const u = formant.said[0];
-  check('MUTTER gets the formant synth quietly underneath', !!u && u.o.voice === 'mutter' && u.o.vol < 0.5, u ? `vol ${u.o.vol} rate ${u.o.rate.toFixed(2)}` : 'none');
+  check('MUTTER gets the formant synth quietly underneath (about -20 dB)', !!u && u.o.voice === 'mutter' && u.o.vol <= 0.12, u ? `vol ${u.o.vol} rate ${u.o.rate.toFixed(2)}` : 'none');
   sp.cancel();
   formant.said.length = 0;
   sp.say('No robot under me, chief.', { voice: 'brick' });
@@ -489,16 +523,81 @@ function rig(plat, behaviour = {}, opts = {}) {
   check('...once they do', r2.sp.engine === 'natural');
 }
 {
+  // An engine wedged in "pending": every line queues and none ever plays.
   const r = rig('macOS / Safari', { noStart: true });
-  const d = r.sp.say('Can anybody hear me?', { voice: 'ilsa' });
-  r.clock.advance(3);
-  check('dead air: the lost line is replayed on the formant synth', d > 0 && r.formant.said.length === 1 && r.sp.engine === 'natural');
+  const long = 'Can anybody hear me? This is Vance on the reactor channel, and I have been talking to myself for a while now.';
+  const d = r.sp.say(long, { voice: 'ilsa' });
+  r.clock.advance(2.7);
+  check('dead air: a line still queued gets a grace period, not an instant verdict',
+    r.formant.said.length === 0 && r.sp._strikes === 0);
+  const cancels = r.synth.cancels;
+  r.clock.advance(2.5);
+  check('dead air: a lost long line is cancelled on the engine and replayed on the formant synth',
+    d > 5 && r.formant.said.length === 1 && r.synth.cancels > cancels && r.sp.engine === 'natural',
+    `${r.formant.said.length} replays, est ${d}`);
   r.sp.say('Hello?', { voice: 'ilsa' });
-  r.clock.advance(3);
-  check('a second silent line writes the API off for good', r.sp.engine === 'robot');
+  r.clock.advance(6);
+  check('a second silent line writes the API off', r.sp.engine === 'robot');
+  check('...a short line past its moment is not replayed late', r.formant.said.length === 1);
+  check('...and the option label says the voice went silent, not that there are none', r.sp.fallback === 'silent', r.sp.fallback);
   const n = r.synth.spoken.length;
   r.sp.say('Now what.', { voice: 'brick' });
-  check('...after which nothing more is sent to it', r.synth.spoken.length === n && r.formant.said.length === 3);
+  check('...after which nothing more is sent to it', r.synth.spoken.length === n && r.formant.said.length === 2);
+  r.clock.advance(95);
+  check('a written-off engine gets another try later', r.sp.engine === 'natural' && r.sp._strikes === 1);
+  r.sp.say('Is it back?', { voice: 'brick' });
+  r.clock.advance(6);
+  check('...and one more silence writes it off again', r.sp.engine === 'robot');
+}
+{
+  // Firefox and a cold speech-dispatcher: speaking stays false until audio
+  // really starts, here three seconds late, which is past the dead-air watch.
+  const r = rig('Windows / Edge', { startDelay: 3 });
+  const d = r.sp.say('Come get some, you ugly bastards.', { voice: 'brick' });
+  r.clock.advance(8);
+  const heard = r.synth.audible.map((a) => a.text);
+  check('a slow-starting engine is waited for, not talked over by the robot',
+    d > 0 && r.formant.said.length === 0 && heard.length === 1 && r.sp._strikes === 0, heard.join(' / '));
+  check('...and a slow network voice does not get the cast moved off it', !r.sp._netDown && /Davis|Guy/.test(r.sp.cast.brick.name),
+    r.sp.cast.brick.name);
+}
+{
+  // An engine that plays but reports nothing at all: no start, no end, never
+  // "speaking". Short lines finish before the watch looks; that is no verdict.
+  const r = rig('macOS / Safari', { noEvents: true });
+  for (const t of ['Hail to the king, baby.', 'Eat shit and die.', 'Damn, I am good.', 'Groovy.']) {
+    r.sp.say(t, { voice: 'brick' });
+    r.clock.advance(4);
+  }
+  check('an event-less engine is never double-voiced on short lines, nor written off',
+    r.formant.said.length === 0 && r.sp.engine === 'natural' && r.sp._strikes === 0 && r.synth.audible.length === 4,
+    `${r.formant.said.length} replays, ${r.sp.engine}`);
+}
+{
+  // Overlap audit: whatever the engine does, the natural voice and a formant
+  // replay of the same line are never audible at once.
+  let overlap = 0;
+  for (const b of [{ startDelay: 3 }, { startDelay: 6 }, { noStart: true }, { noEvents: true }, { failNetwork: true }]) {
+    const r = rig('Windows / Edge', b);
+    r.sp.say('This is a longer line that takes a good few seconds for anybody to say, even Brick.', { voice: 'brick' });
+    r.sp.say('Short one.', { voice: 'mutter' });
+    r.clock.advance(20);
+    for (const f of r.formant.said) {
+      if (f.o.vol !== undefined) continue;   // the undertone is meant to overlap
+      const at = f.at;
+      if (r.synth.audible.some((a) => a.at <= at + 1e-6 && a.until > at + 0.05 && plainish(a.text) === plainish(f.text))) overlap++;
+    }
+  }
+  check('a replayed line never plays over its own natural reading', overlap === 0, `${overlap} overlaps`);
+}
+{
+  // voiceschanged with a different list forgives a written-off engine
+  const r = rig('macOS / Safari', { noStart: true });
+  r.sp._dead = true; r.sp._deadAt = r.clock.now();
+  PLATFORMS['macOS / Safari'].push(V('Evan (Enhanced)', 'en-US'));
+  r.synth.fireVoicesChanged();
+  PLATFORMS['macOS / Safari'].pop();
+  check('a new voice list gives a written-off engine a clean slate', r.sp.engine === 'natural' && r.sp._strikes === 0);
 }
 {
   // An engine that reports its own cancels as errors with no reason, and runs
@@ -517,8 +616,10 @@ function rig(plat, behaviour = {}, opts = {}) {
   r.sp.say('Is this thing on?', { voice: 'brick' });
   r.clock.advance(0.3);
   const recast = r.sp.cast.brick.name;
-  check('a network voice that fails is replaced by a local one, and the line is not lost',
-    /David|Mark/.test(recast) && r.formant.said.length === 1 && r.sp.engine === 'natural', recast);
+  const last0 = r.synth.spoken[r.synth.spoken.length - 1];
+  check('a network voice that fails is replaced by a local one, and the line is said again on it',
+    /David|Mark/.test(recast) && r.formant.said.length === 0 && r.sp.engine === 'natural' &&
+    /thing on/.test(last0.text) && last0.voice && last0.voice.localService !== false, recast);
   for (const who of ['ilsa', 'mutter']) { r.sp.say('Checking in.', { voice: who }); r.clock.advance(0.3); r.clock.advance(12); }
   r.sp.say('Still here.', { voice: 'brick' });
   r.clock.advance(0.5);
@@ -608,8 +709,21 @@ function rig(plat, behaviour = {}, opts = {}) {
   for (let i = 0; i < 60 * 14 && (radio.current || radio.queue.length || i < 10); i++) { radio.update(1 / 60); clock.advance(1 / 60); }
   const crackles = game.sfxLog.filter((n) => n === 'radio_static').length;
   check('Ilsa on a natural voice crackles now and then, and keys off with a squelch',
-    crackles >= 1 && crackles <= 6 && game.sfxLog[game.sfxLog.length - 1] === 'radio_close', game.sfxLog.join(','));
+    crackles >= 1 && crackles <= 6 && game.sfxLog[game.sfxLog.length - 1] === 'radio_close' &&
+    game.sfxLog.filter((n) => n === 'radio_close').length === 1, game.sfxLog.join(','));
   radio.reset();
+
+  // ...but the formant Ilsa has her own squelch, and OFF has no voice at all
+  for (const mode of ['robot', 'off']) {
+    sp.setMode(mode);
+    game.sfxLog.length = 0;
+    radio.say('ilsa', 'q', 'Hardigan, keep your head down.', { exact: true });
+    for (let i = 0; i < 60 * 10 && (radio.current || radio.queue.length || i < 10); i++) { radio.update(1 / 60); clock.advance(1 / 60); }
+    check(`no radio crackle or squelch close in ${mode.toUpperCase()} mode`,
+      !game.sfxLog.includes('radio_close') && !game.sfxLog.includes('radio_static'), game.sfxLog.join(','));
+    radio.reset();
+  }
+  sp.setMode('natural');
 
   // the radio waits for the voice rather than trusting its own clock
   radio.say('brick', 'x', 'First.', { exact: true });
@@ -637,6 +751,7 @@ function rig(plat, behaviour = {}, opts = {}) {
   check('game.js stops the radio when the game pauses', /s === STATE\.PAUSE\)[^\n]*radio\.hold\(\)/.test(gsrc) ||
     /STATE\.PAUSE[\s\S]{0,80}radio\.hold\(\)/.test(gsrc));
   check('game.js stops speech at game over and between floors', /STATE\.GAMEOVER[\s\S]{0,120}radio\.reset\(\)/.test(gsrc));
+  check('game.js stops speech on the way back to the title', /STATE\.TITLE\)\s*this\.radio\.reset\(\)/.test(gsrc));
 }
 
 /* 7. the cast table and the engine agree */
