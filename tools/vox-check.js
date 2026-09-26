@@ -623,6 +623,10 @@ check('persistent chains are small (3 voices, <= 70 nodes)',
   check('{...} phoneme escape is honoured',
     esc.join(' ').includes('M UH1 TH ER'), esc.join(' '));
 
+  const piped = textToPhonemes('Bunker {Sieben|S IY1 B AH N} holds').map((p) => p.p + (p.st || '')).join(' ');
+  const legacy = textToPhonemes('Bunker {S IY1 B AH N} holds').map((p) => p.p + (p.st || '')).join(' ');
+  check('{Word|PHONES} speaks the phones and never the word', piped === legacy, piped);
+
   const yr = textToPhonemes('in 1979 and 6 more').map((p) => p.p || '/').join(' ');
   check('numbers and years are spoken', /N AY N T IY N/.test(yr) && /S IH K S/.test(yr), yr);
 
