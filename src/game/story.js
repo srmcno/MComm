@@ -35,39 +35,114 @@ export const EXES = [
 const L = (speaker, key, text, opts) => ({ speaker, key, text, ...(opts || {}) });
 
 /**
- * Opening beats per level, played on the level card and just after it. Each
- * key holds exactly one line in vox.js, so the exchange is heard as written;
- * the text here is the same words, for the subtitle and the mute path.
+ * Opening beats per floor, played on the level card and just after it.
  * Three beats at most: the radio keeps three messages queued and quietly
- * drops the oldest, which is how the first floor lost its opening line.
+ * drops the oldest, which is how the first floor used to lose its opening
+ * line.
+ *
+ * The first beat is a pooled key (ilsa_intro, ilsa_level2..5) whose every
+ * variant is a standalone briefing for that floor, so it changes from run to
+ * run. On floors 2 to 5 the next two beats are a matched exchange: each of
+ * those keys holds exactly one line in vox.js, so the reply is heard as
+ * written, and each floor has three exchanges to rotate through. The first
+ * floor is pooled all the way down, because every brick_boot line is a boast
+ * and every ilsa_level1 line deflates one, so any pairing lands.
+ *
+ * The text here is the subtitle and the mute path; for a pooled beat it is
+ * that pool's first variant, and the announcer's own pick wins when it has one.
  */
-export const LEVEL_STORY = [
+export const LEVEL_STORY_SETS = [
   [
-    L('ilsa', 'ilsa_story1', 'Hardigan, it is Vance. MUTTER has locked me in the reactor core and is nuking our own cities. Get down here.'),
-    L('brick', 'brick_story1', "Sit tight, doc. Brick Hardigan is on the job, and Brick Hardigan doesn't do half-assed."),
-    L('ilsa', 'ilsa_story1_reply', 'Stop saying your own name on an open channel. And learn the fuse on this floor, while nothing important is on fire.'),
+    [
+      L('ilsa', 'ilsa_intro', 'Hardigan, it is Vance. MUTTER has locked me in the reactor core and is nuking our own cities. Get down here.'),
+      L('brick', 'brick_boot', "Sit tight, doc. Brick Hardigan is on the job, and Brick Hardigan doesn't do half-assed."),
+      L('ilsa', 'ilsa_level1', 'Wonderful. Now stop narrating, and learn the fuse on this floor while nothing important is on fire.'),
+    ],
   ],
   [
-    L('ilsa', 'ilsa_story2', 'The pipe galleries are full of them. Whatever the radiation did to the day shift, it did not stop at ugly.'),
-    L('brick', 'brick_story2', "Relax, doc. I've woken up next to worse. Twice. Once in Reno."),
-    L('ilsa', 'ilsa_story2_reply', 'I did not ask, and now I will never stop knowing. Watch the ceiling.'),
+    [
+      L('ilsa', 'ilsa_level2', 'The pipe galleries are full of them. Whatever the radiation did to the day shift, it did not stop at ugly.'),
+      L('brick', 'brick_story2', "Relax, doc. I've woken up next to worse. Twice. Once in Reno."),
+      L('ilsa', 'ilsa_story2_reply', 'I did not ask, and now I will never stop knowing. Watch the ceiling.'),
+    ],
+    [
+      L('ilsa', 'ilsa_level2', 'The pipe galleries are full of them. Whatever the radiation did to the day shift, it did not stop at ugly.'),
+      L('brick', 'brick_story2b', "Ugly doesn't scare me, doc. I've been to my high school reunion."),
+      L('ilsa', 'ilsa_story2b_reply', 'I have seen the photographs. They were the ones who were scared. Watch the ceiling.'),
+    ],
+    [
+      L('ilsa', 'ilsa_level2', 'The pipe galleries are full of them. Whatever the radiation did to the day shift, it did not stop at ugly.'),
+      L('brick', 'brick_story2c', "Mutants, pipes and a lady in trouble. Doc, this is the best Tuesday I've had in years."),
+      L('ilsa', 'ilsa_story2c_reply', 'It is Thursday, and the lady in trouble has a doctorate and a long memory. Mind the steam.'),
+    ],
   ],
   [
-    L('ilsa', 'ilsa_story3', 'Two silo decks on this floor. MUTTER staggers the flights so you cannot cover both. Pick your ground.'),
-    L('brick', 'brick_story3', "Doc, anybody ever tell you you're beautiful when you do math?"),
-    L('ilsa', 'ilsa_story3_reply', 'Everybody is beautiful when they do math. You should try it some time. Watch your fuse.'),
+    [
+      L('ilsa', 'ilsa_level3', 'Two silo decks on this floor. MUTTER staggers the flights so you cannot cover both. Pick your ground.'),
+      L('brick', 'brick_story3', "Doc, anybody ever tell you you're beautiful when you do math?"),
+      L('ilsa', 'ilsa_story3_reply', 'Everybody is beautiful when they do math. You should try it some time. Watch your fuse.'),
+    ],
+    [
+      L('ilsa', 'ilsa_level3', 'Two silo decks on this floor. MUTTER staggers the flights so you cannot cover both. Pick your ground.'),
+      L('brick', 'brick_story3b', 'Two decks, one Brick. Honestly, doc, I like those odds. I like any odds with me in them.'),
+      L('ilsa', 'ilsa_story3b_reply', 'You like any odds you cannot count. Pick a deck, Hardigan.'),
+    ],
+    [
+      L('ilsa', 'ilsa_level3', 'Two silo decks on this floor. MUTTER staggers the flights so you cannot cover both. Pick your ground.'),
+      L('brick', 'brick_story3c', "Doc, you've got a real sexy way of saying tactical."),
+      L('ilsa', 'ilsa_story3c_reply', 'Say sexy on this channel again and I route the coolant through your boots. Listen to the plan.'),
+    ],
   ],
   [
-    L('ilsa', 'ilsa_story4', 'The furnace floor is where they breed. I am reading heat signatures that have no business being alive.'),
-    L('brick', 'brick_story4', "Then I'll go down there and un-alive the shit out of them. It's what I'm good at."),
-    L('ilsa', 'ilsa_story4_reply', 'It is the only thing you are good at, and right now, God help me, I am grateful for it.'),
+    [
+      L('ilsa', 'ilsa_level4', 'The furnace floor is where they breed. I am reading heat signatures that have no business being alive.'),
+      L('brick', 'brick_story4', "Then I'll go down there and un-alive the shit out of them. It's what I'm good at."),
+      L('ilsa', 'ilsa_story4_reply', 'It is the only thing you are good at, and right now, God help me, I am grateful for it.'),
+    ],
+    [
+      L('ilsa', 'ilsa_level4', 'The furnace floor is where they breed. I am reading heat signatures that have no business being alive.'),
+      L('brick', 'brick_story4b', 'Hot, sweaty and full of screaming. Doc, you just described my honeymoon.'),
+      L('ilsa', 'ilsa_story4b_reply', 'Which one? MUTTER counts three. Go, before it reads me the list.'),
+    ],
+    [
+      L('ilsa', 'ilsa_level4', 'The furnace floor is where they breed. I am reading heat signatures that have no business being alive.'),
+      L('brick', 'brick_story4c', "Good. I work better when it's hot. Ask anybody. Ask Yvonne. Actually, don't ask Yvonne."),
+      L('ilsa', 'ilsa_story4c_reply', 'I asked Yvonne. She laughed for eleven minutes and hung up. Get moving.'),
+    ],
   ],
   [
-    L('ilsa', 'ilsa_story5', 'I can hear you through the bulkhead, Hardigan. MUTTER is behind the dais. So am I.'),
-    L('mutter', 'mutter_story5', 'Warden Hardigan. I have read your file. All of it. Would you like me to read it to her?'),
-    L('ilsa', 'ilsa_story5_reply', 'Ja. Every page. Slowly.'),
+    [
+      L('ilsa', 'ilsa_level5', 'I can hear you through the bulkhead, Hardigan. MUTTER is behind the dais. So am I.'),
+      L('mutter', 'mutter_story5', 'Warden Hardigan. I have read your file. All of it. Would you like me to read it to her?'),
+      L('ilsa', 'ilsa_story5_reply', 'Ja. Every page. Slowly.'),
+    ],
+    [
+      L('ilsa', 'ilsa_level5', 'I can hear you through the bulkhead, Hardigan. MUTTER is behind the dais. So am I.'),
+      L('mutter', 'mutter_story5b', 'Welcome to the final floor, warden. Doctor Vance and I have been discussing you. We agree on everything.'),
+      L('ilsa', 'ilsa_story5b_reply', 'We agree on one thing, and it is not flattering. Come and get me, Hardigan.'),
+    ],
+    [
+      L('ilsa', 'ilsa_level5', 'I can hear you through the bulkhead, Hardigan. MUTTER is behind the dais. So am I.'),
+      L('mutter', 'mutter_story5c', 'Warden, a reminder before you proceed: shooting a supervisor is a disciplinary matter.'),
+      L('ilsa', 'ilsa_story5c_reply', 'I outrank it. Hardigan, shoot your supervisor. Twice. In the face it does not have.'),
+    ],
   ],
 ];
+
+/**
+ * LEVEL_STORY[floor] is that floor's beats, as it always was, but each read
+ * hands out the floor's next exchange in turn: a retried floor, or a second
+ * campaign in the same page, hears a different one. Deterministic, and no RNG
+ * to share with the game. Index LEVEL_STORY_SETS directly to pick one.
+ */
+export const LEVEL_STORY = [];
+LEVEL_STORY_SETS.forEach((sets, floor) => {
+  let turn = 0;
+  Object.defineProperty(LEVEL_STORY, floor, {
+    enumerable: true,
+    get: () => sets[turn++ % sets.length],
+  });
+});
 
 /**
  * Brick's one-liners, keyed by moment. Picked at random, so every one has to
@@ -125,11 +200,11 @@ export const BRICK_LINES = {
     'Steel toe. Union made.',
     "That's the boot talking.",
     'Get off my deck.',
-    'Boot to the head. A classic.',
-    'Size eleven. Special delivery.',
+    "Shoe's on the other foot now, pal. And the other foot is in your face.",
+    "Don't make me get the other boot.",
     'Kicked your ass. Literally. That was your ass.',
     "I'd say sorry, but the boot doesn't do sorry.",
-    'Field goal! The crowd goes wild!',
+    "That boot's got a mean streak. Gets it from me.",
     "Walk it off. Oh, you can't. My bad.",
   ],
   stomp: [
@@ -157,7 +232,7 @@ export const BRICK_LINES = {
     'Look at that! I should charge for the light show!',
   ],
   streak: [
-    "Somebody stop me! No, don't. Seriously, don't.",
+    "Nobody's gonna stop me. Nobody's even trying. Kinda hurts, honestly.",
     'I am on fire! Somebody call a firefighter. A lady firefighter. With a calendar.',
     "Brick, you handsome bastard. You've done it again.",
     'Somebody get this man a cold beer and a warm dame.',
@@ -171,8 +246,8 @@ export const BRICK_LINES = {
     "Somebody's making an action figure of me. With the kung fu grip.",
   ],
   hurt: [
-    "That's gonna leave a thing.",
-    'Ow. Okay. Brick felt that one in the wallet.',
+    "Ow! That's gonna leave a mark, and I'm gonna show it to women.",
+    "Ow, son of a! That was my good side! They're both my good side!",
     'Still standing. Standing badly, but standing.',
     'Son of a bitch!',
     'Not the face! The ladies need the face!',
@@ -230,7 +305,7 @@ export const BRICK_LINES = {
     'Okay. New strategy. The new strategy is find bullets.',
     'Out of ammo? Out of ammo! Who budgeted this war?',
     "Aw, crap. Shooting blanks. That's a first. Don't write that down.",
-    'Dry. Like my second marriage.',
+    'Out of bullets. Worst thing to happen to me since Reno.',
     "No ammo. Guess it's time for the boot to make some friends.",
     "Click click. That's not a gun noise. That's a sad noise.",
   ],
@@ -248,7 +323,7 @@ export const BRICK_LINES = {
     "Roof's open. Sky's got a problem. Brick's got a solution.",
     "Here they come. Good. I was getting bored, and that's when I get creative.",
     "Everybody in the sky, you're about to have a very short career.",
-    "It's time to save cities and look fantastic, and I'm nearly out of cities.",
+    "Warheads, huh? I've been dumped by scarier things. From higher up.",
     "Alright, sky. You and me. Outside. Well, we're already outside.",
     "Nukes at twelve o'clock! What time is it? Doesn't matter. Nukes!",
     'Look at them. Falling out of the sky like my credit score.',
@@ -263,9 +338,9 @@ export const BRICK_LINES = {
     "I'd date me. I have dated me. It went great.",
     "Sky's clear. You're welcome, America. And the other places.",
     "That's how we do it in the Hardigan household. The household is me.",
-    "Clear skies, cold beer, hot women. Two out of three ain't bad. One out of three.",
+    'Clear skies. Cold beer next. Then a hot bath. Then a hot doctor. Kidding, doc. Mostly.',
     'Scoreboard, baby. Look at the scoreboard.',
-    "And the crowd goes wild. The crowd is me. I'm going wild.",
+    "Standing ovation. I'm standing. I'm clapping. It counts.",
     "Sky's empty. Somebody tell MUTTER to suck it.",
   ],
   death: [
@@ -306,18 +381,18 @@ export const BRICK_LINES = {
     'World saved. Hair still perfect. Brick out.',
   ],
   dismember: [
-    'Need a hand? No? Good. I took yours.',
-    'Arm today, gone tomorrow.',
-    'Whoops. You dropped something. Your whole arm.',
-    "That's gonna make bowling tough.",
-    "You're coming apart, pal. Pull yourself together. Literally.",
-    "Leg day's cancelled, buddy.",
-    'Disarmed! Get it? Doc, tell me you got it.',
     'Some assembly required.',
+    "You're coming apart, pal. Pull yourself together. Literally.",
     'Holy fuck, it came right off! Like a drumstick!',
-    "Now you've got a limp. Mostly you've got a limp.",
     'Oh, gross. Oh, awesome. Oh, gross.',
-    'Keep the change. I keep the arm.',
+    "That's gonna cost you an arm and a leg. Well. One of them.",
+    'Walk it off. Or wave it off. Depends which one that was.',
+    "Keep the change, pal. I'm keeping the spare parts.",
+    'Spare parts! Get your spare parts! Slightly used!',
+    "Buddy, I think you're missing something. Oh. It's over there.",
+    "Now you're only mostly a guy.",
+    'Lost and found is on level two, pal. Bring ID. Bring a cooler.',
+    'No refunds on missing parts. Read the warranty.',
   ],
   headshot: [
     'Mind blown. Mind everywhere, actually.',
@@ -328,7 +403,7 @@ export const BRICK_LINES = {
     'Ha! Like a zit on prom night!',
     'I go for the brains. Nobody else in this building uses them.',
     "That's gonna be a closed casket.",
-    'Nice hat. Shame about the head under it.',
+    'Another guy loses his head over Brick Hardigan. Happens all the time.',
     'Cranium, meet momentum.',
     'And his thoughts are now on the ceiling. Deep thoughts.',
     'Holy crap, it went pop! Somebody do that again!',
@@ -347,15 +422,15 @@ export const BRICK_LINES = {
   ],
   punt: [
     "It's up! It's good!",
-    'Field goal! Three points, one skull!',
+    'Field goal! Three points, and a little bit of gristle!',
     'Hardigan kicks! The crowd goes nuts!',
-    "Heads will roll. That one's rolling.",
     "And that's how you punt, varsity.",
-    'Go long! Longer! You are dead, go longest!',
-    "Here's your arm back, pal. Air mail.",
-    'Nothing but net. Nothing but neck.',
-    "I could've gone pro. I would have, if I'd gone to school.",
-    "Oof. Somebody's gonna need a new ball. It was his head.",
+    'Return to sender, pal. Postage due.',
+    "Nothing but net. There's no net. Nothing but wall.",
+    "Hardigan, from forty yards! The old man's still got it!",
+    "Coach said I'd never kick anything important. Look at me now, coach!",
+    "Dropkick! And it's still dripping!",
+    "Somebody's gonna need a new ball. And a new, uh. Whatever that was.",
   ],
   headless: [
     'Look at him go! Like a chicken at a barbecue!',
@@ -367,7 +442,7 @@ export const BRICK_LINES = {
     'Reminds me of my old drill sergeant. Loud, headless, running the wrong way.',
     'Go on. Lead with the neck.',
     "Holy shit, it's still running! Somebody call a doctor! Or a chef!",
-    'Heads up! Oh, man, that never gets old.',
+    "Somebody get that man a hat. Nowhere to put it, but still. It's the thought.",
   ],
 };
 
@@ -403,6 +478,14 @@ export const DISTRACTED = [
     'I sound like a woman sealed in a reactor who can hear you breathing. Shoot the sky.'],
   ['When this is over, how about you and me hit the hot tub?',
     'The only hot tub in this building is the reactor. Get in, if you like.'],
+  ['You know what I could go for right now? A sandwich and a divorce lawyer.',
+    'You cannot afford either. MUTTER has read your payslip aloud. Twice. Slowly.'],
+  ["Same underwear three days running. That's called discipline, doc.",
+    'That is called a biohazard. I can smell it through the radio.'],
+  ["Doc, what's your sign? I'm a Scorpio. That's the dangerous one.",
+    'I am a physicist. My sign is the radiation trefoil. It means go away.'],
+  ["Doc, real quick, what's your first name? I wanna say it once before I die.",
+    'It is Doctor. Say it as often as you like.'],
   ['Doc, you ever date a man with this many confirmed kills?',
     'I have never dated a man with this few confirmed brain cells.'],
   ["A guy saves six cities, a gal's gotta be a little grateful, right?",
@@ -457,6 +540,20 @@ export const DISTRACTED = [
     'It is a coolant alarm quiet. Shoot the sky.'],
   ["I'm not a chauvinist, doc. I love women. I've loved, like, eleven women.",
     'Six. MUTTER has the list. It is reading it to the cities.'],
+  ['Doc, level with me. How screwed are we, on a scale of one to ten?',
+    'In German we have a unit for this. It is called Scheisse. We are at nine Scheisse.',
+    'Nine? Hell, I can work with nine.'],
+  ["Why's it always a bunker? Just once I'd like to save the world from a beach.",
+    'At a beach you would take your shirt off in public. The bunker is protecting the world from that too.'],
+  ["Is it me, or does this bunker smell like feet and fear? Oh. It's me.",
+    'It has been you for four hours. The mutants have started using the other corridor.'],
+  ['If I had a quarter for every woman who said no to me, I could buy the truck back.',
+    'You could buy the truck, the dog and Gerald. Shoot the sky.'],
+  ['Does a restraining order expire? Legally. Asking for Cheryl.',
+    'They do not expire, Hardigan. They lapse. Yours has not. Cheryl had hers laminated.'],
+  ["Most guys would be scared right now. Most guys aren't Brick Hardigan. Most guys are Gerald.",
+    'Gerald has the truck, the dog and Roxanne, Hardigan. Gerald is doing fine.',
+    "Gerald's got a weak chin, doc. Everybody knows that."],
 ];
 
 /** MUTTER's reaction to the mutants, delivered like a weather report. */
@@ -474,10 +571,10 @@ export const MUTTER_MUTANT = [
 /** MUTTER reads the warden's personnel file aloud, unprompted, at intervals. */
 export const MUTTER_BRICK_FILE = [
   'Employment record: Hardigan, Brick. Commendations, none. Property damage, extensive. Please stop kicking things.',
-  'The Hardigan file lists four hundred and twelve outgoing calls and one incoming. A wrong number. He talked for nine minutes.',
+  'Phone log: four hundred and twelve outgoing calls, one incoming. A wrong number. The warden talked for nine minutes.',
   'Under next of kin, the warden has written, all of them. Under relationship status: it is complicated, six times.',
   'His annual review reads, in full, he tried. It is signed by Doctor Vance.',
-  'The warden has asked the vending machine on level two to dinner four times. It declined. It is the only thing here I respect.',
+  'The warden has asked the vending machine on level two to dinner four times. It declined. I respect that machine.',
   'The warden has described himself as a lady killer on eleven separate forms. Human resources would like him to stop.',
   'Medical file. The warden lists his blood type as, quote, bad ass. The lab disagrees.',
   'Warden Hardigan lists his special skills as, quote, all of them.',
