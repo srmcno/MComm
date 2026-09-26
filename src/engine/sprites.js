@@ -2764,7 +2764,7 @@ function paintConsole() {
   // riser with a screen
   slab(f, 9, 1, 26, 13, 5, DR.console, { seed: 4002 });
   screenFace(f, 12, 3, 20, 9, GLOW_GREEN, 4003);
-  stencil(f, 13, 5, 'LAUNCH', GLOW_GREEN, 0.9);
+  stencil(f, 13, 6, 'ARMED', GLOW_GREEN, 0.9);
   // buttons, one of them BIG
   const cols = [PR.red, PR.hazard, DR.bottle, PR.olive];
   for (let k = 0; k < 6; k++) box(f, 9 + k * 4, 17, 2, 2, cols[k % 4], {});
@@ -2915,7 +2915,8 @@ function paintNosecone() {
   for (let y = 2; y < 10; y++) for (let x = cx - 5; x <= cx + 5; x++) if (getpx(f, x, y) >>> 24) over(f, x, y, PR.red[2], 0.9);
   for (let x = cx - 12; x <= cx + 12; x++) for (let y = 38; y < 42; y++) if (getpx(f, x, y) >>> 24) over(f, x, y, PR.dark[1], 0.9);
   stencil(f, cx - 3, 26, '07', PR.dark[1], 0.9);
-  stencil(f, cx - 7, 46, 'NO STEP', PR.dark[1], 0.8);
+  stencil(f, cx - 3, 44, 'NO', PR.dark[1], 0.8);
+  stencil(f, cx - 7, 50, 'STEP', PR.dark[1], 0.8);
   for (let k = 0; k < 5; k++) px(f, cx - 8 + k * 4, 36, PR.dark[0]);
   return finishProp(f);
 }

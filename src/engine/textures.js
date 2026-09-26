@@ -1920,8 +1920,7 @@ function paintCeilPipes(t) {
       for (let x = 0; x < W; x++) {
         // Kept dull on purpose: brighter, three pipes down every corridor read
         // as strip lights from any distance.
-        let c = mix(mul(col, 0.36), mul(col, 0.98), lam);
-        if (dy / R > -0.72 && dy / R < -0.3) c = mix(c, C.specHot, 0.12);
+        let c = mix(mul(col, 0.32), mul(col, 0.78), lam);
         c = mul(c, 0.86 + grimeF[idx(x, cy + dy)] * 0.3);
         const rv = rustF[idx(x, cy + dy)];
         if (rv > 0.58) c = mix(c, mix(C.rustDk, C.rust, lam), clamp((rv - 0.58) * 3, 0, 0.8));
@@ -2042,8 +2041,10 @@ function paintFloorDeck(t) {
         const nz = Math.sqrt(Math.max(0, 1 - u * u));
         const lam = clamp(nx * u * -0.44 + ny * u * -0.56 + nz * 0.8, 0, 1);
         const rim = clamp((HW - d) * 1.6, 0, 1);
-        let c = mix(mul(C.steelDk, 1.05), C.spec, lam * 0.95);
-        c = mix(mul(C.steelDk, 0.8), c, 0.3 + rim * 0.7);
+        // Kept low-contrast: a deck fills half the screen in a siege, and hot
+        // treads at that density shimmer into moire.
+        let c = mix(mul(C.steelDk, 1.1), mul(C.spec, 0.82), lam * 0.8);
+        c = mix(mul(C.steelDk, 0.9), c, 0.35 + rim * 0.6);
         blendPx(t, cx + i, cy + j, c, 1);
       }
     }
@@ -2059,7 +2060,7 @@ function paintFloorDeck(t) {
   }
   chipBack(t, snap, 31177, 9, 0.5, 1, 4);
   chipBack(t, snap, 31188, 24, 0.62, 0.85, 3);
-  edgeRust(t, 31233, 0.4, { top: 0.15, bot: 0.35, side: 0.15 });
+  edgeRust(t, 31233, 0.22, { top: 0.15, bot: 0.35, side: 0.15 });
   const grimeF = field(31199, 5, 4);
   for (let i = 0; i < AREA; i++) t[i] = mix(t[i], mul(C.dirtDk, 1.05), clamp((grimeF[i] - 0.55) * 2.4, 0, 1) * 0.4);
   speckle(t, 31200, 60, mul(C.dirtDk, 1.1), 0.12, 0.32, 0.8);
@@ -2145,6 +2146,15 @@ function dress(t, kind, seed, fn) {
   }
 }
 
+/**
+ * field() for a dressing that only touches a small patch: same values, but
+ * computed per texel on demand instead of for all 4096 up front. Most of the
+ * cost of painting a poster used to be the noise for the wall around it.
+ */
+function localField(seed, cells, oct) {
+  return (x, y) => fbm(seed, (wrap(x) * cells) / W, (wrap(y) * cells) / W, oct, cells);
+}
+
 /** Filled convex-ish polygon via even-odd, anti-aliasing left to the grain. */
 function poly(t, pts, c, a = 1) {
   let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
@@ -2179,12 +2189,12 @@ function castShadow(t, x, y, w, h, a = 0.45, off = 1.5) {
 function paper(t, x, y, w, h, col, seed, opt = {}) {
   const rng = makeRng(seed);
   castShadow(t, x, y, w, h, 0.42);
-  const f = field(seed + 5, 6, 3);
+  const f = localField(seed + 5, 6, 3);
   for (let j = 0; j < h; j++) {
     for (let i = 0; i < w; i++) {
-      const ix = idx(x + i, y + j);
-      let c = mul(col, 0.9 + f[ix] * 0.2 - (j / h) * 0.08);
-      if (f[ix] > 0.66) c = mix(c, rgba(150, 120, 70), (f[ix] - 0.66) * 1.6);    // water foxing
+      const v = f(x + i, y + j);
+      let c = mul(col, 0.9 + v * 0.2 - (j / h) * 0.08);
+      if (v > 0.66) c = mix(c, rgba(150, 120, 70), (v - 0.66) * 1.6);    // water foxing
       blendPx(t, x + i, y + j, c, 1);
     }
   }
@@ -2209,7 +2219,6 @@ function paper(t, x, y, w, h, col, seed, opt = {}) {
   }
 }
 
-/** Ragged hole where a bullet went in: dark core, blown rim, hairline cracks. */
 /** Ragged hole where a bullet went in: dark core, a blown pale crater, cracks. */
 function bulletHole(t, x, y, r, rng, base) {
   for (let k = 0; k < 5; k++) {
@@ -2222,7 +2231,6 @@ function bulletHole(t, x, y, r, rng, base) {
   blendPx(t, x - r * 0.5, y - r * 0.6, add(base, 60), 0.6);
 }
 
-/** A bloody hand, pressed and dragged down. Palm, four fingers, a thumb. */
 /**
  * A bloody hand, pressed flat and dragged down. A drawn bitmap rather than
  * discs: at wall scale four separate fingers are what makes it read as a hand.
@@ -2323,10 +2331,10 @@ function tally(t, x, y, n, col, h = 6) {
 function placard(t, x, y, w, h, bg, fg, lines, opt = {}) {
   castShadow(t, x, y, w, h, 0.5, 1.5);
   rect(t, x, y, w, h, bg, 1);
-  const f = field(opt.seed || 5501, 8, 3);
+  const f = localField(opt.seed || 5501, 8, 3);
   for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
     const ix = idx(x + i, y + j);
-    t[ix] = mul(t[ix], 0.9 + f[ix] * 0.2);
+    t[ix] = mul(t[ix], 0.9 + f(x + i, y + j) * 0.2);
   }
   bevel(t, x, y, w, h, add(bg, 40), mul(bg, 0.45), true, 1, 0.8);
   if (opt.border) {
@@ -2357,12 +2365,12 @@ function placard(t, x, y, w, h, bg, fg, lines, opt = {}) {
 
 /** Tide-line water stain spreading down from something that leaked above. */
 function waterStain(t, cx, y0, w, h, seed, col = rgba(58, 52, 40)) {
-  const f = field(seed, 8, 4);
+  const fl = localField(seed, 8, 4);
   for (let y = y0; y < Math.min(W, y0 + h); y++) {
     const v = (y - y0) / h;
     const half = w * 0.5 * (0.35 + Math.sin(v * Math.PI * 0.9) * 0.65);
     for (let x = Math.floor(cx - half - 3); x <= Math.ceil(cx + half + 3); x++) {
-      const d = Math.abs(x - cx) / Math.max(1, half) + (f[idx(x, y)] - 0.5) * 0.6;
+      const d = Math.abs(x - cx) / Math.max(1, half) + (fl(x, y) - 0.5) * 0.6;
       if (d > 1.05) continue;
       const rim = d > 0.86 ? 0.55 : 0.2 + v * 0.12;
       blendPx(t, x, y, col, rim);
@@ -2519,10 +2527,10 @@ function rubble(t, cx, cy, n, spread, rng, base) {
 
 /** Dark reflective puddle with a lit rim and a streak of ceiling light in it. */
 function puddle(t, cx, cy, rx, ry, seed, tint = rgba(20, 24, 28)) {
-  const f = field(seed, 8, 3);
+  const fl = localField(seed, 8, 3);
   for (let y = Math.floor(cy - ry - 3); y <= Math.ceil(cy + ry + 3); y++) {
     for (let x = Math.floor(cx - rx - 3); x <= Math.ceil(cx + rx + 3); x++) {
-      const d = Math.hypot((x - cx) / rx, (y - cy) / ry) + (f[idx(x, y)] - 0.5) * 0.5;
+      const d = Math.hypot((x - cx) / rx, (y - cy) / ry) + (fl(x, y) - 0.5) * 0.5;
       if (d > 1.08) continue;
       if (d > 0.92) { blendPx(t, x, y, mul(tint, 1.8), 0.5); continue; }       // wet rim
       const c = mix(tint, rgba(70, 80, 92), clamp(0.3 - (y - cy) / ry * 0.3, 0, 1));
@@ -2547,10 +2555,10 @@ function drain(t, cx, cy, r) {
 
 /** Iridescent oil stain: dark core, rainbow ring where it thins. */
 function oilStain(t, cx, cy, r, seed) {
-  const f = field(seed, 6, 3);
+  const fl = localField(seed, 6, 3);
   for (let y = Math.floor(cy - r - 2); y <= Math.ceil(cy + r + 2); y++) {
     for (let x = Math.floor(cx - r - 2); x <= Math.ceil(cx + r + 2); x++) {
-      const d = Math.hypot(x - cx, y - cy) / r + (f[idx(x, y)] - 0.5) * 0.7;
+      const d = Math.hypot(x - cx, y - cy) / r + (fl(x, y) - 0.5) * 0.7;
       if (d > 1) continue;
       blendPx(t, x, y, rgba(12, 10, 12), 0.72 * (1 - d * 0.4));
       if (d > 0.7) {
@@ -2713,9 +2721,9 @@ function lockerBank(t, seed, labels, open = -1) {
 function paintLockers(t) { lockerBank(t, 42101, ['13', '14', '15', '16']); }
 
 /** MUTTER's own racks: black 19-inch units, a thousand little lights. */
-function paintServer(t) {
+function paintServer(t, seed = 43101) {
   fill(t, rgba(14, 14, 18));
-  const rng = makeRng(43101);
+  const rng = makeRng(seed);
   for (const rx of [0, 32]) {
     rect(t, rx, 0, 3, 64, rgba(40, 42, 48), 1);         // rails
     rect(t, rx + 29, 0, 3, 64, rgba(34, 36, 42), 1);
@@ -2937,8 +2945,8 @@ function paintCeilTube(t) {
 /** SALT CATHEDRAL ceiling: raw rock hung with salt straws. */
 function paintCeilSalt(t) {
   concreteBase(t, 51101, { tone: 0.6, lo: rgba(30, 32, 38), hi: rgba(80, 84, 92), cells: 4 });
-  saltCrust(t, 51111, 0.45);
-  for (let i = 0; i < AREA; i++) t[i] = mul(t[i], 0.78);
+  saltCrust(t, 51111, 0.28);
+  for (let i = 0; i < AREA; i++) t[i] = mul(t[i], 0.72);
   const rng = makeRng(51122);
   for (let k = 0; k < 9; k++) {                        // salt straws, seen end-on
     const x = 4 + rng() * 56, y = 4 + rng() * 56, r = 0.9 + rng() * 1.4;
@@ -3094,7 +3102,6 @@ function vCeilRoofB(t) { paintCeilRoof(t, 1); }
 const RED = rgba(196, 36, 30), PAPER = rgba(214, 208, 188);
 
 /** Pin-up calendar, June 1986, every day crossed off by someone lonely. */
-/** Pin-up calendar, June 1986, every day crossed off by someone lonely. */
 function calendar(t, x, y, seed) {
   const rng = makeRng(seed);
   const under = t.slice();
@@ -3117,7 +3124,6 @@ function calendar(t, x, y, seed) {
   }
 }
 
-/** "HANG IN THERE" with the cat. The most 1990s object that exists. */
 /** "HANG IN THERE" with the cat. The most 1990s object that exists. */
 function hangInThere(t, x, y, seed) {
   paper(t, x, y, 30, 42, rgba(120, 170, 210), seed);
@@ -4018,6 +4024,7 @@ function vLockersOpen(t) {
   rect(t, x0 + 3, 44, 8, 12, rgba(60, 70, 90), 1);        // somebody's jacket
   micro(t, 'NO', x0 + 4, 38, RED, 0.8);
 }
+function vServerB(t) { paintServer(t, 43977); }
 function vServerLabel(t) {
   paintServer(t);
   rect(t, 6, 26, 52, 10, rgba(200, 200, 196), 1);
@@ -4117,6 +4124,22 @@ function vFloorCrack(t) {
     const x = 20 + k * 6, y = 28 + Math.sin(k) * 4;
     for (let q = 0; q < 3; q++) segment(t, x, y, x + (rng() - 0.5) * 5, y - 2 - rng() * 3, rgba(70, 110, 40), 0.8, 0.9);
   }
+}
+function vFloorKeepClear(t) {
+  // Painted in front of blast doors; by now mostly a suggestion.
+  const snap = t.slice();
+  for (let y = 6; y < 58; y++) {
+    for (let x = 6; x < 58; x++) {
+      const e = Math.min(x - 6, 57 - x, y - 6, 57 - y);
+      if (e > 5) continue;
+      const st = ((x + y) % 10) < 5;
+      blendPx(t, x, y, st ? C.yellow : C.black, 0.85);
+    }
+  }
+  drawTextCentered(t, 'KEEP', 32, 21, 1, mul(C.yellow, 0.9), { alpha: 0.9 });
+  drawTextCentered(t, 'CLEAR', 32, 32, 1, mul(C.yellow, 0.9), { alpha: 0.9 });
+  chipBack(t, snap, 70451, 10, 0.56, 0.9, 3);
+  chipBack(t, snap, 70452, 26, 0.64, 0.8, 3);
 }
 function vFloorPuddle(t) { puddle(t, 32, 34, 18, 12, 70401); drip(t, 70402, 32, 20, 22, rgba(80, 90, 100), 0.3, 1); }
 function vFloorRubble(t) {
@@ -4386,6 +4409,7 @@ const EXTRA = [
   ['LOCKERS_OPEN', null, null, vLockersOpen],
   ['SERVER', null, null, paintServer, 0.3],
   ['SERVER_LABEL', null, null, vServerLabel, 0.3],
+  ['SERVER_B', null, null, vServerB, 0.3],
   ['ORGAN_PIPES', null, null, paintOrganPipes],
   ['ORGAN_SING', null, null, vOrganPipes2],
   ['ORGAN_RAMP', null, null, vOrganRamp],
@@ -4396,6 +4420,7 @@ const EXTRA = [
   ['FLOOR_CONCRETE_RUBBLE', 'FLOOR_CONCRETE', 'floor', vFloorRubble],
   ['FLOOR_CONCRETE_OUTLINE', 'FLOOR_CONCRETE', 'floor', vFloorOutline],
   ['FLOOR_CONCRETE_BUTTS', 'FLOOR_CONCRETE', 'floor', vFloorButts],
+  ['FLOOR_KEEPCLEAR', 'FLOOR_CONCRETE', 'floor', vFloorKeepClear],
   ['FLOOR_TILE_MISSING', 'FLOOR_TILE', 'floor', vTileFloorMissing],
   ['FLOOR_TILE_CRACK', 'FLOOR_TILE', 'floor', vTileFloorCrack],
   ['FLOOR_TILE_BLOOD', 'FLOOR_TILE', 'floor', vTileFloorBlood],

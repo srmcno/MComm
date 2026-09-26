@@ -679,7 +679,7 @@ export const TEXTURE_VARIANTS = {
   FLESH: [['FLESH_TUMOR', 2], ['FLESH_EYE', 1, 1], ['FLESH_MOUTH', 1, 1], ['FLESH_FACE', 1, 1]],
   SALT_WALL: [['SALT_CRYSTAL', 2], ['SALT_CRACKED', 2], ['SALT_BONES', 1, 1], ['SALT_SHRINE', 1, 1]],
   LOCKERS: [['LOCKERS_OPEN', 1, 1]],
-  SERVER: [['SERVER_LABEL', 1, 1]],
+  SERVER: [['SERVER_B', 3], ['SERVER_LABEL', 1, 1]],
   ORGAN_PIPES: [['ORGAN_RAMP', 3], ['ORGAN_SING', 1, 1]],
   // floors
   FLOOR_CONCRETE: [['FLOOR_CONCRETE_OIL', 2], ['FLOOR_CONCRETE_CRACK', 2], ['FLOOR_CONCRETE_DRAIN', 1],
@@ -710,7 +710,7 @@ const BASE_WEIGHT = { SCREENS: 2, PIPES: 3, FLOOR_CONCRETE: 6, FLOOR_TILE: 5, FL
 /** Materials that exist only to dress levels (they are not in LEGEND). */
 const EXTRA_MATERIALS = ['OFFICE_WALL', 'SALT_WALL', 'LOCKERS', 'SERVER', 'ORGAN_PIPES', 'FLOOR_LINO',
   'FLOOR_SALT', 'FLOOR_RAISED', 'FLOOR_SCORCH', 'CEIL_OFFICE', 'CEIL_TUBE', 'CEIL_SALT', 'CEIL_CABLES',
-  'CEIL_LAMP_DEAD', 'RUST_FURNACE', 'CEIL_BEAMS', 'FLOOR_BOARDS', 'CEIL_ROOF', 'CEIL_ROOF_B'];
+  'CEIL_LAMP_DEAD', 'RUST_FURNACE', 'FLOOR_KEEPCLEAR', 'CEIL_BEAMS', 'FLOOR_BOARDS', 'CEIL_ROOF', 'CEIL_ROOF_B'];
 
 /**
  * Set dressing. h is world height (a wall is 1), z lifts it off the floor.
@@ -773,8 +773,11 @@ const LOOKS = [
       STEEL_PLATE: [['locker', 2], ['cooler', 1], ['filing', 1], ['plant', 1], ['vending', 1], ['pinball', 1]],
     },
     // the decon showers double as the gents
-    props: [[37, 25, 'urinal'], [37, 27, 'urinal'], [37, 29, 'toilet'], [37, 31, 'toilet'], [32, 31, 'mop']],
-    features: [[38, 26, 'TILE_MIRROR'], [38, 30, 'TILE_GRAFFITI'], [34, 24, 'TILE_SIGN']],
+    props: [[37, 25, 'urinal'], [37, 27, 'urinal'], [37, 29, 'toilet'], [37, 31, 'toilet'], [32, 31, 'mop'],
+      // the warden's old office, where the run starts
+      [17, 34, 'filing'], [22, 34, 'cooler'], [17, 38, 'plant']],
+    features: [[38, 26, 'TILE_MIRROR'], [38, 30, 'TILE_GRAFFITI'], [34, 24, 'TILE_SIGN'],
+      [16, 36, 'LOCKERS'], [23, 35, 'STEEL_SIGN'], [14, 23, 'OFFICE_EMPLOYEE']],
   },
   { // THE ORGAN LOFT: sodium light on brass, and the priests' candles
     tint: [1.1, 0.95, 0.78],
@@ -786,7 +789,9 @@ const LOOKS = [
     decor: [['candles', 3], ['chains', 3], ['skeleton', 2], ['crates', 2], ['crate', 2], ['pew', 2],
       ['corpse', 2], ['console', 1], ['locker', 1], ['mop', 1], ['trash', 1]],
     deck: [['crate', 2], ['sandbags', 2], ['nosecone', 1]],
-    props: [],
+    // the priests' chapel in the great hall, and a console for the organ
+    props: [[21, 18, 'pew'], [24, 18, 'pew'], [21, 20, 'pew'], [24, 20, 'pew'], [28, 21, 'candles'],
+      [7, 7, 'console']],
     features: [],
   },
   { // SALT CATHEDRAL: brine-cold, white, and full of pews nobody sits in
@@ -797,8 +802,9 @@ const LOOKS = [
     decor: [['pew', 4], ['candles', 3], ['skeleton', 3], ['chains', 1], ['crate', 1], ['plant', 1],
       ['corpse', 1], ['nosecone', 1]],
     deck: [['crate', 2], ['sandbags', 2], ['nosecone', 1]],
-    props: [],
-    features: [],
+    // even a cathedral has a gents
+    props: [[49, 32, 'toilet'], [49, 34, 'urinal'], [49, 38, 'urinal']],
+    features: [[50, 31, 'TILE_GRAFFITI']],
   },
   { // THE FURNACE: red heat, meat hooks and the smell
     tint: [1.16, 0.88, 0.74],
@@ -821,7 +827,8 @@ const LOOKS = [
     decor: [['console', 3], ['chair', 2], ['desk', 1], ['pinball', 1], ['cooler', 1], ['corpse', 2],
       ['skeleton', 1], ['crate', 1]],
     deck: [['crate', 2], ['sandbags', 2], ['nosecone', 1]],
-    props: [],
+    // the operators' rooms, and what they did on the night shift
+    props: [[4, 2, 'console'], [2, 4, 'chair'], [29, 2, 'console'], [18, 30, 'pinball']],
     features: [],
   },
 ];
@@ -1057,6 +1064,18 @@ function dressLevel(def, idx, P) {
   };
   plane(floorTexName, seed + 31, 7);
   plane(ceilTexName, seed + 37, 6);
+  // Hazard boxes on the concrete in front of the heavy doors, where a forklift
+  // driver once parked anyway.
+  for (const d of doors) {
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const x = d.x + dx, y = d.y + dy;
+      if (!walkable(x, y)) continue;
+      const i = y * w + x;
+      const fam = floorTexName[i];
+      if (!fam.startsWith('FLOOR_CONCRETE') || sky[i] || entAt[i]) continue;
+      if (hash3(x, y, seed + 39) < 0.45) floorTexName[i] = 'FLOOR_KEEPCLEAR';
+    }
+  }
 
   // --- 5. props ----------------------------------------------------------------
   const decor = [];
