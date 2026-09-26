@@ -267,7 +267,7 @@ check('the VOICE option exists and reports what is playing', !!r.label && r.mode
     window.__speechLog = log;
   });
   await pg.goto(`http://127.0.0.1:${PORT}/index.html`);
-  await pg.waitForFunction(() => window.NUKEHAUS && window.NUKEHAUS.game, { timeout: 90000 });
+  await pg.waitForFunction(() => window.NUKEHAUS && window.NUKEHAUS.game, null, { timeout: 120000 });
   await sleep(300);
   await pg.mouse.click(450, 280);
   await sleep(900);
