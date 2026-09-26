@@ -3,9 +3,10 @@
 // arithmetic, biquads and envelopes. Pure Web Audio, browser-safe ES module.
 //
 // Architecture
-//   voices ─┬─> sfxBus ────────────────> master -> comp -> destination
-//           ├─> sendS[n] -> convSmall -> sfxBus      (concrete corridor)
-//           └─> sendB[n] -> convBig   -> sfxBus      (open deck, siege sky)
+//   voices ─┬─> fx -> fxComp -> sfxBus ─> master -> comp -> limiter -> shaper -> out
+//           ├─> sendS[n] -> convSmall -> fx      (concrete corridor)
+//           └─> sendB[n] -> convBig   -> fx      (open deck, siege sky)
+//   vox ─────────────────────> sfxBus   (after the effects compressor)
 //   track  ──> track.bus (+ feedback-delay space) -> musicDuck -> musicBus -> master
 //
 // Every one-shot node is owned by a "voice": a small record holding its nodes and
@@ -2197,12 +2198,12 @@ function bkWarm(S) {
     if (!S._ready) return;
     const t0 = kNow();
     try {
-      while (i < keys.length && kNow() - t0 < 5) {
+      while (i < keys.length && kNow() - t0 < 4) {
         bkBuf(S, keys[i], k);
         if (++k >= BK[keys[i]].n) { k = 0; i++; }
       }
     } catch (e) { S._err = e; return; }
-    if (i < keys.length) st(step, 20);
+    if (i < keys.length) st(step, 30);
   };
   try { st(step, 300); } catch (e) { /* no timers: everything bakes on demand */ }
 }
@@ -2360,14 +2361,18 @@ function kClick(d, sr, t0, amp, w) {
  */
 function kBubble(d, sr, t0, f, tau, amp, rise) {
   let i = kIx(sr, t0);
-  const end = Math.min(d.length, i + Math.ceil(tau * 6 * sr)), i0 = i;
+  const end = Math.min(d.length, i + Math.ceil(tau * 5 * sr)), i0 = i;
   const dec = Math.exp(-1 / (tau * sr)), rr = rise === undefined ? 1.2 : rise;
-  let a = amp, ph = 0;
+  const ramp = Math.max(1, sr * 0.001), w0 = TWO_PI * f / sr, dw = w0 * rr / (tau * sr);
+  // a rotating phasor, re-aimed every 8 samples: hundreds of these per mess
+  let a = amp, c = 1, s = 0, cw = 1, sw = 0;
   for (; i < end; i++) {
-    const t = (i - i0) / sr;
-    ph += TWO_PI * f * (1 + rr * t / tau) / sr;
+    const j = i - i0;
+    if ((j & 7) === 0) { const w = w0 + dw * j; cw = Math.cos(w); sw = Math.sin(w); }
+    const c2 = c * cw - s * sw;
+    s = s * cw + c * sw; c = c2;
     // a 1 ms rise, or every bubble is a click
-    d[i] += a * Math.sin(ph) * (t < 0.001 ? t * 1000 : 1);
+    d[i] += a * s * (j < ramp ? j / ramp : 1);
     a *= dec;
   }
 }
@@ -3308,7 +3313,7 @@ bakeLo('go_pain', 0.5, 1, (d, sr, R) => {
 
 // The money sound. A pressurised thing at close range, ceasing to be one:
 // the skin going like a balloon, a sub thump, a wall of wet, then the rain.
-bake('go_pop', 2.2, 1, (d, sr, R) => {
+bakeLo('go_pop', 2.2, 1, (d, sr, R) => {
   kClick(d, sr, 0, 1.4, 3);
   kNoise(d, sr, R, 0, 0.04, { type: 'bp', f0: 2400, f1: 900, q: 0.9, atk: 0.0003, tau: 0.008, amp: 6 });
   kThump(d, sr, 0.003, 95, 22, 0.05, 0.3, 1.5, 3.5, 0.003);
