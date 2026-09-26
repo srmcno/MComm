@@ -781,6 +781,7 @@ const LOOKS = [
   },
   { // THE ORGAN LOFT: sodium light on brass, and the priests' candles
     tint: [1.1, 0.95, 0.78],
+    pillar: 'pillar_wood',
     floorsBy: { RUST: 'FLOOR_CONCRETE', CIRCUIT: 'FLOOR_RAISED', SCREENS: 'FLOOR_RAISED', VENT: 'FLOOR_GRATE',
       STEEL_PLATE: 'FLOOR_TILE' },
     ceilsBy: { CIRCUIT: 'CEIL_CABLES', SCREENS: 'CEIL_CABLES', RUST: 'CEIL_CONCRETE', VENT: 'CEIL_PIPES',
@@ -796,6 +797,7 @@ const LOOKS = [
   },
   { // SALT CATHEDRAL: brine-cold, white, and full of pews nobody sits in
     tint: [0.86, 0.97, 1.14],
+    pillar: 'pillar_salt',
     floorsBy: { TILE: 'FLOOR_TILE', TILE_BLOOD: 'FLOOR_TILE', SALT_WALL: 'FLOOR_SALT', SCREENS: 'FLOOR_RAISED' },
     ceilsBy: { SCREENS: 'CEIL_CABLES', TILE: 'CEIL_CONCRETE', TILE_BLOOD: 'CEIL_CONCRETE' },
     density: 0.08,
@@ -808,6 +810,7 @@ const LOOKS = [
   },
   { // THE FURNACE: red heat, meat hooks and the smell
     tint: [1.16, 0.88, 0.74],
+    pillar: 'pillar_rust',
     variants: { RUST: [['RUST_FURNACE', 1, 1]] },
     floorsBy: { PIPES: 'FLOOR_GRATE', VENT: 'FLOOR_GRATE', FLESH: 'FLOOR_CONCRETE' },
     ceilsBy: { PIPES: 'CEIL_PIPES', VENT: 'CEIL_PIPES', STEEL_PLATE: 'CEIL_CONCRETE' },
@@ -820,6 +823,7 @@ const LOOKS = [
   },
   { // MUTTER: the machine's own rooms, lit the colour of a bruise
     tint: [1.02, 0.88, 1.12],
+    pillar: 'pillar_tech',
     tubes: 5,
     floorsBy: {},
     ceilsBy: {},
@@ -1132,6 +1136,14 @@ function dressLevel(def, idx, P) {
       kind, key: `prop_${kind}`, x: px, y: py, z: spec.z || 0, h: spec.h,
       solid: !!spec.solid, emissive: !!spec.emissive, fixture: spec.fixture || null,
     });
+    if ((kind === 'desk' || kind === 'console') && spec.wall) {
+      // Somebody sat here. Pull the chair out on the room side, in the same cell.
+      const ox = px - (x + 0.5), oy = py - (y + 0.5);
+      decor.push({
+        kind: 'chair', key: 'prop_chair', x: x + 0.5 - ox * 1.6, y: y + 0.5 - oy * 1.6, z: 0,
+        h: DECOR.chair.h, solid: false, emissive: false, fixture: null,
+      });
+    }
     entAt[i] = 1;
     return true;
   };
@@ -1196,7 +1208,7 @@ function dressLevel(def, idx, P) {
     if (d.kind === 'candles') fixtureLights.push({ x: d.x, y: d.y, r: 1, g: 0.66, b: 0.3, intensity: 0.4, radius: 3.2 });
   }
 
-  return { decor, fixtureLights, lightTint: look.tint || null };
+  return { decor, fixtureLights, lightTint: look.tint || null, pillarKey: look.pillar || null };
 }
 
 // ---------------------------------------------------------------------------
@@ -1399,6 +1411,7 @@ export function parseLevel(index) {
     decor: dressed.decor,
     fixtureLights: dressed.fixtureLights,
     lightTint: dressed.lightTint,
+    pillarKey: dressed.pillarKey,
   };
 }
 

@@ -2996,6 +2996,78 @@ function paintTrash() {
   return finishProp(f);
 }
 
+
+/**
+ * Each floor's own column, so the same concrete post is not holding up every
+ * ceiling in the bunker. Same 40x64 frame and footprint as the stock pillar.
+ */
+function paintPillarStyle(style) {
+  const w = 40, h = 64;
+  const f = makeFrame(w, h);
+  const cx = 20;
+  if (style === 'wood') {
+    // THE ORGAN LOFT: a timber post, iron-banded, carved with the priests' sign
+    for (let y = 4; y < h - 3; y++) blob(f, cx, y, 9, 1.2, DR.pewwood, { mode: 'cyl', nyBias: -0.04, grain: 0.14, seed: 5101 + y });
+    for (let y = 6; y < h - 4; y += 3) for (let x = cx - 8; x <= cx + 8; x += 5) over(f, x + ((y * 3) % 4), y, DR.pewwood[0], 0.5);
+    for (const y of [8, 30, 52]) box(f, cx - 10, y, 20, 4, PR.dark, { shift: 1 });
+    for (const y of [8, 30, 52]) for (const x of [cx - 7, cx, cx + 7]) px(f, x, y + 1, PR.steel[4]);
+    box(f, cx - 12, 1, 24, 5, DR.pewwood, { shift: 1, seed: 5102 });   // capital
+    box(f, cx - 12, h - 5, 24, 5, DR.pewwood, { shift: -1, seed: 5103 });
+    const ty = 20;
+    for (let k = 0; k < 3; k++) {                                          // the carved trefoil
+      const a = -Math.PI / 2 + k * 2.094;
+      blob(f, cx + Math.cos(a) * 3.5, ty + Math.sin(a) * 3.5, 1.8, 1.8, flat(DR.pewwood[0]), {});
+    }
+    px(f, cx, ty, DR.pewwood[0]);
+  } else if (style === 'salt') {
+    // SALT CATHEDRAL: the concrete is still in there somewhere
+    for (let y = 6; y < h - 4; y++) blob(f, cx, y, 11, 1.2, PR.crete, { mode: 'cyl', nyBias: -0.04, grain: 0.1, seed: 5201 + y });
+    for (let y = 6; y < h - 3; y++) {
+      for (let x = cx - 13; x <= cx + 13; x++) {
+        const n = fbm(0x5a17, x * 0.18, y * 0.12, 3, 8);
+        const lo = (y - 6) / (h - 10);
+        if (n + lo * 0.35 > 0.72 && Math.abs(x - cx) <= 11 + (n > 0.8 ? 2 : 0)) {
+          px(f, x, y, mix(DR.porcelain[3], DR.porcelain[1], hash2(x, y, 5202) * 0.5));
+        }
+      }
+    }
+    for (let k = 0; k < 6; k++) {                                          // crystals on the shoulders
+      const x = cx - 10 + k * 4, y = 7 + (k % 2) * 2;
+      box(f, x, y - 3, 3, 4, DR.porcelain, {});
+    }
+    blob(f, cx, h - 3, 14, 2.5, DR.porcelain, { shift: -1 });              // a drift at the foot
+  } else if (style === 'rust') {
+    // THE FURNACE: an I-beam gone orange, sweating at the rivets
+    box(f, cx - 12, 2, 24, 5, PR.rust, { shift: 1, seed: 5301 });
+    box(f, cx - 12, h - 7, 24, 6, PR.rust, { shift: -1, seed: 5302 });
+    box(f, cx - 4, 7, 8, h - 14, PR.rust, { grain: 0.12, seed: 5303 });     // the web
+    box(f, cx - 12, 7, 5, h - 14, PR.rust, { shift: 1, grain: 0.1, seed: 5304 });   // flanges
+    box(f, cx + 7, 7, 5, h - 14, PR.rust, { shift: -1, grain: 0.1, seed: 5305 });
+    for (let y = 10; y < h - 8; y += 6) { px(f, cx - 10, y, PR.rust[4]); px(f, cx + 9, y, PR.rust[3]); }
+    speckle(f, cx - 12, 7, 24, h - 14, PR.rust[0], 0.08, 5306, 0.8);
+    for (let k = 0; k < 4; k++) {                                          // heat-bluing near the floor
+      for (let x = cx - 12; x < cx + 12; x++) over(f, x, h - 12 - k * 2, rgba(80, 70, 120, 255), 0.25);
+    }
+    glow(f, cx, h - 10, 8, rgba(255, 120, 40, 255), { halo: 0, tint: 0.25, seed: 5307 });
+  } else {
+    // MUTTER: a conduit column wrapped in cable, blinking to itself
+    box(f, cx - 11, 2, 22, h - 4, DR.cab, { grain: 0.06, seed: 5401 });
+    for (let y = 6; y < h - 6; y += 5) {
+      for (let x = cx - 10; x < cx + 10; x++) px(f, x, y + ((x + y) & 1), PR.dark[(x >> 2) & 1 ? 1 : 2]);
+    }
+    const cols = [PR.red, DR.bottle, PR.hazard];
+    for (let k = 0; k < 3; k++) {
+      for (let y = 3; y < h - 3; y++) {
+        const x = cx - 8 + k * 7 + Math.sin(y * 0.3 + k) * 1.5;
+        px(f, x, y, cols[k][2]); px(f, x + 1, y, cols[k][1]);
+      }
+    }
+    for (let k = 0; k < 6; k++) px(f, cx - 6 + (k % 3) * 6, 12 + k * 8, k % 2 ? GLOW_GREEN : PR.red[4]);
+    box(f, cx - 13, 1, 26, 4, DR.metal, { shift: 1 });
+    box(f, cx - 13, h - 5, 26, 4, DR.metal, { shift: -1 });
+  }
+  return finishProp(f);
+}
 function paintProps(out) {
   out.key_red = paintKey(rgba(206, 46, 42, 255));
   out.key_blue = paintKey(rgba(56, 118, 224, 255));
@@ -3041,6 +3113,7 @@ function paintProps(out) {
   out.prop_candles = paintCandles();
   out.prop_pew = paintPew();
   out.prop_trash = paintTrash();
+  for (const style of ['wood', 'salt', 'rust', 'tech']) out[`pillar_${style}`] = paintPillarStyle(style);
 }
 
 // ---------------------------------------------------------------------------

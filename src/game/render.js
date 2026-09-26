@@ -108,7 +108,9 @@ export function renderWorld(game, W, H) {
 
   for (const it of game.items) {
     if (it.taken) continue;
+    // Columns wear the floor's own material; the stock concrete post is the fallback.
     const key = it.kind === 'weapon' ? `weapon_${it.weapon || 'splitter'}`
+      : it.kind === 'pillar' ? (lv.pillarKey && art.sprites[lv.pillarKey] ? lv.pillarKey : 'pillar')
       : it.kind === 'treasure' ? `treasure${(Math.floor(game.time * 6) % 4)}`
       : it.kind === 'flare' ? `flare${Math.floor(game.time * 9) % 3}`
       : it.kind === 'ammo' ? 'ammo_flak'

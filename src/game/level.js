@@ -113,6 +113,7 @@ export class Level {
     // entities; the renderer adds them to the light grid each frame.
     this.fixtureLights = parsed.fixtureLights || [];
     this.lightTint = parsed.lightTint || null;
+    this.pillarKey = parsed.pillarKey || null;
 
     // Dressed surfaces are painted on first use; paint every one this floor
     // shows now, while the briefing card is up, rather than mid-corridor.
