@@ -109,6 +109,20 @@ export function ttsText(text, lang) {
 }
 
 /**
+ * Delivery, the only direction a TTS engine takes: punctuation. Neural voices
+ * lift an exclamation and flatten a full stop, so Brick's short lines are
+ * barked (he has never ended a one-liner on a full stop in his life), and
+ * MUTTER, which does not raise its voice, never exclaims at all. Only the
+ * spoken text changes; the caption keeps the script's punctuation.
+ */
+export function deliver(role, text) {
+  const t = String(text || '');
+  if (role === 'brick' && t.length <= 64) return t.replace(/\.(["')\]]?)$/, '!$1');
+  if (role === 'mutter') return t.replace(/!+/g, '.');
+  return t;
+}
+
+/**
  * Break a line into pieces short enough that Chrome will not cut them off
  * (it drops anything past ~15 s). Splits at sentence ends, then at commas,
  * then at spaces, in that order of preference.
@@ -682,7 +696,7 @@ export class Speech {
     const cast = this.cast[role] || {};
     const { pitch, rate } = this._prosody(role, o);
     const lang = cast.voice ? cast.lang : 'en-US';
-    const chunks = splitChunks(ttsText(raw, lang));
+    const chunks = splitChunks(deliver(role, ttsText(raw, lang)));
     if (!chunks.length) return 0;
     let est = 0;
     for (const c of chunks) est += estimateSeconds(c, rate);

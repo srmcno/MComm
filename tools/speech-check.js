@@ -10,7 +10,7 @@
 //   node tools/speech-check.js
 import fs from 'node:fs';
 import {
-  Speech, castVoices, voiceInfo, plainText, ttsText, splitChunks, estimateSeconds,
+  Speech, castVoices, voiceInfo, plainText, ttsText, splitChunks, estimateSeconds, deliver,
   detectSpeech, loadVoiceMode, saveVoiceMode, VOICE_MODES, ROLES,
 } from '../src/audio/speech.js';
 import { LINES, PHONE_SET, textToPhonemes, voiceOf } from '../src/audio/vox.js';
@@ -291,6 +291,9 @@ const PLATFORMS = {
     ttsText('LOW SABBATH is gone.', 'en-US') === 'Low Sabbath is gone.' && ttsText('SAINT ERROL', 'en-US') === 'Saint Errol');
   const ph = textToPhonemes('Bunker {Sieben|S IY1 B AH N}').map((p) => p.p + (p.st || '')).join(' ');
   check('the formant synth reads the phones after the pipe', /S IY1 B AH N/.test(ph) && !/SIEBEN/.test(ph), ph);
+  check('Brick barks his short lines, MUTTER never exclaims, Ilsa is left alone',
+    deliver('brick', 'Get bent.') === 'Get bent!' && deliver('brick', 'You want some?') === 'You want some?' &&
+    deliver('mutter', 'Wonderful!') === 'Wonderful.' && deliver('ilsa', 'Watch the ceiling.') === 'Watch the ceiling.');
   check('profanity goes through untouched',
     ttsText('Well, shit. Eat lead, you ugly son of a bitch.', 'en-US') === 'Well, shit. Eat lead, you ugly son of a bitch.');
 
@@ -551,7 +554,8 @@ function rig(plat, behaviour = {}, opts = {}) {
   const { clock, synth, sp } = rig('Windows / Edge');
   const game = {
     vox: sp, rng: Math.random, lastSpoken: null,
-    sound: { sfx() {}, duck() {} },
+    sfxLog: [],
+    sound: { sfx(n) { game.sfxLog.push(n); }, duck() {} },
     speakAs(voice, key, text) { const d = sp.say(text, { voice }); this.lastSpoken = { voice, text: sp.lastRequested }; return d; },
   };
   const radio = new Radio(game);
@@ -567,6 +571,15 @@ function rig(plat, behaviour = {}, opts = {}) {
   check('resuming says it again', /pipe gallery/.test(synth.spoken[synth.spoken.length - 1].text));
   radio.reset();
   check('a level transition (radio.reset) cancels speech', sp.busy === false && radio.queue.length === 0);
+
+  // Ilsa on a natural voice gets radio crackle under her and a squelch after
+  game.sfxLog.length = 0;
+  radio.say('ilsa', 'q', 'Hardigan, the reactor is venting into the pipe gallery. Keep your head down and your fuse short.', { exact: true });
+  for (let i = 0; i < 60 * 14 && (radio.current || radio.queue.length || i < 10); i++) { radio.update(1 / 60); clock.advance(1 / 60); }
+  const crackles = game.sfxLog.filter((n) => n === 'radio_static').length;
+  check('Ilsa on a natural voice crackles now and then, and keys off with a squelch',
+    crackles >= 1 && crackles <= 6 && game.sfxLog[game.sfxLog.length - 1] === 'radio_close', game.sfxLog.join(','));
+  radio.reset();
 
   // the radio waits for the voice rather than trusting its own clock
   radio.say('brick', 'x', 'First.', { exact: true });
