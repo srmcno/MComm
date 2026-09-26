@@ -248,6 +248,11 @@ const SFX_NAMES = [
   'pipebomb_throw', 'pipebomb_land', 'pipebomb_beep', 'pipebomb_blow',
   'radio_open', 'radio_close', 'radio_static', 'radio_beep', 'objective', 'story_sting',
   'combo_up', 'taunt_hit', 'heartbeat_fast', 'slowmo_in', 'slowmo_out',
+  // --- a voice per enemy, the Splitter's own blast, and dismemberment ---
+  'wrencher_pain', 'wrencher_die', 'sparker_alert', 'sparker_pain', 'sparker_die',
+  'bellows_pain', 'bellows_die', 'wasp_pain', 'wasp_die', 'priest_pain', 'priest_die',
+  'splitter_fire',
+  'limb_rip', 'head_pop', 'blood_spurt', 'meat_thud', 'bone_bounce', 'body_slam', 'head_punt',
 ];
 
 /** Names that shipped in the first version. None of them may ever disappear. */
