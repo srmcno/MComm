@@ -668,7 +668,7 @@ const FONT35 = {
   4: [5, 5, 7, 1, 1], 5: [7, 4, 7, 1, 7], 6: [7, 4, 7, 5, 7], 7: [7, 1, 1, 1, 1],
   8: [7, 5, 7, 5, 7], 9: [7, 5, 7, 1, 7],
   '-': [0, 0, 7, 0, 0], '.': [0, 0, 0, 0, 2], '/': [1, 1, 2, 4, 4], ' ': [0, 0, 0, 0, 0],
-  '*': [5, 2, 7, 2, 5], '!': [2, 2, 2, 0, 2], '+': [0, 2, 7, 2, 0],
+  '*': [5, 2, 7, 2, 5], '!': [2, 2, 2, 0, 2], '+': [0, 2, 7, 2, 0], ':': [0, 2, 0, 2, 0],
 };
 
 /** Stencil text painted onto an existing surface (albedo only, keeps normals). */
@@ -1179,6 +1179,2226 @@ function binom(n, k) {
   for (let i = 0; i < k; i++) r = r * (n - i) / (i + 1);
   return r;
 }
+
+// ===========================================================================
+// THE WEAPON KIT: a small perspective rasteriser for the viewmodels
+// ===========================================================================
+// The first generation of these guns was painted flat, and every one of them
+// ended up staring down its own bore at the player. A first-person gun is a
+// perspective problem: the grip is near and big, the muzzle is far and small,
+// and the barrel runs away toward the crosshair. So the weapons are built as
+// geometry (boxes, lofted tubes, spheres) in a camera space whose principal
+// point IS the crosshair, rasterised into a small G-buffer, and then handed to
+// the same deferred canvas and bake() light rig as everything else in this
+// file. The painterly look comes from the material shaders, the ambient
+// occlusion and the ink pass, not from the geometry being crude.
+//
+// Camera space: x right, y DOWN, z forward (away from the eye); centimetres.
+// A frame is VW x VH and the crosshair sits at (CAM_CX, CAM_CY), near the
+// top of it, so anything parallel to the view axis converges on the crosshair.
+
+const VW = 384, VH = 192;
+const CAM_F = 340, CAM_CX = 192, CAM_CY = 26;
+const NEAR = 1.5;
+
+let GB = null;
+function gbuf() {
+  if (!GB) {
+    const n = VW * VH;
+    GB = {
+      iz: new Float32Array(n), pid: new Int32Array(n),
+      u: new Float32Array(n), v: new Float32Array(n),
+      nx: new Float32Array(n), ny: new Float32Array(n), nz: new Float32Array(n),
+      ao: new Float32Array(n),
+    };
+  }
+  return GB;
+}
+
+// --- 3x4 affine matrices, row-major. Rotations follow the y-down frame:
+// mRX(+a) lifts the muzzle, mRY(+a) swings it right, mRZ(+a) rolls clockwise.
+const M_ID = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
+function mMul(A, B) {
+  return [
+    A[0] * B[0] + A[1] * B[4] + A[2] * B[8], A[0] * B[1] + A[1] * B[5] + A[2] * B[9],
+    A[0] * B[2] + A[1] * B[6] + A[2] * B[10], A[0] * B[3] + A[1] * B[7] + A[2] * B[11] + A[3],
+    A[4] * B[0] + A[5] * B[4] + A[6] * B[8], A[4] * B[1] + A[5] * B[5] + A[6] * B[9],
+    A[4] * B[2] + A[5] * B[6] + A[6] * B[10], A[4] * B[3] + A[5] * B[7] + A[6] * B[11] + A[7],
+    A[8] * B[0] + A[9] * B[4] + A[10] * B[8], A[8] * B[1] + A[9] * B[5] + A[10] * B[9],
+    A[8] * B[2] + A[9] * B[6] + A[10] * B[10], A[8] * B[3] + A[9] * B[7] + A[10] * B[11] + A[11],
+  ];
+}
+function mT(x, y, z) { return [1, 0, 0, x, 0, 1, 0, y, 0, 0, 1, z]; }
+function mRX(a) { const c = cos(a), s = sin(a); return [1, 0, 0, 0, 0, c, -s, 0, 0, s, c, 0]; }
+function mRY(a) { const c = cos(a), s = sin(a); return [c, 0, s, 0, 0, 1, 0, 0, -s, 0, c, 0]; }
+function mRZ(a) { const c = cos(a), s = sin(a); return [c, -s, 0, 0, s, c, 0, 0, 0, 0, 1, 0]; }
+/** Chain several matrices left to right. */
+function mChain(...ms) { let M = M_ID; for (const m of ms) M = mMul(M, m); return M; }
+/** Rotate about a pivot: T(p) R T(-p). */
+function mAbout(px_, py_, pz, R) { return mChain(mT(px_, py_, pz), R, mT(-px_, -py_, -pz)); }
+function mP(M, x, y, z) {
+  return [M[0] * x + M[1] * y + M[2] * z + M[3], M[4] * x + M[5] * y + M[6] * z + M[7],
+    M[8] * x + M[9] * y + M[10] * z + M[11]];
+}
+function mD(M, x, y, z) {
+  return [M[0] * x + M[1] * y + M[2] * z, M[4] * x + M[5] * y + M[6] * z, M[8] * x + M[9] * y + M[10] * z];
+}
+
+// --- tiny vector helpers (build-time only, allocation is fine here) ---
+const vAdd = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const vSub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const vMul = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+const vDot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const vCross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const vLen = (a) => sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+const vNorm = (a) => { const l = vLen(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const vLerp = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+/** a + b*kb + c*kc + d*kd: point in a local basis. */
+const vBasis = (o, a, ka, b, kb, c, kc) => [
+  o[0] + a[0] * ka + b[0] * kb + c[0] * kc,
+  o[1] + a[1] * ka + b[1] * kb + c[1] * kc,
+  o[2] + a[2] * ka + b[2] * kb + c[2] * kc,
+];
+
+/** Camera space -> frame pixels. */
+function proj(p) { return [CAM_CX + CAM_F * p[0] / p[2], CAM_CY + CAM_F * p[1] / p[2]]; }
+
+function scene3() {
+  const g = gbuf();
+  g.iz.fill(0); g.pid.fill(-1);
+  return { prims: [], M: M_ID, stack: [] };
+}
+function push3(sc, T) { sc.stack.push(sc.M); if (T) sc.M = mMul(sc.M, T); }
+function pop3(sc) { sc.M = sc.stack.pop(); }
+function prim3(sc, mat, extra) {
+  const p = Object.assign({}, mat, extra);
+  p.id = sc.prims.length;
+  sc.prims.push(p);
+  return p.id;
+}
+
+/**
+ * Rasterise one camera-space triangle into the G-buffer. Vertices are
+ * [x, y, z, nx, ny, nz, u, v]; attributes interpolate perspective-correct.
+ * `bias` nudges depth so decal geometry can sit on a surface without fighting.
+ */
+function rtri(pid, A, B, C, cull, bias) {
+  if (A[2] < NEAR || B[2] < NEAR || C[2] < NEAR) {
+    // Clip against the near plane rather than dropping the triangle: a
+    // forearm or a receiver can run right past the eye and off the frame.
+    const inn = [A, B, C].filter((v) => v[2] >= NEAR);
+    if (!inn.length) return;
+    const poly = [];
+    const V = [A, B, C];
+    for (let i = 0; i < 3; i++) {
+      const P = V[i], Q = V[(i + 1) % 3];
+      const pin = P[2] >= NEAR, qin = Q[2] >= NEAR;
+      if (pin) poly.push(P);
+      if (pin !== qin) {
+        const t = (NEAR - P[2]) / (Q[2] - P[2]);
+        const R = new Array(8);
+        for (let k = 0; k < 8; k++) R[k] = P[k] + (Q[k] - P[k]) * t;
+        R[2] = NEAR;
+        poly.push(R);
+      }
+    }
+    for (let i = 1; i + 1 < poly.length; i++) rtri(pid, poly[0], poly[i], poly[i + 1], cull, bias);
+    return;
+  }
+  if (cull && A[0] * A[3] + A[1] * A[4] + A[2] * A[5] > 0
+    && B[0] * B[3] + B[1] * B[4] + B[2] * B[5] > 0
+    && C[0] * C[3] + C[1] * C[4] + C[2] * C[5] > 0) return;
+  const g = GB;
+  const ia = 1 / A[2], ib = 1 / B[2], ic = 1 / C[2];
+  const ax = CAM_CX + CAM_F * A[0] * ia, ay = CAM_CY + CAM_F * A[1] * ia;
+  const bx = CAM_CX + CAM_F * B[0] * ib, by = CAM_CY + CAM_F * B[1] * ib;
+  const cx = CAM_CX + CAM_F * C[0] * ic, cy = CAM_CY + CAM_F * C[1] * ic;
+  const area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+  if (area > -1e-7 && area < 1e-7) return;
+  const inv = 1 / area;
+  const x0 = max(0, floor(min(ax, bx, cx))), x1 = min(VW - 1, ceil(max(ax, bx, cx)));
+  const y0 = max(0, floor(min(ay, by, cy))), y1 = min(VH - 1, ceil(max(ay, by, cy)));
+  const zb = 1 + (bias || 0);
+  const E = -2e-4;
+  for (let y = y0; y <= y1; y++) {
+    const py = y + 0.5;
+    for (let x = x0; x <= x1; x++) {
+      const px_ = x + 0.5;
+      const w0 = ((bx - px_) * (cy - py) - (by - py) * (cx - px_)) * inv;
+      if (w0 < E) continue;
+      const w1 = ((cx - px_) * (ay - py) - (cy - py) * (ax - px_)) * inv;
+      if (w1 < E) continue;
+      const w2 = 1 - w0 - w1;
+      if (w2 < E) continue;
+      const iz = w0 * ia + w1 * ib + w2 * ic;
+      const i = y * VW + x;
+      if (iz * zb <= g.iz[i]) continue;
+      const k0 = w0 * ia / iz, k1 = w1 * ib / iz, k2 = w2 * ic / iz;
+      g.iz[i] = iz * zb; g.pid[i] = pid;
+      g.nx[i] = k0 * A[3] + k1 * B[3] + k2 * C[3];
+      g.ny[i] = k0 * A[4] + k1 * B[4] + k2 * C[4];
+      g.nz[i] = k0 * A[5] + k1 * B[5] + k2 * C[5];
+      g.u[i] = k0 * A[6] + k1 * B[6] + k2 * C[6];
+      g.v[i] = k0 * A[7] + k1 * B[7] + k2 * C[7];
+    }
+  }
+}
+
+// Hexahedron faces: corners 0-3 are the -z end (-x-y, +x-y, +x+y, -x+y), 4-7
+// the +z end in the same order. Face ids: 0 rear(-z) 1 front(+z) 2 top(-y)
+// 3 bottom(+y) 4 left(-x) 5 right(+x). On the side faces u runs forward.
+const HEX_FACES = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [3, 2, 6, 7], [0, 4, 7, 3], [1, 5, 6, 2]];
+const F_REAR = 0, F_FRONT = 1, F_TOP = 2, F_BOT = 3, F_LEFT = 4, F_RIGHT = 5;
+
+/**
+ * Eight-cornered solid with flat faces. Each face is its own primitive so the
+ * shader knows which face it is on, where (u, v in centimetres from the face
+ * corner) and how big the face is; `bevel` rounds the edges in the normals.
+ */
+function hexa(sc, C, mat, o = {}) {
+  const M = sc.M;
+  const P = C.map((p) => mP(M, p[0], p[1], p[2]));
+  const cen = vMul(P.reduce((a, b) => vAdd(a, b), [0, 0, 0]), 1 / 8);
+  const skip = o.skip || 0;
+  for (let fi = 0; fi < 6; fi++) {
+    if (skip & (1 << fi)) continue;
+    const [a, b, c, d] = HEX_FACES[fi].map((k) => P[k]);
+    const eu = vSub(b, a), ev = vSub(d, a);
+    const su = (vLen(eu) + vLen(vSub(c, d))) / 2, sv = (vLen(ev) + vLen(vSub(c, b))) / 2;
+    if (su < 1e-5 || sv < 1e-5) continue;
+    let n = vNorm(vCross(vSub(c, a), vSub(d, b)));
+    const fc = vMul(vAdd(vAdd(a, b), vAdd(c, d)), 0.25);
+    if (vDot(n, vSub(fc, cen)) < 0) n = vMul(n, -1);
+    const pid = prim3(sc, mat, { face: fi, tu: vNorm(eu), tv: vNorm(ev), su, sv });
+    const V = (p, u, v) => [p[0], p[1], p[2], n[0], n[1], n[2], u, v];
+    const A = V(a, 0, 0), B = V(b, su, 0), Cc = V(c, su, sv), D = V(d, 0, sv);
+    rtri(pid, A, B, Cc, !mat.two, o.bias);
+    rtri(pid, A, Cc, D, !mat.two, o.bias);
+  }
+}
+
+/** Axis-aligned box in local space; `mod(corners)` may reshape it (tapers). */
+function box3(sc, x0, y0, z0, x1, y1, z1, mat, o = {}) {
+  const C = [
+    [x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0],
+    [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1],
+  ];
+  if (o.mod) o.mod(C);
+  hexa(sc, C, mat, o);
+}
+
+/**
+ * Loft: a tube swept along a local path, the workhorse for barrels, fingers,
+ * forearms, hoses and wires. `rad(t, i)` returns a radius or [rx, ry] (rx
+ * along the frame normal, which starts as `up` projected off the tangent).
+ * Caps: 'round' (a hemisphere, for fingertips) or 'flat' (a disc).
+ * The shader sees u = distance along the path (cm) and v = angle 0..1.
+ */
+function loft(sc, pts, rad, mat, o = {}) {
+  const segs = o.segs || 12;
+  const n = pts.length;
+  if (n < 2) return;
+  const L = [0];
+  for (let i = 1; i < n; i++) L.push(L[i - 1] + vLen(vSub(pts[i], pts[i - 1])));
+  const total = L[n - 1] || 1;
+  const T = pts.map((p, i) => vNorm(vSub(pts[min(n - 1, i + 1)], pts[max(0, i - 1)])));
+  let up = o.up || [0, -1, 0];
+  let N = vSub(up, vMul(T[0], vDot(up, T[0])));
+  if (vLen(N) < 1e-4) { up = [1, 0, 0]; N = vSub(up, vMul(T[0], vDot(up, T[0]))); }
+  N = vNorm(N);
+  const rings = [];
+  for (let i = 0; i < n; i++) {
+    if (i > 0) N = vNorm(vSub(N, vMul(T[i], vDot(N, T[i]))));
+    const B = vCross(T[i], N);
+    let r = rad(L[i] / total, i);
+    if (typeof r === 'number') r = [r, r];
+    rings.push({ c: pts[i], T: T[i], N, B, rx: r[0], ry: r[1], u: L[i] });
+  }
+  const capRings = (end) => {
+    const R = end ? rings[rings.length - 1] : rings[0];
+    const dir = end ? 1 : -1;
+    const out = [];
+    const len = o.capLen || 1;
+    for (let k = 1; k <= 4; k++) {
+      const ph = (k / 4) * PI / 2;
+      const s = sin(ph), c = cos(ph);
+      out.push({
+        c: vAdd(R.c, vMul(R.T, dir * s * min(R.rx, R.ry) * len)), T: R.T, N: R.N, B: R.B,
+        rx: R.rx * c, ry: R.ry * c, u: R.u + dir * s * min(R.rx, R.ry) * len, tip: k === 4 ? dir : 0,
+      });
+    }
+    return out;
+  };
+  if (o.capStart === 'round') rings.unshift(...capRings(false).reverse());
+  if (o.capEnd === 'round') rings.push(...capRings(true));
+  const roll = o.roll || 0;
+  const R = rings.length;
+  const V = [];
+  for (let i = 0; i < R; i++) {
+    const g = rings[i];
+    const row = [];
+    for (let j = 0; j <= segs; j++) {
+      const th = (j / segs) * TAU + roll;
+      const cs = cos(th), sn = sin(th);
+      row.push(vBasis(g.c, g.N, cs * g.rx, g.B, sn * g.ry, g.T, 0));
+    }
+    V.push(row);
+  }
+  const M = sc.M;
+  const pid = prim3(sc, mat, { len: total });
+  const CV = [];
+  for (let i = 0; i < R; i++) {
+    const g = rings[i];
+    const row = [];
+    for (let j = 0; j <= segs; j++) {
+      let nn;
+      if (g.tip) nn = vMul(g.T, g.tip);
+      else {
+        const du = vSub(V[min(R - 1, i + 1)][j], V[max(0, i - 1)][j]);
+        const jm = j === 0 ? segs - 1 : j - 1, jp = j === segs ? 1 : j + 1;
+        const dv = vSub(V[i][jp], V[i][jm]);
+        nn = vNorm(vCross(du, dv));
+        const out = vSub(V[i][j], g.c);
+        if (vDot(nn, out) < 0) nn = vMul(nn, -1);
+        if (vLen(out) < 1e-5) nn = vMul(g.T, i === 0 ? -1 : 1);
+      }
+      const p = mP(M, V[i][j][0], V[i][j][1], V[i][j][2]);
+      const d = vNorm(mD(M, nn[0], nn[1], nn[2]));
+      row.push([p[0], p[1], p[2], d[0], d[1], d[2], g.u, j / segs]);
+    }
+    CV.push(row);
+  }
+  const cull = !mat.two;
+  for (let i = 0; i < R - 1; i++) {
+    for (let j = 0; j < segs; j++) {
+      const a = CV[i][j], b = CV[i + 1][j], c = CV[i + 1][j + 1], d = CV[i][j + 1];
+      rtri(pid, a, b, c, cull, o.bias);
+      rtri(pid, a, c, d, cull, o.bias);
+    }
+  }
+  // flat discs close the ends; u stays at the end, v becomes the radius 0..1
+  const disc = (i, dir, capMat) => {
+    const g = rings[i];
+    const nn = vNorm(mD(M, g.T[0] * dir, g.T[1] * dir, g.T[2] * dir));
+    const cp = mP(M, g.c[0], g.c[1], g.c[2]);
+    const dp = prim3(sc, capMat || mat, { len: total, disc: dir, rx: g.rx, ry: g.ry });
+    const C0 = [cp[0], cp[1], cp[2], nn[0], nn[1], nn[2], 0, 0];
+    for (let j = 0; j < segs; j++) {
+      const a = CV[i][j], b = CV[i][j + 1];
+      rtri(dp, C0, [a[0], a[1], a[2], nn[0], nn[1], nn[2], j / segs, 1],
+        [b[0], b[1], b[2], nn[0], nn[1], nn[2], (j + 1) / segs, 1], cull, o.bias);
+    }
+  };
+  if (o.capStart === 'flat') disc(0, -1, o.capMat);
+  if (o.capEnd === 'flat') disc(R - 1, 1, o.capMat);
+}
+
+/** Straight tube between two local points. */
+function tube3(sc, a, b, r0, r1, mat, o = {}) {
+  const k = o.rings || 2;
+  const pts = [];
+  for (let i = 0; i <= k; i++) pts.push(vLerp(a, b, i / k));
+  loft(sc, pts, (t) => lerp(r0, r1, t), mat, o);
+}
+
+/** Ellipsoid with radii (rx, ry, rz) about its local axes, poles on z. */
+function ball3(sc, c, rx, ry, rz, mat, o = {}) {
+  const K = o.rings || 8;
+  const pts = [];
+  for (let k = 0; k <= K; k++) pts.push([c[0], c[1], c[2] - rz * cos((k / K) * PI)]);
+  loft(sc, pts, (t, i) => { const s = sin((i / K) * PI); return [ry * s, rx * s]; },
+    mat, { segs: o.segs || 12, up: [0, -1, 0], bias: o.bias });
+}
+
+/** Smooth path through control points (Catmull-Rom), `k` samples per span. */
+function spline(pts, k = 4) {
+  const out = [];
+  const n = pts.length;
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = pts[max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[min(n - 1, i + 2)];
+    for (let s = 0; s < k; s++) {
+      const t = s / k, t2 = t * t, t3 = t2 * t;
+      out.push([0, 1, 2].map((d) => 0.5 * ((2 * p1[d]) + (-p0[d] + p2[d]) * t
+        + (2 * p0[d] - 5 * p1[d] + 4 * p2[d] - p3[d]) * t2 + (-p0[d] + 3 * p1[d] - 3 * p2[d] + p3[d]) * t3)));
+    }
+  }
+  out.push(pts[n - 1].slice());
+  return out;
+}
+
+// --- the shading pass ------------------------------------------------------
+
+/** One mutable record handed to every material shader (no per-pixel garbage). */
+const SH = {
+  u: 0, v: 0, nx: 0, ny: 0, nz: 1, x: 0, y: 0, z: 0,
+  col: 0, gl: 0.3, em: 0, ao: 1, edge: 0, face: 0, prim: null,
+};
+
+// AO taps, visited in opposite pairs: three directions on an inner ring and
+// three on an outer one, rotated against each other so the pattern breaks up.
+const AO_TAPS = [];
+for (let k = 0; k < 3; k++) {
+  const a = (k / 3) * PI;
+  AO_TAPS.push(round2(cos(a) * 2.2), round2(sin(a) * 2.2));
+  AO_TAPS.push(round2(cos(a + 0.5) * 5.2), round2(sin(a + 0.5) * 5.2));
+}
+function round2(v) { return Math.round(v); }
+
+/**
+ * Resolve the G-buffer into a deferred canvas: depth-derived ambient occlusion
+ * (the contact shadow where fingers meet a grip), a one-pixel ink line on the
+ * far side of every depth break (what keeps a pixel-art gun legible at a
+ * glance), then each primitive's material shader.
+ */
+function resolve3(sc) {
+  const g = GB, W = VW, H = VH;
+  const ao = g.ao;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (g.pid[i] < 0) continue;
+      const z = 1 / g.iz[i];
+      // Opposite taps in pairs: on a plane (however steeply it recedes) the two
+      // depths average out to this one, so only real creases and overhangs
+      // occlude. Plain screen-space AO darkens every grazing surface instead.
+      let occ = 0;
+      for (let k = 0; k < AO_TAPS.length; k += 2) {
+        const xa = x + AO_TAPS[k], ya = y + AO_TAPS[k + 1];
+        const xb = x - AO_TAPS[k], yb = y - AO_TAPS[k + 1];
+        const ja = (xa < 0 || ya < 0 || xa >= W || ya >= H) ? -1 : ya * W + xa;
+        const jb = (xb < 0 || yb < 0 || xb >= W || yb >= H) ? -1 : yb * W + xb;
+        const za = ja >= 0 && g.pid[ja] >= 0 ? 1 / g.iz[ja] : z + 3;
+        const zbb = jb >= 0 && g.pid[jb] >= 0 ? 1 / g.iz[jb] : z + 3;
+        const dz = z - (za + zbb) * 0.5;
+        if (dz > 0.05) occ += min(1, dz / 1.6) * (dz < 8 ? 1 : 0.3);
+      }
+      let a = 1 - min(0.6, occ / 6 * 1.1);
+      const th = 0.30 + z * 0.028;
+      const nb = [i - 1, i + 1, i - W, i + W];
+      for (let k = 0; k < 4; k++) {
+        const j = nb[k];
+        if (j < 0 || j >= W * H || g.pid[j] < 0) continue;
+        if ((k === 0 && x === 0) || (k === 1 && x === W - 1)) continue;
+        if (z - 1 / g.iz[j] > th) { a *= 0.40; break; }
+      }
+      ao[i] = a;
+    }
+  }
+  const cv = makeCv(W, H);
+  const S = SH;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      const pid = g.pid[i];
+      if (pid < 0) continue;
+      const pr = sc.prims[pid];
+      let nx = g.nx[i], ny = g.ny[i], nz = g.nz[i];
+      let l = sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      nx /= l; ny /= l; nz /= l;
+      if (pr.two) {
+        const vx = (x + 0.5 - CAM_CX) / CAM_F, vy = (y + 0.5 - CAM_CY) / CAM_F;
+        if (nx * vx + ny * vy + nz > 0) { nx = -nx; ny = -ny; nz = -nz; }
+      }
+      S.u = g.u[i]; S.v = g.v[i]; S.x = x; S.y = y; S.z = 1 / g.iz[i];
+      S.col = pr.col || METAL.base; S.gl = pr.gl === undefined ? 0.3 : pr.gl; S.em = pr.em || 0;
+      S.ao = ao[i]; S.edge = 0; S.face = pr.face || 0; S.prim = pr;
+      if (pr.bevel && pr.tu) {
+        const b = pr.bevel;
+        const e0 = 1 - S.u / b, e1 = 1 - (pr.su - S.u) / b, e2 = 1 - S.v / b, e3 = 1 - (pr.sv - S.v) / b;
+        let ku = 0, kv = 0;
+        if (e0 > 0) { ku -= e0 * e0; S.edge = max(S.edge, e0); }
+        if (e1 > 0) { ku += e1 * e1; S.edge = max(S.edge, e1); }
+        if (e2 > 0) { kv -= e2 * e2; S.edge = max(S.edge, e2); }
+        if (e3 > 0) { kv += e3 * e3; S.edge = max(S.edge, e3); }
+        if (ku || kv) {
+          nx += (pr.tu[0] * ku + pr.tv[0] * kv) * 1.2;
+          ny += (pr.tu[1] * ku + pr.tv[1] * kv) * 1.2;
+          nz += (pr.tu[2] * ku + pr.tv[2] * kv) * 1.2;
+          l = sqrt(nx * nx + ny * ny + nz * nz) || 1;
+          nx /= l; ny /= l; nz /= l;
+        }
+      }
+      S.nx = nx; S.ny = ny; S.nz = nz;
+      if (pr.shade) pr.shade(S);
+      l = sqrt(S.nx * S.nx + S.ny * S.ny + S.nz * S.nz) || 1;
+      cv.data[i] = S.col;
+      cv.nx[i] = S.nx / l; cv.ny[i] = S.ny / l; cv.nz[i] = -S.nz / l;
+      cv.ao[i] = S.ao; cv.gl[i] = S.gl; cv.em[i] = S.em;
+    }
+  }
+  return cv;
+}
+
+// --- surface detail helpers --------------------------------------------------
+
+// One tiling fbm table sampled bilinearly: the per-pixel material noise costs
+// a lookup instead of four octaves of lattice noise, which is what keeps 42
+// frames of fully shaded guns inside the old build time.
+let NTAB = null;
+function ntab() {
+  if (!NTAB) {
+    NTAB = new Float32Array(256 * 256);
+    for (let j = 0; j < 256; j++) {
+      for (let i = 0; i < 256; i++) NTAB[j * 256 + i] = fbm(6101, i / 32, j / 32, 4, 8);
+    }
+  }
+  return NTAB;
+}
+/** shade() that saturates instead of wrapping: highlights here go past 1. */
+function shadeC(c, k) {
+  return rgba(min(255, (c & 255) * k), min(255, ((c >>> 8) & 255) * k), min(255, ((c >>> 16) & 255) * k), 255);
+}
+
+/** Smooth noise 0..1, tiling every 8 units. */
+function nz3(x, y) {
+  const T = NTAB;
+  x *= 32; y *= 32;
+  const xi = floor(x), yi = floor(y);
+  const fx = x - xi, fy = y - yi;
+  const x0 = xi & 255, y0 = yi & 255, x1 = (x0 + 1) & 255, y1 = (y0 + 1) & 255;
+  const a = T[y0 * 256 + x0], b = T[y0 * 256 + x1], c = T[y1 * 256 + x0], d = T[y1 * 256 + x1];
+  const top = a + (b - a) * fx;
+  return top + (c + (d - c) * fx - top) * fy;
+}
+/** Stepped hash on a cell grid: crisp per-cell variation (chips, hairs, pits). */
+function cell3(x, y, s) { return hash2(floor(x), floor(y), s); }
+
+/** Is (x, y) on a stroke of `text` set in the 3x5 font at (x0, y0), glyph height h? */
+function glyph3(text, x, y, x0, y0, h) {
+  const c = h / 5;
+  const col = floor((x - x0) / c), row = floor((y - y0) / c);
+  if (row < 0 || row > 4 || col < 0) return false;
+  const ch = floor(col / 4), k = col - ch * 4;
+  if (ch >= text.length || k === 3) return false;
+  const g = FONT35[text[ch]] || FONT35[' '];
+  return (g[row] & (4 >> k)) !== 0;
+}
+
+/**
+ * The house metal: grain, brushing along u, scratches, bright edge wear on the
+ * bevels and grime settling into whatever the AO pass found occluded.
+ */
+function metal3(col, o = {}) {
+  const {
+    gl = 0.55, grain = 0.10, brush = 0.08, scratch = 0.5, wear = 0.5, grime = 0.5,
+    seed = 0, bare = STEEL_B, freq = 1, decal = null, em = 0, refl = 0.8,
+  } = o;
+  const so = (seed % 97) * 0.37;
+  return {
+    col, gl, em, bevel: o.bevel, two: o.two,
+    shade(S) {
+      const u = S.u * freq, v = S.v * freq;
+      const n = nz3(u * 0.55 + so, v * 0.55 + so * 1.3);
+      const f = nz3(u * 1.3 + so * 2.1, v * 1.3);
+      let c = shadeC(S.col, 1 + (n - 0.5) * grain * 2.2 + (f - 0.5) * grain);
+      if (brush) c = shadeC(c, 1 + (nz3(u * 0.25 + so, v * 9 + so) - 0.5) * brush * 2);
+      let g2 = gl * (0.82 + n * 0.36);
+      // scratches: thin bright strokes, long along u
+      if (scratch) {
+        // long thin scratches: the contour lines of a stretched noise field
+        const sc2 = nz3(u * 0.08 + so, v * 0.7 + u * 0.03);
+        if (abs(sc2 - 0.5) < 0.005 * scratch) { c = mix(c, bare, 0.45); g2 = min(1, g2 + 0.25); }
+      }
+      if (wear && S.edge > 0.25) {
+        const k = smoothstep(0.25, 0.9, S.edge) * wear * (0.55 + f * 0.8);
+        c = mix(c, bare, clamp(k, 0, 0.85));
+        g2 = min(1, g2 + k * 0.3);
+      }
+      if (grime) {
+        const k = clamp((1 - S.ao) * 1.6 * grime + (n > 0.62 ? (n - 0.62) * grime * 1.4 : 0), 0, 0.85);
+        c = mix(c, rgba(24, 20, 18, 255), k);
+        g2 *= 1 - k * 0.6;
+      }
+      // studio reflections: the part of a metal gun you actually notice
+      const h = studio3(S) * refl * (0.6 + g2 * 0.6) * (1 - S.edge * 0.3);
+      if (h > 0.02) {
+        c = mix(c, rgba(255, 246, 228, 255), clamp(h, 0, 0.9));
+        S.em = max(S.em, clamp(h * 0.75, 0, 0.8));
+      }
+      S.col = c; S.gl = g2;
+      if (decal) decal(S);
+    },
+  };
+}
+
+// The studio the guns are photographed in: one big softbox up and to the
+// left, a long strip light overhead. Looked up with the reflected eye ray.
+const SOFTBOX = norm3(-0.42, -0.6, 0.68);
+/** Reflection highlight 0..1 for the current pixel. */
+function studio3(S) {
+  let vx = (S.x + 0.5 - CAM_CX) / CAM_F, vy = (S.y + 0.5 - CAM_CY) / CAM_F;
+  const vl = sqrt(vx * vx + vy * vy + 1);
+  vx /= vl; vy /= vl;
+  const vz = 1 / vl;
+  const d = vx * S.nx + vy * S.ny + vz * S.nz;
+  const rx = vx - 2 * d * S.nx, ry = vy - 2 * d * S.ny, rz = vz - 2 * d * S.nz;
+  const sb = rx * SOFTBOX[0] + ry * SOFTBOX[1] + rz * SOFTBOX[2];
+  let h = smoothstep(0.86, 0.95, sb);
+  const strip = (ry + 0.3) / 0.05;
+  h += exp(-strip * strip) * 0.65 * smoothstep(-0.2, 0.3, rz);
+  return h;
+}
+
+/** Flat material with a custom shader and no metal treatment. */
+function flat3(col, gl, shadeFn, o = {}) {
+  return Object.assign({ col, gl, shade: shadeFn }, o);
+}
+
+// ---------------------------------------------------------------------------
+// hands: one rig, every weapon
+// ---------------------------------------------------------------------------
+// Hardigan wears fingerless black leather driving gloves, because it is 1996
+// and he is the kind of man who owns driving gloves. So the knuckles are
+// leather, the last two joints of every finger are sunburnt skin with hair on
+// them, and the forearms carry what he refers to as his "art".
+
+const SKIN3 = rgba(214, 160, 124, 255);
+const SKIN3_D = rgba(156, 100, 76, 255);
+const SKIN3_R = rgba(200, 118, 96, 255);    // knuckles and fingertips flush redder
+const HAIR3 = rgba(62, 42, 30, 255);
+const NAIL3 = rgba(226, 196, 176, 255);
+const GLOVE3 = rgba(44, 38, 38, 255);
+const GLOVE3_HI = rgba(118, 108, 104, 255);
+const STITCH3 = rgba(150, 136, 112, 255);
+const INK3 = rgba(34, 44, 70, 255);
+const INK3_R = rgba(176, 34, 38, 255);
+const CLOTH3 = rgba(92, 96, 64, 255);        // olive shirt sleeve, rolled
+
+/**
+ * Skin. `circ` is the limb's circumference in cm so hair and pores can be
+ * sized physically (v only runs 0..1 round the tube); `hair` 0..1.
+ */
+function skinShade(S, hair, so, circ) {
+  const w = S.v * circ;
+  const n = nz3(S.u * 0.22 + so, w * 0.22 + so);
+  const f = nz3(S.u * 1.1 + so * 1.7, w * 1.1);
+  let c = mix(SKIN3_D, SKIN3, clamp(0.62 + (n - 0.5) * 0.7 + (f - 0.5) * 0.22, 0, 1));
+  // occlusion reads warm on skin: light bleeding back out through the flesh
+  c = mix(c, SKIN3_R, clamp((1 - S.ao) * 1.1, 0, 0.5));
+  let gl = 0.24 + f * 0.12;
+  if (hair > 0) {
+    // hair: short dark strokes lying along the limb, thinning out in patches
+    const h = nz3(S.u * 0.9 + so * 3, w * 7.5 + so);
+    const k = smoothstep(0.66, 0.72, h) * hair * smoothstep(0.35, 0.6, n + 0.1);
+    if (k > 0.02) { c = mix(c, HAIR3, clamp(k * 0.8, 0, 0.75)); gl *= 1 - k * 0.5; }
+  }
+  // pores and freckles
+  if (cell3(S.u * 3, w * 3, 17 + so) > 0.965) c = shadeC(c, 0.9);
+  S.col = c; S.gl = gl;
+}
+
+function leatherShade(S, so, wearK = 0.6) {
+  const n = nz3(S.u * 1.4 + so, S.v * 5.3 + so);
+  const f = nz3(S.u * 6.1 + so, S.v * 23);
+  let c = shadeC(GLOVE3, 0.86 + n * 0.3 + (f - 0.5) * 0.22);
+  // worn crest where the leather is bent over a knuckle and catches the light
+  const crest = clamp(-S.ny * 0.9 - S.nz * 0.3, 0, 1) * wearK;
+  c = mix(c, GLOVE3_HI, crest * (0.3 + n * 0.5));
+  c = mix(c, rgba(14, 12, 12, 255), clamp((1 - S.ao) * 0.9, 0, 0.6));
+  S.col = c; S.gl = 0.34 + crest * 0.25 + f * 0.1;
+  // pebbled grain
+  S.nx += (f - 0.5) * 0.25; S.ny += (n - 0.5) * 0.25;
+}
+
+/**
+ * Finger material: leather up to `cut` cm, a rolled stitched hem, then skin
+ * with a crease at the next joint and a nail on the back (v = nailV) of the tip.
+ */
+function fingerMat(cut, so, nailV = 0.75, crease = 2.4) {
+  return {
+    col: SKIN3, gl: 0.3,
+    shade(S) {
+      if (S.u < cut) {
+        leatherShade(S, so, 0.9);
+        if (S.u > cut - 0.35) { S.col = shadeC(S.col, 1.35); S.ny -= 0.3; }
+        if (S.u > cut - 0.65 && S.u < cut - 0.5 && (floor(S.v * 28) & 1)) S.col = STITCH3;
+        return;
+      }
+      skinShade(S, 0, so, 6.5);
+      const d = abs(S.u - cut - crease);
+      if (d < 0.12) S.col = mix(S.col, SKIN3_D, 0.55);
+      // the nail: a pale glossy plate with a dark rim, on the back of the tip
+      let dv = S.v - nailV;
+      if (dv > 0.5) dv -= 1; else if (dv < -0.5) dv += 1;
+      const tip = S.u - (S.prim.len - 1.25);
+      if (tip > 0 && abs(dv) < 0.13) {
+        const rim = abs(dv) > 0.10 || tip < 0.15;
+        S.col = rim ? mix(S.col, SKIN3_D, 0.6) : mix(NAIL3, rgba(250, 236, 226, 255), clamp(tip - 0.9, 0, 1));
+        S.gl = rim ? S.gl : 0.62;
+      }
+    },
+  };
+}
+
+const LEATHER3 = { col: GLOVE3, gl: 0.34, shade: (S) => leatherShade(S, 3.1) };
+
+/**
+ * A hand gripping a cylinder-ish handle.
+ *   c        the handle's axis at the top of the hand (local space)
+ *   a        axis direction, index finger toward little finger
+ *   p        from the axis toward the palm
+ *   q        wrap direction: the fingers go from p, through q, round to -p
+ *   rp, rq   the handle's half-thickness along p and q (an ellipse)
+ *   s        axial offsets of the four fingers (null to skip one)
+ *   trigger  optional path (grip coords) for a straight-ish index finger
+ *   thumb    thumb path in grip coords [ga, gp, gq]
+ *   wrist    wrist centre, grip coords; arm: direction in LOCAL space
+ */
+function hand3(sc, H) {
+  const { c, a, p, q } = H;
+  const G = (ga, gp, gq) => vBasis(c, a, ga, p, gp, q, gq);
+  const rp = H.rp, rq = H.rq;
+  const so = H.seed || 0;
+  const FING = [
+    { r: 0.96, L: [4.2, 2.5, 2.0] },
+    { r: 1.02, L: [4.6, 2.9, 2.1] },
+    { r: 0.97, L: [4.3, 2.7, 2.0] },
+    { r: 0.84, L: [3.5, 2.1, 1.8] },
+  ];
+  const wrap = H.wrap === undefined ? 1 : H.wrap;
+  // --- the four fingers, walked round the handle joint by joint ---
+  for (let k = 0; k < 4; k++) {
+    const s = H.s[k];
+    if (s === null || s === undefined) continue;
+    const f = FING[k];
+    if (k === 0 && (H.trigger || H.triggerL)) {
+      const pts = spline(H.triggerL || H.trigger.map((g) => G(g[0], g[1], g[2])), 3);
+      loft(sc, pts, (t) => f.r * (1 - t * 0.14) * (1 + 0.1 * exp(-pow((t - 0.45) / 0.08, 2))),
+        fingerMat(3.4, so + k), { segs: 10, capEnd: 'round', up: a });
+      continue;
+    }
+    // point on the offset ellipse at angle th (0 = palm side, +90deg = q side)
+    const at = (th) => {
+      const ex = rp * cos(th), ey = rq * sin(th);
+      const nn = vNorm([cos(th) / rp, sin(th) / rq, 0]);
+      const off = f.r * 1.04;
+      return [ex + nn[0] * off, ey + nn[1] * off];
+    };
+    const mcp = [rp + 1.7 + f.r * 0.4, (H.mcpQ || 0.6)];
+    const joints = [mcp];
+    let th = atan2(mcp[1] / rq, mcp[0] / rp);
+    for (let j = 0; j < 3; j++) {
+      const L = f.L[j] * (H.fscale || 1);
+      const prev = joints[joints.length - 1];
+      let pt = at(th);
+      let guard = 0;
+      while (hypot(pt[0] - prev[0], pt[1] - prev[1]) < L && guard++ < 400) {
+        th += 0.02 * wrap;
+        pt = at(th);
+      }
+      joints.push(pt);
+    }
+    // straight bones, fat joints: sample each phalanx and swell the knuckles
+    const pts = [], rs = [];
+    const slope = H.slope || 0;
+    for (let j = 0; j < 3; j++) {
+      const A = joints[j], B = joints[j + 1];
+      for (let m = 0; m < 3; m++) {
+        const t = m / 3;
+        pts.push(G(s + slope * (j + t), lerp(A[0], B[0], t), lerp(A[1], B[1], t)));
+        const knuckle = m === 0 ? (j === 0 ? 1.12 : 1.1) : 1;
+        rs.push(f.r * (1 - (j + t) * 0.06) * knuckle);
+      }
+    }
+    pts.push(G(s + slope * 3, joints[3][0], joints[3][1]));
+    rs.push(f.r * 0.8);
+    loft(sc, pts, (t, i) => rs[min(rs.length - 1, i)], fingerMat(f.L[0] * 0.8, so + k),
+      { segs: 10, capEnd: 'round', up: a, capLen: 0.9 });
+  }
+  // --- palm and back of the hand ---
+  const sm = H.sMid;
+  const hb = [G(sm + 0.5, rp + 2.0, H.wristQ), G(sm + 0.3, rp + 2.2, H.wristQ * 0.55),
+    G(sm, rp + 2.15, H.wristQ * 0.18), G(sm - 0.2, rp + 1.95, (H.mcpQ || 0.6) - 0.6)];
+  loft(sc, spline(hb, 3), (t) => [lerp(2.9, 4.1, smoothstep(0, 0.8, t)), lerp(2.0, 1.75, t)],
+    LEATHER3, { segs: 14, up: a, capEnd: 'round', capLen: 0.5 });
+  // knuckle pads across the back of the hand
+  if (H.pads !== false) {
+    for (let k = 0; k < 4; k++) {
+      if (H.s[k] === null || H.s[k] === undefined) continue;
+      const kp = G(H.s[k], rp + 3.4, (H.mcpQ || 0.6) - 0.4);
+      const m = metal3(rgba(38, 36, 40, 255), { gl: 0.5, grain: 0.1, scratch: 0.8, wear: 0.4, seed: 40 + k });
+      ball3(sc, kp, 0.9, 0.75, 0.9, m, { rings: 6, segs: 10 });
+    }
+  }
+  // --- thumb ---
+  if (H.thumb || H.thumbL) {
+    const tl = H.thumbL || H.thumb.map((g) => G(g[0], g[1], g[2]));
+    const tp = spline(tl, 4);
+    const tr = H.thumbR || [1.55, 1.3, 1.15, 1.05];
+    loft(sc, tp, (t) => {
+      const i = t * (tr.length - 1), i0 = floor(i), i1 = min(tr.length - 1, i0 + 1);
+      return lerp(tr[i0], tr[i1], i - i0);
+    }, fingerMat(H.thumbCut || 5.0, so + 9, H.thumbNailV === undefined ? 0.5 : H.thumbNailV, 2.6),
+    { segs: 12, capEnd: 'round', up: H.thumbUp || a, capLen: 0.9 });
+    // the ball of the thumb, filling the web
+    const b0 = tl[0], b1 = tl[1];
+    loft(sc, [b0, vLerp(b0, b1, 0.5), b1], (t) => 1.9 - t * 0.35, LEATHER3,
+      { segs: 12, up: a, capStart: 'round', capEnd: 'round' });
+  }
+  // --- wrist, cuff, forearm and sleeve ---
+  if (H.arm) forearm3(sc, H.wristL || G(H.wrist[0], H.wrist[1], H.wrist[2]), H.arm, H);
+}
+
+/**
+ * The forearm: glove cuff with a velcro strap, a lot of arm, and a rolled
+ * sleeve where it leaves the frame. `tattoo` places the heart on the arm.
+ */
+function forearm3(sc, w, dir, H) {
+  const d = vNorm(dir);
+  const len = H.armLen || 34;
+  const up = H.armUp || [0, -1, 0];
+  const pts = [];
+  const bend = H.armBend || [0, 0, 0];
+  for (let i = 0; i <= 10; i++) {
+    const t = i / 10;
+    pts.push(vAdd(vAdd(w, vMul(d, t * len)), vMul(bend, t * t * len)));
+  }
+  const so = (H.seed || 0) + 21;
+  const sleeveAt = H.sleeveAt || 26;
+  const tat = H.tattoo;
+  const mat = {
+    col: SKIN3, gl: 0.3,
+    shade(S) {
+      if (S.u < 3.2) {
+        leatherShade(S, so, 0.5);
+        // velcro strap with a stitched edge and a brass snap
+        if (S.u > 1.0 && S.u < 2.4) {
+          S.col = shadeC(S.col, 0.8);
+          if (S.u < 1.15 || S.u > 2.25) S.col = STITCH3;
+        }
+        if (S.u > 3.0) { S.col = shadeC(S.col, 1.3); S.ny -= 0.25; }
+        return;
+      }
+      skinShade(S, 1.0, so, 26);
+      // veins over the tendons toward the wrist
+      const vv = nz3(S.u * 0.35 + so, S.v * 2.2);
+      if (S.u < 16 && abs(vv - 0.5) < 0.018) { S.col = mix(S.col, rgba(150, 110, 118, 255), 0.35); S.nz -= 0.2; }
+      if (tat) tattoo3(S, tat);
+    },
+  };
+  const rad = (t) => {
+    const u = t * len;
+    // wrist -> the swell of the forearm muscle -> elbow
+    const sw = smoothstep(1.5, 12, u) * (1 - smoothstep(24, 40, u) * 0.25);
+    const k = H.armScale || 1;
+    return [(2.75 + sw * 2.2) * k, (2.15 + sw * 1.75) * k];
+  };
+  loft(sc, pts, rad, mat, { segs: 16, up, capStart: 'round', capLen: 0.6 });
+  // rolled sleeve
+  const sp = pts.filter((p, i) => i / 10 * len >= sleeveAt - 1.5);
+  if (sp.length >= 2) {
+    loft(sc, sp, (t) => { const r = rad(sleeveAt / len + t * 0.3); const k = t < 0.25 ? 1.32 : 1.2; return [r[0] * k, r[1] * k]; },
+      {
+        col: CLOTH3, gl: 0.12,
+        shade(S) {
+          const n = nz3(S.u * 0.9, S.v * 6);
+          let c = shadeC(CLOTH3, 0.8 + n * 0.4);
+          if ((floor(S.u * 6 + S.v * 40) & 3) === 0) c = shadeC(c, 0.9);   // twill
+          // rolled cuff: a fat fold with its own shadow line
+          const fold = S.u - (sleeveAt - 1.5);
+          if (fold < 2.2 && fold > 0) c = shadeC(c, 1.12 - abs(fold - 1.1) * 0.2);
+          if (abs(fold - 2.3) < 0.25) c = shadeC(c, 0.55);
+          c = mix(c, rgba(20, 20, 14, 255), clamp((1 - S.ao) * 0.8, 0, 0.5));
+          S.col = c; S.gl = 0.1;
+        },
+      }, { segs: 16, up });
+  }
+}
+
+/**
+ * The tattoo: a heart, a scroll and the word MOM, done in a dockside parlour in
+ * 1984. `t` = { u, v, s }: centre along the arm (cm), angle round it (0..1)
+ * and size (cm).
+ */
+function tattoo3(S, t) {
+  const circ = 2 * PI * 4.2;
+  let dv = S.v - t.v;
+  if (dv > 0.5) dv -= 1; else if (dv < -0.5) dv += 1;
+  const x = (S.u - t.u) / t.s;
+  const y = (dv * circ) / t.s * (t.flip || 1);
+  if (abs(x) > 1.6 || abs(y) > 1.6) return;
+  const fade = 0.78;
+  // heart: (x^2 + y^2 - 1)^3 - x^2 y^3 < 0, with y pointing up the picture
+  const hx = y * 1.15, hy = -x * 1.15 + 0.1;
+  const hv = pow(hx * hx + hy * hy - 1, 3) - hx * hx * hy * hy * hy;
+  const hv2 = pow(hx * hx * 1.35 + hy * hy * 1.35 - 1, 3) - hx * hx * 1.35 * pow(hy * 1.16, 3);
+  if (hv < 0) {
+    S.col = mix(S.col, hv2 < 0 ? INK3_R : INK3, fade);
+    if (hv2 < 0 && hy > 0.25 && hx < -0.1 && hx > -0.5) S.col = mix(S.col, rgba(236, 150, 140, 255), 0.5);
+  }
+  // scroll across the middle, with the word on it
+  const by = hx, bx = -hy + 0.05;
+  if (abs(bx) < 0.30 && abs(by) < 1.45) {
+    const edge = abs(bx) > 0.22 || abs(by) > 1.36;
+    S.col = mix(S.col, edge ? INK3 : rgba(226, 204, 150, 255), fade);
+    const word = t.word || 'MOM';
+    if (!edge && glyph3(word, by, bx, -(word.length * 4 - 1) * 0.04, -0.2, 0.4)) S.col = mix(S.col, INK3, 0.9);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// shared gun materials
+// ---------------------------------------------------------------------------
+
+/**
+ * Chrome is mostly reflection, and bake() only knows sky-above/floor-below,
+ * so the shader adds the hard horizon line a polished surface actually shows:
+ * bright where the normal faces up, a dark band at the horizon, a dim floor.
+ */
+function chrome3(o = {}) {
+  const base = metal3(o.col || rgba(150, 154, 164, 255), {
+    gl: 0.86, grain: 0.05, brush: 0.04, scratch: 0.3, wear: 0.15, grime: 0.55,
+    bare: rgba(240, 242, 248, 255), seed: o.seed || 1, bevel: o.bevel, decal: o.decal,
+  });
+  const inner = base.shade;
+  base.shade = (S) => {
+    // reflect the eye ray and look it up in a studio: sky, a hard dark
+    // horizon, a warm floor. That band is what makes chrome read as chrome.
+    let vx = (S.x + 0.5 - CAM_CX) / CAM_F, vy = (S.y + 0.5 - CAM_CY) / CAM_F;
+    const vl = sqrt(vx * vx + vy * vy + 1);
+    vx /= vl; vy /= vl;
+    const d = vx * S.nx + vy * S.ny + S.nz / vl;
+    const ry = vy - 2 * d * S.ny, rx = vx - 2 * d * S.nx;
+    let k;
+    if (ry < -0.30) k = 1.5 + (-ry - 0.3) * 0.4;
+    else if (ry < -0.04) k = lerp(0.2, 1.5, smoothstep(0.04, 0.30, -ry));
+    else if (ry < 0.26) k = lerp(0.2, 0.62, (ry + 0.04) / 0.30);
+    else k = 0.62 - (ry - 0.26) * 0.3;
+    k *= 1 + 0.22 * sin(rx * 9.0 + ry * 4.0);
+    // Flat faces reflect one colour edge to edge, which reads as grey paint.
+    // A studio-style softbox band across each flat (bright rim, dark belly)
+    // is the painter's cheat every chrome gun sprite has always used.
+    const pr = S.prim;
+    if (pr.sv) {
+      const t = S.face === F_TOP || S.face === F_BOT ? S.u / pr.su : S.v / pr.sv;
+      const band = t < 0.14 ? 1.6 - t : t < 0.42 ? lerp(1.46, 0.26, smoothstep(0.14, 0.42, t))
+        : t < 0.82 ? lerp(0.26, 0.5, (t - 0.42) / 0.4) : lerp(0.5, 1.05, (t - 0.82) / 0.18);
+      k = k * 0.45 + band * 0.62;
+    }
+    S.col = shadeC(S.col, k);
+    inner(S);
+  };
+  return base;
+}
+
+/** Warm yellow metal: triggers, hammers, sight beads, casings. */
+function brass3(o = {}) {
+  return metal3(o.col || BRASS, {
+    gl: 0.72, grain: 0.08, brush: 0.03, scratch: 0.4, wear: 0.6, grime: 0.6,
+    bare: BRASS_B, seed: o.seed || 5, bevel: o.bevel,
+  });
+}
+
+/** Mother of pearl: pale, glossy, with a slow pink/green shimmer in it. */
+const PEARL3 = {
+  col: rgba(226, 218, 204, 255), gl: 0.62,
+  shade(S) {
+    const n = nz3(S.u * 0.8 + 3, S.v * 4.4 + 1);
+    const w = nz3(S.u * 2.2 + n * 3, S.v * 9.1);
+    let c = mix(rgba(214, 206, 192, 255), rgba(246, 240, 230, 255), w);
+    c = mix(c, n > 0.5 ? rgba(236, 200, 206, 255) : rgba(196, 226, 214, 255), abs(n - 0.5) * 0.9);
+    c = mix(c, rgba(60, 50, 44, 255), clamp((1 - S.ao) * 1.2, 0, 0.6));
+    S.col = c; S.gl = 0.55 + w * 0.2;
+  },
+};
+
+// ---------------------------------------------------------------------------
+// WEAPON 1 - THE WIDOW: a chrome hand cannon the size of a small dog
+// ---------------------------------------------------------------------------
+// Gun-local space: origin at the rear top of the slide, +z toward the muzzle,
+// +y down, +x to Hardigan's right. Centimetres. The camera sits behind and
+// above its left shoulder, so the top flat and the left flank carry the art.
+
+const WIDOW3 = {
+  pos: [7.2, 4.4, 20.0], yaw: -0.34, pitch: 0.0, roll: 0.1,
+  len: 26.5, slideEnd: 19.2,
+  muzzle: [0, 1.25, 26.6],
+  port: [0.95, 0, 8.4],
+  gripTop: [0, 4.6, 3.2], gripDir: vNorm([0, 12.6, -4.5]),
+};
+
+function widowScroll(S, u, v) {
+  // hand-cut vine scroll: a sine vine with curls, cut dark into the chrome
+  const vine = sin(u * 1.3 + sin(v * 1.9) * 1.2) * 0.9;
+  const d = abs(v - 1.5 - vine * 0.55);
+  const curl = abs(hypot((u % 2.6) - 1.3, v - 1.5 - vine * 0.6) - 0.55);
+  if (d < 0.06 || curl < 0.05) { S.col = mix(S.col, rgba(40, 40, 46, 255), 0.7); S.gl *= 0.6; }
+}
+
+function drawWidow3(sc, P) {
+  const W = WIDOW3;
+  const slide = P.slide || 0;
+  const heat = P.heat || 0;
+  // ---- materials ----
+  const chromeSlide = chrome3({
+    seed: 11, bevel: 0.32,
+    decal: (S) => {
+      if (S.face === F_LEFT) {
+        // serrations at the rear of the slide
+        if (S.u > 0.7 && S.u < 5.0 && S.v > 0.5 && S.v < 3.0) {
+          const k = (S.u * 2.4) % 1;
+          S.nx += 0; S.nz += (k < 0.5 ? -0.9 : 0.9) * 0.5;
+          S.col = shadeC(S.col, k < 0.5 ? 1.15 : 0.5);
+        }
+        // engraving on the flank
+        if (S.u > 14.8 && S.u < 18.9 && S.v > 0.6 && S.v < 2.7) widowScroll(S, S.u, S.v);
+        // the emblem: a red hourglass on a black enamel disc, like the spider
+        const eu = S.u - 6.1, ev = S.v - 1.65;
+        const ed = hypot(eu, ev);
+        if (ed < 0.95) {
+          const ring = ed > 0.82;
+          const hg = abs(eu) < 0.55 * (abs(ev) / 0.72) + 0.06 && abs(ev) < 0.72;
+          S.col = ring ? rgba(196, 150, 60, 255) : hg ? rgba(220, 30, 26, 255) : rgba(16, 14, 16, 255);
+          S.gl = ring ? 0.7 : 0.8; S.em = hg && !ring ? 0.15 : 0;
+        }
+        if (glyph3('WIDOW', S.prim.su - S.u, S.v, S.prim.su - 14.0, 0.75, 1.8)) { S.col = mix(S.col, rgba(196, 150, 60, 255), 0.95); S.gl = 0.6; }
+      }
+      if (S.face === F_REAR) {
+        // the back of the slide: fine horizontal serrations round a firing-pin plate
+        const cx2 = S.prim.su / 2;
+        if (abs(S.u - cx2) < 0.62 && S.v > 1.0 && S.v < 2.5) {
+          S.col = mix(S.col, rgba(58, 58, 64, 255), 0.75); S.gl = 0.4;
+          if (hypot(S.u - cx2, S.v - 1.75) < 0.2) S.col = rgba(18, 16, 18, 255);
+        } else if (S.v > 0.5) {
+          const k = (S.v * 3.2) % 1;
+          S.ny += k < 0.5 ? -0.55 : 0.55;
+          S.col = shadeC(S.col, k < 0.5 ? 1.1 : 0.62);
+        }
+      }
+      if (S.face === F_TOP) {
+        // ejection port on the right-hand edge of the top flat
+        if (S.u > S.prim.su - 1.2 && S.v > 5.9 && S.v < 10.8) {
+          S.col = mix(rgba(20, 18, 20, 255), BRASS_D, S.u > S.prim.su - 0.8 ? 0.6 : 0.0);
+          S.gl = 0.3; S.ao *= 0.6;
+        }
+        // matte anti-glare stripe down the middle
+        if (abs(S.u - S.prim.su / 2) < 0.4) { S.col = shadeC(S.col, 0.55); S.gl *= 0.5; }
+      }
+    },
+  });
+  const chromeBarrel = chrome3({
+    seed: 13, bevel: 0.3,
+    decal: (S) => {
+      if (S.face === F_LEFT) {
+        const ru = S.prim.su - S.u;
+        if (glyph3('50 AE', ru, S.v, 1.0, 0.8, 0.75)) S.col = mix(S.col, rgba(30, 30, 34, 255), 0.85);
+        if (glyph3('NUKEHAUS ARMS', ru, S.v, 0.3, 1.9, 0.42)) S.col = mix(S.col, rgba(40, 40, 44, 255), 0.7);
+      }
+      if (heat > 0 && S.face !== F_TOP) S.col = mix(S.col, rgba(140, 90, 150, 255), heat * 0.25);
+    },
+  });
+  const blacked = metal3(rgba(56, 56, 64, 255), { gl: 0.42, grain: 0.12, scratch: 0.7, wear: 0.7, seed: 17, bevel: 0.25, bare: rgba(160, 162, 170, 255) });
+  const brass = brass3({ bevel: 0.15 });
+
+  // ---- the moving slide (and the hammer it cocks) ----
+  push3(sc, mT(0, 0, -slide));
+  // slide body: flat top, flanks flaring out slightly to the frame rails
+  box3(sc, -1.55, 0, 0, 1.55, 3.3, W.slideEnd, chromeSlide, {
+    mod: (C) => { for (const k of [0, 1, 4, 5]) C[k][0] *= 0.82; C[4][1] = C[5][1] = 0.15; },
+  });
+  // rear sight: two ears and the notch between them, white dots
+  const dotMat = flat3(rgba(236, 232, 214, 255), 0.4, null, { em: 0.15 });
+  box3(sc, -1.35, -0.85, 0.5, -0.32, 0.05, 1.9, blacked);
+  box3(sc, 0.32, -0.85, 0.5, 1.35, 0.05, 1.9, blacked);
+  ball3(sc, [-0.8, -0.45, 0.46], 0.2, 0.2, 0.05, dotMat, { rings: 4, segs: 8 });
+  ball3(sc, [0.8, -0.45, 0.46], 0.2, 0.2, 0.05, dotMat, { rings: 4, segs: 8 });
+  // ambidextrous safety lever on the left of the slide
+  box3(sc, -1.95, 0.5, 1.2, -1.25, 1.3, 3.1, blacked, {
+    mod: (C) => { C[0][1] -= 0.3; C[1][1] -= 0.3; },
+  });
+  pop3(sc);
+
+  // ---- fixed barrel: the triangular Desert Eagle nose with a vented rib ----
+  box3(sc, -1.5, 0.05, W.slideEnd, 1.5, 3.2, W.len, chromeBarrel, {
+    mod: (C) => {
+      for (const k of [0, 1, 4, 5]) C[k][0] *= 0.8;
+      // the underside slopes up to the muzzle
+      C[6][1] = C[7][1] = 2.3;
+      C[6][0] *= 0.8; C[7][0] *= 0.8;
+    },
+  });
+  // top rib with cross slots, running the full length
+  const rib = metal3(rgba(64, 64, 72, 255), {
+    gl: 0.5, grain: 0.1, scratch: 0.6, wear: 0.6, seed: 19, bevel: 0.12,
+    decal: (S) => {
+      // cross slots cut across the rib
+      if (S.face === F_TOP && (S.v % 1.1) < 0.35) { S.col = shadeC(S.col, 0.4); S.ao *= 0.7; }
+    },
+  });
+  box3(sc, -0.6, -0.42, 2.2, 0.6, 0.02, W.len + 3.2, rib);
+  // compensator: three ports on top that spit fire sideways and up
+  const comp = chrome3({
+    seed: 15, bevel: 0.25,
+    decal: (S) => {
+      if (S.face === F_TOP || S.face === F_LEFT) {
+        const k = S.face === F_TOP ? S.v : S.u;
+        const w = S.face === F_TOP ? abs(S.u - S.prim.su / 2) < 0.7 : S.v < 1.6;
+        if (w && k > 0.5 && ((k - 0.5) % 1.0) < 0.55 && k < 3.0) {
+          const glowK = heat;
+          S.col = mix(rgba(14, 12, 12, 255), hotColor(0.25), glowK * 0.8); S.em = glowK * 0.8; S.gl = 0.1;
+        }
+      }
+    },
+  });
+  box3(sc, -1.3, 0.05, W.len, 1.3, 2.4, W.len + 3.4, comp, {
+    mod: (C) => { for (const k of [0, 1, 4, 5]) C[k][0] *= 0.85; },
+  });
+  // front sight blade with a brass bead
+  box3(sc, -0.2, -1.25, W.len + 1.6, 0.2, -0.3, W.len + 2.7, blacked);
+  ball3(sc, [0, -1.2, W.len + 1.55], 0.24, 0.24, 0.12, flat3(rgba(250, 206, 96, 255), 0.7, null, { em: 0.35 }), { rings: 4, segs: 8 });
+  // muzzle face: dark bore, crowned
+  push3(sc, mT(0, 0, 0));
+  tube3(sc, [0, W.muzzle[1], W.len + 3.2], [0, W.muzzle[1], W.len + 3.6], 0.72, 0.72,
+    flat3(rgba(20, 18, 20, 255), 0.3, null), { segs: 12, capEnd: 'flat' });
+  pop3(sc);
+
+  // ---- frame / dust cover ----
+  box3(sc, -1.45, 3.2, 0.6, 1.45, 5.0, 18.2, blacked, {
+    mod: (C) => { C[7][2] -= 1.4; C[6][2] -= 1.4; },
+  });
+  // slide stop lever and a takedown pin on the left of the frame
+  box3(sc, -1.75, 3.4, 8.5, -1.35, 4.1, 12.6, blacked);
+  ball3(sc, [-1.55, 4.3, 15.3], 0.35, 0.35, 0.35, brass, { rings: 5, segs: 8 });
+
+  // ---- hammer ----
+  const hz = P.hammer === undefined ? 1 : P.hammer;
+  const ha = lerp(-0.35, 0.6, hz);
+  push3(sc, mAbout(0, 2.4, -0.3, mRX(ha)));
+  // a ring hammer: a curved brass spur with a hole through it
+  const hp = spline([[0, 2.6, -0.3], [0, 1.4, -0.45], [0, 0.4, -0.8], [0, 0.0, -1.2]], 3);
+  loft(sc, hp, (t) => [0.3, 0.5 - t * 0.1], blacked, { segs: 8, up: [1, 0, 0], capEnd: 'round', capLen: 0.6 });
+  box3(sc, -0.34, -0.3, -1.5, 0.34, 0.2, -0.9, Object.assign({}, blacked, {
+    shade(S) {
+      blacked.shade(S);
+      // checkering on the thumb spur
+      if (S.face === F_TOP || S.face === F_REAR) {
+        const k = ((floor(S.u * 5) + floor(S.v * 5)) & 1);
+        S.col = shadeC(S.col, k ? 1.2 : 0.62);
+      }
+    },
+  }));
+  pop3(sc);
+  // beavertail
+  box3(sc, -1.5, 3.6, -2.3, 1.5, 4.6, 1.0, blacked, {
+    mod: (C) => { C[0][0] *= 0.6; C[1][0] *= 0.6; C[3][0] *= 0.6; C[2][0] *= 0.6; C[0][1] += 0.4; C[1][1] += 0.4; },
+  });
+
+  // ---- trigger guard and trigger ----
+  const guard = spline([[0, 4.9, 14.0], [0, 8.0, 12.8], [0, 9.0, 10.0], [0, 8.7, 7.0], [0, 7.8, 5.2]], 4);
+  loft(sc, guard, () => [0.36, 0.62], blacked, { segs: 8, up: [1, 0, 0] });
+  const trig = spline([[0, 4.9, 8.4], [0, 6.1, 8.9], [0, 7.3, 8.5]], 3);
+  loft(sc, trig, (t) => [0.3, 0.55 - t * 0.1], brass, { segs: 8, up: [1, 0, 0], capEnd: 'round' });
+
+  // ---- grip: pearl panels on a black frame, a brass medallion ----
+  const gt = W.gripTop, gd = W.gripDir;
+  const gpts = [];
+  for (let i = 0; i <= 6; i++) gpts.push(vAdd(gt, vMul(gd, i * 2.3)));
+  loft(sc, gpts, (t) => [1.62, 2.75 - t * 0.2], PEARL3, { segs: 16, up: [1, 0, 0], capEnd: 'flat', capMat: brass });
+  // front and back straps in black
+  loft(sc, gpts.map((p) => vAdd(p, [0, 0.4, 2.4])), () => [0.9, 0.6], blacked, { segs: 8, up: [1, 0, 0] });
+  loft(sc, gpts.map((p) => vAdd(p, [0, -0.4, -2.45])), () => [1.0, 0.55], blacked, { segs: 8, up: [1, 0, 0] });
+
+  // ---- the casing, kicked out of the port on the way back ----
+  if (P.casing) {
+    const t = P.casing;
+    const cp = vAdd(W.port, [2.2 + t * 5.5, -2 - t * 5 + t * t * 3, -t * 1.5]);
+    push3(sc, mChain(mT(cp[0], cp[1], cp[2]), mRZ(0.8 + t * 3.4), mRX(0.5 + t * 2)));
+    tube3(sc, [0, 0, -1.2], [0, 0, 1.2], 0.52, 0.5, brass3({ seed: 23 }), { segs: 10, capStart: 'flat', capEnd: 'flat' });
+    pop3(sc);
+  }
+
+  // ---- the hand ----
+  const a = gd, p = [1, 0, 0], q = vNorm(vCross(p, a));
+  hand3(sc, {
+    c: vAdd(gt, vMul(a, 0.2)), a, p: [1, 0, 0], q: vMul(q, 1), rp: 1.7, rq: 2.75,
+    s: [null, 2.55, 4.6, 6.5], sMid: 3.8, mcpQ: 0.4, wrap: 1, slope: 0.05,
+    trigger: [[0.9, 2.8, 0.2], [0.3, 2.5, 3.0], [-0.1, 1.4, 4.6], [-0.3, 0.2, 5.1]],
+    thumbL: [[1.6, 6.4, -3.2], [-0.2, 5.0, -2.2], [-1.8, 4.5, 0.2], [-2.2, 4.3, 2.8], [-2.15, 4.2, 5.2]],
+    thumbCut: 4.6, thumbNailV: 0.4, thumbR: [1.45, 1.2, 1.08, 0.98],
+    wristL: [3.2, 7.0, -4.0], wristQ: -6.6,
+    arm: [0.22, 0.3, -1], armLen: 36, armUp: [1, -0.3, 0], armBend: [0.05, 0.25, 0],
+    tattoo: { u: 15, v: 0.62, s: 2.6 }, seed: 7,
+  });
+
+  return { muzzle: [0, W.muzzle[1], W.len + 3.8] };
+}
+
+// ---------------------------------------------------------------------------
+// more gun materials
+// ---------------------------------------------------------------------------
+
+/** Walnut with the grain running along u. */
+function wood3(o = {}) {
+  const { seed = 3, dark = 0 } = o;
+  const so = seed * 0.71;
+  return {
+    col: WOOD, gl: 0.34, bevel: o.bevel,
+    shade(S) {
+      const g = nz3(S.u * 0.12 + so, S.v * 2.6 + so);
+      const rings = 0.5 + 0.5 * sin(g * 22 + S.v * 9);
+      let c = mix(shadeC(WOOD_D, 1 - dark), shadeC(WOOD, 1 - dark), clamp(0.2 + rings * 0.85, 0, 1));
+      c = shadeC(c, 0.86 + nz3(S.u * 0.6, S.v * 3 + so) * 0.3);
+      if (cell3(S.u * 2, S.v * 14, seed) > 0.97) c = shadeC(c, 0.6);      // dings
+      c = mix(c, rgba(20, 12, 8, 255), clamp((1 - S.ao) * 1.3, 0, 0.6));
+      // oil polish rubbed bright on the high points
+      S.col = mix(c, rgba(196, 140, 92, 255), clamp(S.edge * 0.4, 0, 0.4));
+      S.gl = 0.28 + rings * 0.14;
+      if (o.decal) o.decal(S);
+    },
+  };
+}
+
+/** Electrical tape wound round a handle: overlapping bands on a spiral. */
+function tape3(col = TAPE, o = {}) {
+  const pitch = o.pitch || 1.6;
+  return {
+    col, gl: 0.42,
+    shade(S) {
+      const t = (S.u + S.v * 0.9) / pitch;
+      const k = t - floor(t);
+      let c = shadeC(col, 0.88 + nz3(S.u * 0.7, S.v * 5) * 0.3);
+      if (k < 0.1) { c = shadeC(c, 0.55); S.ny += 0.3; }        // the overlap step
+      else if (k < 0.2) c = shadeC(c, 1.25);
+      c = mix(c, rgba(8, 8, 10, 255), clamp((1 - S.ao) * 0.9, 0, 0.5));
+      S.col = c; S.gl = 0.36 + (k > 0.3 && k < 0.6 ? 0.2 : 0);
+    },
+  };
+}
+
+/**
+ * Temper colours on a hot barrel: straw, bronze, purple, blue, walking back
+ * from the muzzle end. `from` is where along u the colour starts.
+ */
+function heatBlued3(o = {}) {
+  const from = o.from || 10, to = o.to || 30;
+  const base = metal3(o.col || rgba(40, 43, 54, 255), {
+    gl: 0.6, grain: 0.1, brush: 0.1, scratch: 0.5, wear: 0.5, grime: 0.5, seed: o.seed || 31,
+    bare: rgba(150, 152, 162, 255), refl: 0.6,
+  });
+  const inner = base.shade;
+  base.shade = (S) => {
+    inner(S);
+    const t = clamp((S.u - from) / (to - from), 0, 1);
+    if (t <= 0) return;
+    const w = t + (nz3(S.u * 0.3, S.v * 2) - 0.5) * 0.25;
+    const tc = w < 0.3 ? rgba(70, 90, 150, 255) : w < 0.55 ? rgba(118, 70, 132, 255)
+      : w < 0.8 ? rgba(170, 110, 60, 255) : rgba(206, 178, 110, 255);
+    S.col = mix(S.col, tc, clamp(t * 1.2, 0, 0.42));
+  };
+  return base;
+}
+
+/** A fat flak shell: red ribbed hull, brass head, primer. Local axis +z. */
+function shell3(sc, M, o = {}) {
+  push3(sc, M);
+  const len = o.len || 6.2, r = o.r || 1.15;
+  const hull = {
+    col: o.hull || rgba(168, 34, 30, 255), gl: 0.5,
+    shade(S) {
+      let c = shadeC(S.col, 0.9 + nz3(S.u * 0.8, S.v * 3) * 0.25);
+      if ((floor(S.v * 24) & 1) === 0) c = shadeC(c, 0.86);         // ribbed plastic
+      if (S.u > len - 0.9) c = shadeC(c, 0.8);                          // crimp
+      c = mix(c, rgba(24, 8, 8, 255), clamp((1 - S.ao) * 1.2, 0, 0.6));
+      S.col = c;
+    },
+  };
+  tube3(sc, [0, 0, 1.4], [0, 0, len], r, r * 0.97, hull, { segs: 12, capEnd: 'flat' });
+  const head = brass3({ seed: o.seed || 41 });
+  tube3(sc, [0, 0, 0], [0, 0, 1.5], r * 1.1, r * 1.03, head, {
+    segs: 12, capStart: 'flat',
+    capMat: flat3(BRASS, 0.7, (S) => {
+      // head stamp: the primer and a ring
+      const d = S.v;
+      S.col = d < 0.3 ? rgba(170, 110, 70, 255) : d < 0.38 ? rgba(96, 70, 32, 255) : shadeC(BRASS, 0.9 + d * 0.3);
+      S.gl = 0.7;
+      if (o.spent && d < 0.3) S.col = rgba(60, 40, 30, 255);
+    }),
+  });
+  pop3(sc);
+}
+
+// ---------------------------------------------------------------------------
+// WEAPON 2 - THE SPLITTER: sawn-off triple flak shotgun, pump action
+// ---------------------------------------------------------------------------
+
+const SPLITTER3 = {
+  pos: [6.5, 6.0, 6.0], yaw: -0.22, pitch: 0.0, roll: 0.2,
+  // three barrels side by side by side, as (x, y) at the breech face
+  bores: [[-3.15, 1.75], [0, 1.6], [3.15, 1.75]],
+  br: 1.55, brlFrom: 10.5, brlTo: 40,
+};
+
+function drawSplitter3(sc, P) {
+  const S3 = SPLITTER3;
+  const pump = P.pump || 0;          // 0 forward, 1 racked back
+  const recv = metal3(rgba(38, 38, 40, 255), {
+    gl: 0.42, grain: 0.14, scratch: 0.9, wear: 0.9, grime: 0.7, seed: 51, bevel: 0.6, refl: 0.45,
+    bare: rgba(150, 150, 146, 255),
+    decal: (S) => {
+      if (S.face === F_TOP) {
+        // engraved top plate: a stencilled name between two rivet rows
+        const mid = S.prim.su / 2;
+        if (glyph3('SPLITTER', S.v, S.u - mid + 0.55, 1.2, 0, 1.1)) S.col = mix(S.col, rgba(226, 190, 96, 255), 0.85);
+        if (abs(S.u - mid) > S.prim.su / 2 - 1.1 && ((S.v % 1.6) < 0.2)) S.col = shadeC(S.col, 0.4);
+      }
+      if (S.face === F_LEFT) {
+        if (glyph3('3X FLAK', S.prim.su - S.u, S.v, 1.0, 1.0, 0.9)) S.col = mix(S.col, rgba(206, 196, 160, 255), 0.7);
+      }
+      if (S.face === F_REAR) {
+        // hazard chevrons on the receiver's back plate
+        const t = ((S.u + S.v) * 0.7) % 1;
+        if (S.v > S.prim.sv - 2.0) S.col = mix(S.col, t < 0.5 ? HAZ_Y : rgba(26, 22, 18, 255), 0.8);
+      }
+    },
+  });
+  const steel = metal3(rgba(78, 80, 88, 255), { gl: 0.52, grain: 0.1, scratch: 0.7, wear: 0.7, seed: 53, bevel: 0.25 });
+
+  // ---- receiver: a wide flat-topped block with sloped shoulders ----
+  box3(sc, -4.9, 0, 0, 4.9, 5.6, 11.0, recv, {
+    mod: (C) => {
+      for (const k of [0, 1, 4, 5]) C[k][0] *= 0.84;
+      C[0][2] = C[1][2] = 0.8;            // chamfered top rear edge
+    },
+  });
+  // ---- the barrels ----
+  const blued = heatBlued3({ from: 12, to: S3.brlTo - S3.brlFrom, seed: 55 });
+  for (const [bx, by] of S3.bores) {
+    tube3(sc, [bx, by, S3.brlFrom], [bx, by, S3.brlTo], S3.br, S3.br * 0.97, blued, {
+      segs: 16, rings: 4, capEnd: 'flat',
+      capMat: flat3(rgba(40, 40, 46, 255), 0.5, (S) => { S.col = S.v < 0.72 ? rgba(12, 10, 12, 255) : rgba(120, 120, 128, 255); }),
+    });
+  }
+  // vented ribs in the two valleys, bead on the middle barrel
+  for (const x of [-1.58, 1.58]) {
+    box3(sc, x - 0.28, 0.2, S3.brlFrom + 0.5, x + 0.28, 1.2, S3.brlTo - 0.3, steel);
+  }
+  ball3(sc, [0, -0.2, S3.brlTo - 1.0], 0.34, 0.34, 0.34, flat3(rgba(236, 224, 190, 255), 0.6, null, { em: 0.3 }), { rings: 4, segs: 8 });
+  // a slotted muzzle brake clamped over all three: the business end
+  const brake = metal3(rgba(52, 52, 56, 255), {
+    gl: 0.5, grain: 0.12, scratch: 0.6, wear: 0.9, seed: 61, bevel: 0.35, refl: 0.5,
+    decal: (S) => {
+      if ((S.face === F_TOP || S.face === F_LEFT || S.face === F_RIGHT) && ((S.face === F_TOP ? S.v : S.u) % 1.2) < 0.5
+        && (S.face === F_TOP ? S.v : S.u) > 0.4) { S.col = rgba(12, 10, 10, 255); S.gl = 0.1; }
+    },
+  });
+  box3(sc, -5.1, -0.3, S3.brlTo - 1.2, 5.1, 3.7, S3.brlTo + 2.4, brake, {
+    mod: (C) => { for (const k of [0, 1, 4, 5]) C[k][0] *= 0.86; },
+  });
+  // barrel bands, one at the breech and one at the muzzle
+  for (const z of [S3.brlFrom + 1.4, S3.brlTo - 2.6]) {
+    box3(sc, -5.0, -0.2, z, 5.0, 3.6, z + 1.3, steel, {
+      mod: (C) => { for (const k of [0, 1, 4, 5]) C[k][0] *= 0.9; },
+    });
+  }
+
+  // ---- magazine tube and the pump ----
+  tube3(sc, [0, 4.7, 11], [0, 4.7, S3.brlTo - 1.5], 1.05, 1.05, steel, { segs: 10, capEnd: 'flat' });
+  const pz = -pump * 6.5;
+  push3(sc, mT(0, 0, pz));
+  const woodP = wood3({ seed: 59 });
+  const grooves = Object.assign({}, woodP, {
+    shade(S) {
+      woodP.shade(S);
+      // finger grooves cut along the fore-end
+      if (S.u > 1.2 && S.u < 10.2 && (S.v * 18) % 1 < 0.28) { S.col = shadeC(S.col, 0.5); S.nx *= 0.6; }
+    },
+  });
+  // the fore-end wraps the lower half of all three barrels, so there is wood
+  // to see either side of them from behind
+  loft(sc, [[0, 4.2, 17], [0, 4.2, 18], [0, 4.3, 23], [0, 4.2, 28], [0, 4.2, 29]],
+    (t) => { const e = smoothstep(0, 0.1, t) * smoothstep(1, 0.9, t); return [2.5 + e * 0.3, 5.5 + e * 0.35]; },
+    grooves, { segs: 20, up: [0, 1, 0] });
+  pop3(sc);
+
+  // ---- trigger guard, trigger, pistol grip ----
+  const guard = spline([[0, 5.4, 9.0], [0, 8.4, 8.4], [0, 9.1, 5.8], [0, 8.3, 3.4], [0, 6.9, 2.4]], 4);
+  loft(sc, guard, () => [0.42, 0.7], steel, { segs: 8, up: [1, 0, 0] });
+  loft(sc, spline([[0, 5.4, 5.6], [0, 6.8, 6.0], [0, 7.9, 5.6]], 3), (t) => [0.32, 0.55 - t * 0.1],
+    brass3({ bevel: 0.1 }), { segs: 8, up: [1, 0, 0], capEnd: 'round' });
+  const gTop = [0, 5.2, 1.6], gDir = vNorm([0, 12, -5.4]);
+  const gpts = [];
+  for (let i = 0; i <= 6; i++) gpts.push(vAdd(gTop, vMul(gDir, i * 2.3)));
+  loft(sc, gpts, (t) => [1.75, 2.7 - t * 0.2], tape3(), { segs: 16, up: [1, 0, 0], capEnd: 'flat', capMat: steel });
+
+  // ---- a spent hull flipping out of the port ----
+  if (P.hull) {
+    const t = P.hull;
+    shell3(sc, mChain(mT(6 + t * 7, 1 - t * 8 + t * t * 6, 6 - t * 4), mRZ(1.2 + t * 2.6), mRY(1.2 + t)),
+      { seed: 71, len: 5.8, r: 1.0, spent: 1, hull: rgba(120, 30, 26, 255) });
+  }
+
+  // ---- hands: right on the grip, left on the pump ----
+  const a = gDir, q = vNorm(vCross([1, 0, 0], a));
+  hand3(sc, {
+    c: vAdd(gTop, vMul(a, 0.3)), a, p: [1, 0, 0], q, rp: 1.75, rq: 2.7,
+    s: [null, 2.55, 4.6, 6.5], sMid: 3.8, mcpQ: 0.4, slope: 0.05,
+    triggerL: [[2.4, 6.9, 1.0], [2.0, 6.9, 3.8], [0.9, 6.9, 5.4], [0.3, 6.8, 5.9]],
+    thumbL: [[1.8, 6.4, -2.6], [-0.2, 5.4, -1.8], [-2.2, 4.8, 0.2], [-3.0, 4.4, 2.6], [-3.0, 4.1, 5.0]],
+    thumbCut: 4.2, thumbNailV: 0.4, thumbR: [1.45, 1.2, 1.08, 0.98],
+    wristL: [3.4, 9.4, -3.6], wristQ: -6.6,
+    arm: [0.32, 0.22, -1], armLen: 36, armUp: [1, -0.3, 0], armBend: [0.05, 0.2, 0],
+    tattoo: { u: 16, v: 0.62, s: 2.6 }, seed: 7,
+  });
+  // left hand under the pump: palm below-left, fingers curling up the right side
+  push3(sc, mT(0, 0, pz));
+  const pa = [0, 0, -1], pp = vNorm([-0.35, 1, 0]);
+  const pq = vNorm([1, 0.35, 0]);
+  hand3(sc, {
+    c: [0, 4.2, 27.6], a: pa, p: pp, q: pq, rp: 2.7, rq: 5.7,
+    s: [0, 2.05, 4.05, 5.85], sMid: 2.9, mcpQ: -0.8, slope: 0.0, fscale: 1.0,
+    thumbL: [[-6.2, 8.0, 21.6], [-7.2, 6.0, 23.6], [-6.9, 4.1, 25.6], [-6.5, 3.3, 27.5], [-6.2, 3.0, 29.2]],
+    thumbCut: 4.2, thumbNailV: 0.6, thumbR: [1.45, 1.2, 1.08, 0.98], thumbUp: [0, -1, 0],
+    wristL: [-7.4, 7.4, 22.6], wristQ: -6.4,
+    arm: [-0.62, 0.3, -1], armLen: 38, armUp: [-1, -0.3, 0], armBend: [-0.1, 0.25, 0],
+    tattoo: { u: 14, v: 0.35, s: 2.4, word: 'NUKE' }, seed: 13, pads: false,
+  });
+  pop3(sc);
+
+  return { muzzle: [0, 1.6, S3.brlTo + 2.6] };
+}
+
+/**
+ * The right hand on a pistol grip: gTop is the top of the grip's axis in
+ * gun-local space, gDir runs down it, trig is the trigger's contact point.
+ * The thumb rides the left of the frame at thumbY, pointing forward.
+ */
+function rightGrip3(sc, gTop, gDir, trig, o = {}) {
+  const a = gDir, q = vNorm(vCross([1, 0, 0], a));
+  const T = (dx, dy, dz) => [gTop[0] + dx, gTop[1] + dy, gTop[2] + dz];
+  const ty = o.thumbY === undefined ? -0.6 : o.thumbY;
+  const tx = o.thumbX === undefined ? -3.0 : o.thumbX;
+  hand3(sc, Object.assign({
+    c: vAdd(gTop, vMul(a, 0.3)), a, p: [1, 0, 0], q, rp: o.rp || 1.75, rq: o.rq || 2.7,
+    s: [null, 2.55, 4.6, 6.5], sMid: 3.8, mcpQ: 0.4, slope: 0.05,
+    triggerL: [T(2.4, 1.6, -0.8), T(2.1, 1.5, (trig[2] - gTop[2]) * 0.5), vAdd(trig, [0.9, 0.1, -0.4]), vAdd(trig, [0.3, 0.3, 0.1])],
+    thumbL: [T(1.8, 1.2, -4.2), T(-0.2, 0.2, -3.4), T(tx + 0.8, ty + 0.2, -1.4), T(tx, ty, 1.0), T(tx, ty - 0.2, 3.4)],
+    thumbCut: 4.2, thumbNailV: 0.4, thumbR: [1.45, 1.2, 1.08, 0.98],
+    wristL: T(3.4, 4.2, -5.2), wristQ: -6.6,
+    arm: [0.3, 0.24, -1], armLen: 36, armUp: [1, -0.3, 0], armBend: [0.05, 0.2, 0],
+    tattoo: { u: 16, v: 0.62, s: 2.6 }, seed: 7,
+  }, o.hand || {}));
+}
+
+/**
+ * The left hand under a horizontal fore-end whose axis runs along z through
+ * (cx, cy): palm below, fingers curling up the far side, thumb along the near
+ * side, forearm coming in from the lower left. `hw`, `hh` are its half sizes.
+ */
+function leftForeGrip3(sc, cx, cy, z, hw, hh, o = {}) {
+  hand3(sc, Object.assign({
+    c: [cx, cy, z], a: [0, 0, -1], p: vNorm([-0.35, 1, 0]), q: vNorm([1, 0.35, 0]), rp: hh + 0.2, rq: hw,
+    s: [0, 2.05, 4.05, 5.85], sMid: 2.9, mcpQ: -0.8, slope: 0.0,
+    thumbL: [[cx - hw - 0.5, cy + hh + 1.8, z - 6], [cx - hw - 1.5, cy + hh * 0.6 + 0.4, z - 4],
+      [cx - hw - 1.2, cy - hh * 0.05, z - 2], [cx - hw - 0.8, cy - hh * 0.35, z - 0.1], [cx - hw - 0.5, cy - hh * 0.45, z + 1.6]],
+    thumbCut: 4.2, thumbNailV: 0.6, thumbR: [1.45, 1.2, 1.08, 0.98], thumbUp: [0, -1, 0],
+    wristL: [cx - hw - 1.7, cy + hh + 1.2, z - 5.0], wristQ: -6.4,
+    arm: [-0.62, 0.3, -1], armLen: 38, armUp: [-1, -0.3, 0], armBend: [-0.1, 0.25, 0],
+    tattoo: { u: 14, v: 0.35, s: 2.4, word: 'NUKE' }, seed: 13, pads: false,
+  }, o));
+}
+
+// ---------------------------------------------------------------------------
+// WEAPON 3 - THE NAILDRIVER: a rotary rivet gun off the plant floor
+// ---------------------------------------------------------------------------
+
+const NAILER3 = {
+  pos: [6.5, 5.6, 13], yaw: -0.3, pitch: 0.0, roll: 0.28,
+  axis: [0, 3.2], barrelsFrom: 13.6, barrelsTo: 36,
+};
+
+/** Industrial yellow paint over steel, chipped at every edge. */
+function paint3(col, o = {}) {
+  return metal3(col, {
+    gl: 0.36, grain: 0.12, brush: 0.02, scratch: 1.2, wear: 1.0, grime: 0.8, seed: o.seed || 81,
+    bare: rgba(150, 150, 150, 255), bevel: o.bevel, decal: o.decal, refl: 0.35,
+  });
+}
+
+function drawNailer3(sc, P) {
+  const N3 = NAILER3;
+  const spin = P.spin || 0;
+  const heat = P.heat || 0;
+  const [ax, ay] = N3.axis;
+  const steel = metal3(rgba(74, 76, 84, 255), { gl: 0.55, grain: 0.1, scratch: 0.7, wear: 0.7, seed: 83, bevel: 0.25 });
+  const dark = metal3(rgba(40, 40, 46, 255), { gl: 0.45, grain: 0.12, scratch: 0.6, wear: 0.5, seed: 85, bevel: 0.3 });
+  const body = paint3(INDY, {
+    bevel: 0.7,
+    decal: (S) => {
+      if (S.face === F_TOP || S.face === F_LEFT) {
+        // hazard stripes at the front of the housing
+        const f = S.face === F_TOP ? S.v : S.u;
+        const g = S.face === F_TOP ? S.u : S.v;
+        if (f > S.prim.su * 0 + (S.face === F_TOP ? S.prim.sv : S.prim.su) - 3.2) {
+          const t = ((f + g) * 0.55) % 1;
+          S.col = mix(S.col, t < 0.5 ? rgba(20, 18, 16, 255) : S.col, 0.85);
+        }
+      }
+      if (S.face === F_LEFT) {
+        if (glyph3('NAILDRIVER', S.prim.su - S.u, S.v, 1.4, 1.2, 1.0)) S.col = mix(S.col, rgba(24, 20, 16, 255), 0.85);
+        if (glyph3('DANGER 900 PSI', S.prim.su - S.u, S.v, 1.4, 3.0, 0.55)) S.col = mix(S.col, rgba(150, 30, 24, 255), 0.85);
+        // cooling slots
+        if (S.u > 10 && S.u < 13.4 && S.v > 1.4 && S.v < 5.2 && ((S.v * 1.4) % 1) < 0.45) {
+          S.col = rgba(16, 14, 12, 255); S.gl = 0.1; S.ao *= 0.6;
+        }
+      }
+      if (S.face === F_REAR) {
+        if (glyph3('NO', S.u, S.v, 1.6, 1.0, 1.2)) S.col = mix(S.col, rgba(24, 20, 16, 255), 0.8);
+      }
+    },
+  });
+
+  // ---- motor housing ----
+  box3(sc, -3.4, 0, 0, 3.4, 6.8, 13.8, body, {
+    mod: (C) => { for (const k of [0, 1, 4, 5]) C[k][0] *= 0.78; C[4][1] = C[5][1] = 0.6; },
+  });
+  // front bearing plate
+  box3(sc, -3.9, -0.4, 13.0, 3.9, 7.1, 14.6, dark);
+  // top rail with a peep sight
+  box3(sc, -0.6, -0.8, 1.0, 0.6, 0.05, 12.6, steel);
+  box3(sc, -1.0, -2.0, 1.5, 1.0, -0.7, 2.6, steel, { mod: (C) => { C[0][0] += 0.3; C[1][0] -= 0.3; } });
+
+  // ---- the pressure gauge on the back, where he can watch it ----
+  push3(sc, mChain(mT(-3.4, 1.6, 3.0), mRY(-1.1), mRX(0.35)));
+  tube3(sc, [0, 0, 0], [0, 0, 1.4], 1.9, 1.9, steel, { segs: 16, capEnd: 'flat', capStart: 'flat',
+    capMat: flat3(DIAL_FACE, 0.5, (S) => {
+      const r = S.v, ang = S.u * TAU;
+      let c = rgba(232, 226, 206, 255);
+      if (r > 0.86) c = rgba(40, 40, 44, 255);
+      else if (r > 0.62 && ang > 3.6 && ang < 5.2) c = rgba(200, 40, 30, 255);      // red zone
+      else if (r > 0.62 && (floor(ang * 6) & 1)) c = rgba(40, 36, 32, 255);
+      // needle, sitting high in the red when firing
+      const na = lerp(1.2, 4.4, P.pressure === undefined ? 0.55 : P.pressure);
+      let da = ang - na; if (da > PI) da -= TAU; if (da < -PI) da += TAU;
+      if (abs(da) < 0.12 && r < 0.8) c = rgba(190, 20, 20, 255);
+      if (r < 0.14) c = rgba(30, 30, 30, 255);
+      S.col = c; S.gl = 0.7;
+    }) });
+  pop3(sc);
+
+  // ---- the barrel cluster: six rivet barrels round an axle, spinning ----
+  const blued = heatBlued3({ from: 6, to: N3.barrelsTo - N3.barrelsFrom, seed: 87, col: rgba(84, 86, 96, 255) });
+  push3(sc, mAbout(ax, ay, 0, mRZ(spin)));
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * TAU;
+    const bx = ax + cos(a) * 2.6, by = ay + sin(a) * 2.6;
+    tube3(sc, [bx, by, N3.barrelsFrom], [bx, by, N3.barrelsTo], 0.95, 0.92, blued, {
+      segs: 10, rings: 3, capEnd: 'flat',
+      capMat: flat3(rgba(30, 30, 34, 255), 0.4, (S) => {
+        S.col = S.v < 0.55 ? mix(rgba(12, 10, 12, 255), hotColor(0.3), heat * 0.8) : rgba(110, 110, 120, 255);
+        S.em = S.v < 0.55 ? heat * 0.8 : 0;
+      }),
+    });
+  }
+  tube3(sc, [ax, ay, N3.barrelsFrom], [ax, ay, N3.barrelsTo + 0.6], 1.2, 1.2, steel, { segs: 10, capEnd: 'flat' });
+  // clamp discs, with a flat so the spin reads
+  for (const z of [N3.barrelsFrom + 1.4, (N3.barrelsFrom + N3.barrelsTo) / 2, N3.barrelsTo - 1.4]) {
+    tube3(sc, [ax, ay, z - 0.6], [ax, ay, z + 0.6], 4.0, 4.0, Object.assign({}, dark, {
+      shade(S) {
+        dark.shade(S);
+        const k = (S.v * 6) % 1;
+        if (k < 0.18) S.col = HAZ_Y;
+      },
+    }), { segs: 18, capStart: 'flat', capEnd: 'flat' });
+  }
+  pop3(sc);
+
+  // ---- nail drum on the left, with a window full of nails ----
+  // a pan magazine lying flat on top, Lewis-gun style, so he can watch it empty
+  push3(sc, mChain(mT(1.2, -0.4, 5.6), mRX(PI / 2)));
+  const drumMat = paint3(rgba(58, 60, 62, 255), { seed: 89, bevel: 0.3 });
+  tube3(sc, [0, 0, -0.2], [0, 0, 1.7], 3.7, 3.7, drumMat, {
+    segs: 24, capEnd: 'flat', capStart: 'flat',
+    capMat: flat3(rgba(64, 66, 70, 255), 0.5, (S) => {
+      const r = S.v, ang = S.u * TAU;
+      let c = shadeC(rgba(66, 68, 72, 255), 0.9 + nz3(r * 3, ang) * 0.2);
+      // a spiral window showing the coil of nails
+      const sp = (r * 5 - ang / TAU * 1.0) % 1;
+      if (r > 0.25 && r < 0.9 && ang > 0.6 && ang < 2.9) {
+        c = sp < 0.5 ? rgba(186, 186, 194, 255) : rgba(26, 24, 26, 255);
+        S.gl = 0.8;
+      }
+      if (r > 0.94) c = HAZ_Y;
+      if (r < 0.14) c = rgba(170, 170, 176, 255);
+      S.col = c;
+    }),
+  });
+  pop3(sc);
+
+  // ---- air hose: out of the back, down and away ----
+  const hose = spline([[2.4, 6.2, 1.0], [3.6, 7.6, -2.0], [4.4, 10.5, -3.6], [5.2, 16, -3.0], [6.0, 24, -2.0]], 4);
+  loft(sc, hose, () => 1.05, {
+    col: rgba(150, 40, 30, 255), gl: 0.35,
+    shade(S) {
+      let c = shadeC(S.col, 0.85 + nz3(S.u, S.v * 4) * 0.3);
+      if ((S.u * 2.2) % 1 < 0.3) { c = shadeC(c, 0.62); S.nz -= 0.2; }          // ribbing
+      c = mix(c, rgba(20, 10, 8, 255), clamp((1 - S.ao) * 1.2, 0, 0.6));
+      S.col = c;
+    },
+  }, { segs: 12, up: [1, 0, 0] });
+  tube3(sc, [2.2, 5.8, 1.6], [2.4, 6.3, -0.4], 1.4, 1.4, brass3({ seed: 91 }), { segs: 12 });
+
+  // ---- grips: pistol grip at the back, a side handle up front ----
+  const gTop = [0, 6.6, 2.2], gDir = vNorm([0, 12, -4.8]);
+  const gpts = [];
+  for (let i = 0; i <= 6; i++) gpts.push(vAdd(gTop, vMul(gDir, i * 2.3)));
+  loft(sc, gpts, (t) => [1.75, 2.7 - t * 0.2], {
+    col: rgba(34, 32, 30, 255), gl: 0.3,
+    shade(S) {
+      const k = (S.u * 1.6) % 1;
+      S.col = shadeC(S.col, k < 0.25 ? 0.6 : 1.0 + nz3(S.u, S.v * 5) * 0.3);
+      S.col = mix(S.col, rgba(8, 8, 8, 255), clamp((1 - S.ao) * 1.0, 0, 0.6));
+    },
+  }, { segs: 16, up: [1, 0, 0], capEnd: 'flat', capMat: dark });
+  const guard = spline([[0, 6.6, 9.5], [0, 9.2, 8.8], [0, 9.8, 6.2], [0, 9.0, 4.0], [0, 7.6, 3.0]], 4);
+  loft(sc, guard, () => [0.42, 0.7], dark, { segs: 8, up: [1, 0, 0] });
+  loft(sc, spline([[0, 6.6, 6.2], [0, 7.8, 6.6], [0, 8.8, 6.2]], 3), (t) => [0.34, 0.6 - t * 0.1],
+    paint3(rgba(190, 40, 30, 255), { seed: 93 }), { segs: 8, up: [1, 0, 0], capEnd: 'round' });
+  // a vertical grip on an outrigger off the left flank, for the other hand
+  box3(sc, -6.4, 3.0, 10.6, -3.2, 4.4, 13.0, dark);
+  const vgTop = [-5.6, 4.4, 11.8], vgDir = vNorm([0, 1, -0.25]);
+  const vg = [];
+  for (let i = 0; i <= 5; i++) vg.push(vAdd(vgTop, vMul(vgDir, i * 2.0)));
+  loft(sc, vg, (t) => [1.45, 1.8 - t * 0.15], {
+    col: rgba(40, 38, 36, 255), gl: 0.3,
+    shade(S) {
+      const k = (S.u * 1.4) % 1;
+      S.col = shadeC(S.col, k < 0.28 ? 0.62 : 1.0 + nz3(S.u, S.v * 5) * 0.25);
+      S.col = mix(S.col, rgba(8, 8, 8, 255), clamp((1 - S.ao) * 1.0, 0, 0.6));
+    },
+  }, { segs: 14, capEnd: 'round', up: [1, 0, 0] });
+
+  rightGrip3(sc, gTop, gDir, [0, 7.8, 6.6], { thumbY: -1.2, thumbX: -3.7 });
+  // left hand on the vertical grip: palm on its left, fingers round the front
+  const la = vgDir, lp = [-1, 0, 0], lq = vNorm(vMul(vCross(lp, la), -1));
+  hand3(sc, {
+    c: vAdd(vgTop, vMul(la, 0.4)), a: la, p: lp, q: lq, rp: 1.45, rq: 1.8,
+    s: [0.4, 2.45, 4.45, 6.25], sMid: 3.3, mcpQ: 0.4, slope: 0.0,
+    thumbL: [[-8.4, 6.6, 7.4], [-7.4, 5.0, 8.6], [-5.6, 4.6, 9.6], [-4.0, 5.0, 10.2], [-3.4, 5.4, 11.2]],
+    thumbCut: 4.2, thumbNailV: 0.6, thumbR: [1.45, 1.2, 1.08, 0.98], thumbUp: [0, -1, 0],
+    wristL: [-9.0, 8.2, 7.0], wristQ: -6.4,
+    arm: [-0.55, 0.3, -1], armLen: 38, armUp: [-1, -0.3, 0], armBend: [-0.1, 0.25, 0],
+    tattoo: { u: 14, v: 0.35, s: 2.4, word: 'NUKE' }, seed: 13,
+  });
+
+  return { muzzle: [ax, ay, N3.barrelsTo + 0.6] };
+}
+
+// ---------------------------------------------------------------------------
+// WEAPON 4 - THE HALO: flak-ring projector
+// ---------------------------------------------------------------------------
+
+const HALO3 = {
+  pos: [6.0, 6.0, 12], yaw: -0.25, pitch: 0.0, roll: 0.2,
+  ringZ: 34, ringR: 4.8,
+};
+
+function drawHalo3(sc, P) {
+  const H3 = HALO3;
+  const charge = P.charge === undefined ? 1 : P.charge;
+  const arc = P.arc || 0;
+  const body = metal3(CHAR, {
+    gl: 0.5, grain: 0.1, scratch: 0.8, wear: 0.6, grime: 0.6, seed: 101, bevel: 0.6,
+    bare: rgba(160, 164, 176, 255),
+    decal: (S) => {
+      if (S.face === F_LEFT) {
+        if (glyph3('HALO', S.prim.su - S.u, S.v, 2.0, 1.1, 1.3)) S.col = mix(S.col, CYAN, 0.7);
+        if (glyph3('RING PROJECTOR MK2', S.prim.su - S.u, S.v, 2.0, 3.0, 0.45)) S.col = mix(S.col, rgba(170, 176, 190, 255), 0.6);
+      }
+      if (S.face === F_TOP && abs(S.u - S.prim.su / 2) < 0.35) { S.col = mix(S.col, CYAN_D, 0.6); S.em = 0.3 * charge; }
+    },
+  });
+  const steel = metal3(rgba(90, 92, 100, 255), { gl: 0.6, grain: 0.1, scratch: 0.6, wear: 0.6, seed: 103, bevel: 0.25 });
+  const copper = metal3(COPPER, {
+    gl: 0.7, grain: 0.1, brush: 0.2, scratch: 0.3, wear: 0.3, seed: 105, bare: rgba(240, 180, 130, 255),
+  });
+  const glow = (k) => flat3(CYAN, 0.2, (S) => {
+    const f = 0.7 + 0.3 * sin(S.u * 3 + S.v * 20);
+    S.col = mix(CYAN_D, rgba(220, 250, 255, 255), clamp(k * f, 0, 1)); S.em = clamp(0.4 + k * 0.6, 0, 1);
+  });
+
+  // ---- the spine ----
+  box3(sc, -3.0, 0, 0, 3.0, 6.4, 20, body, {
+    mod: (C) => { for (const k of [0, 1, 4, 5]) C[k][0] *= 0.7; for (const k of [4, 5, 6, 7]) { C[k][0] *= 0.85; } C[7][1] = C[6][1] = 5.2; },
+  });
+  // barrel: a fat tube out to the emitter
+  tube3(sc, [0, 3.0, 19], [0, 3.0, H3.ringZ], 1.9, 1.7, steel, { segs: 16, rings: 3 });
+  // capacitor coils down both flanks: copper windings between steel end caps
+  for (const sx of [-1, 1]) {
+    const cx = sx * 3.7;
+    tube3(sc, [cx, 1.4, 4], [cx, 1.4, 17], 1.35, 1.35, Object.assign({}, copper, {
+      shade(S) {
+        copper.shade(S);
+        const k = (S.u * 1.7) % 1;
+        S.col = shadeC(S.col, k < 0.3 ? 0.55 : 1.08);
+        S.ny += k < 0.3 ? 0.25 : -0.1;
+      },
+    }), { segs: 14, rings: 6 });
+    for (const z of [3.4, 17.6]) tube3(sc, [cx, 1.4, z - 0.6], [cx, 1.4, z + 0.6], 1.6, 1.6, steel, { segs: 14, capStart: 'flat', capEnd: 'flat' });
+    // a glowing charge strip on each coil
+    tube3(sc, [cx, -0.05, 5], [cx, -0.05, 16], 0.25, 0.25, glow(charge), { segs: 6 });
+  }
+  // ---- the readout, tilted up at him ----
+  push3(sc, mChain(mT(0, -1.2, 2.6), mRX(-0.7)));
+  box3(sc, -2.4, -1.6, -0.3, 2.4, 1.6, 0.6, steel);
+  box3(sc, -2.0, -1.25, -0.45, 2.0, 1.25, 0.0, flat3(rgba(10, 20, 24, 255), 0.6, (S) => {
+    // charge bars and a two-digit count
+    const u = S.u, v = S.v;
+    let c = rgba(8, 18, 22, 255), em = 0.2;
+    if (v > 0.35 && v < 1.0) {
+      const cell = floor(u / 0.62);
+      if ((u % 0.62) < 0.46 && cell < 6) {
+        const lit = cell < charge * 6;
+        c = lit ? mix(CYAN_D, CYAN, 0.8) : rgba(20, 44, 52, 255); em = lit ? 0.95 : 0.2;
+      }
+    }
+    if (glyph3(charge > 0.95 ? 'READY' : 'CHRG', u, v, 0.35, 1.3, 0.8)) { c = CYAN; em = 0.9; }
+    // scanlines
+    if ((floor(S.y) & 1) === 0) c = shadeC(c, 0.85);
+    S.col = c; S.em = em; S.gl = 0.7;
+  }), { bias: 0.002 });
+  pop3(sc);
+
+  // ---- the emitter ring, facing away: a torus round the barrel axis ----
+  const ringMat = metal3(rgba(120, 124, 136, 255), { gl: 0.7, grain: 0.08, scratch: 0.5, wear: 0.4, seed: 107 });
+  const RN = 28, rr = H3.ringR, tr = 1.0;
+  const rpts = [];
+  for (let k = 0; k <= RN; k++) { const a = (k / RN) * TAU; rpts.push([cos(a) * rr, 3.0 + sin(a) * rr, H3.ringZ]); }
+  loft(sc, rpts, () => [tr, tr * 1.5], ringMat, { segs: 10, up: [0, 0, 1] });
+  // an inner ring of emitter pips, lit by the charge
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * TAU + 0.2;
+    ball3(sc, [cos(a) * (rr - 1.2), 3.0 + sin(a) * (rr - 1.2), H3.ringZ - 0.4], 0.5, 0.5, 0.5, glow(charge * 0.9 + 0.1), { rings: 5, segs: 8 });
+  }
+  // struts from the barrel out to the ring
+  for (let k = 0; k < 4; k++) {
+    const a = (k / 4) * TAU + PI / 4;
+    tube3(sc, [cos(a) * 1.6, 3.0 + sin(a) * 1.6, H3.ringZ - 4], [cos(a) * (rr - 0.6), 3.0 + sin(a) * (rr - 0.6), H3.ringZ - 0.3],
+      0.4, 0.35, steel, { segs: 8 });
+  }
+  // ---- crackle: arcs jumping round the ring (emissive, no lighting) ----
+  if (arc > 0.02) {
+    const rng = makeRng(1101 + floor((P.arcPhase || 0) * 97));
+    const boltMat = flat3(rgba(200, 250, 255, 255), 0.1, (S) => { S.col = mix(CYAN, rgba(240, 255, 255, 255), 0.6); S.em = 1; });
+    const nb = 2 + floor(arc * 5);
+    for (let b = 0; b < nb; b++) {
+      const a0 = rng() * TAU, span = 0.5 + rng() * 0.9;
+      const pts = [];
+      for (let k = 0; k <= 6; k++) {
+        const a = a0 + span * (k / 6);
+        const off = (rng() - 0.5) * 1.6 * arc;
+        pts.push([cos(a) * (rr + off), 3.0 + sin(a) * (rr + off), H3.ringZ + (rng() - 0.5) * 1.5]);
+      }
+      loft(sc, pts, () => 0.16 + arc * 0.1, boltMat, { segs: 4, up: [0, 0, 1] });
+    }
+  }
+
+  // ---- grips ----
+  const gTop = [0, 6.2, 3.2], gDir = vNorm([0, 12, -4.2]);
+  const gpts = [];
+  for (let i = 0; i <= 6; i++) gpts.push(vAdd(gTop, vMul(gDir, i * 2.3)));
+  loft(sc, gpts, (t) => [1.75, 2.7 - t * 0.2], {
+    col: rgba(40, 42, 50, 255), gl: 0.35,
+    shade(S) {
+      const k = ((floor(S.u * 3) + floor(S.v * 20)) & 1);
+      S.col = shadeC(S.col, k ? 1.1 : 0.82);
+      S.col = mix(S.col, rgba(8, 8, 10, 255), clamp((1 - S.ao) * 1.0, 0, 0.6));
+    },
+  }, { segs: 16, up: [1, 0, 0], capEnd: 'flat', capMat: steel });
+  const guard = spline([[0, 6.2, 10.4], [0, 8.8, 9.8], [0, 9.4, 7.2], [0, 8.6, 5.0], [0, 7.2, 4.0]], 4);
+  loft(sc, guard, () => [0.42, 0.7], steel, { segs: 8, up: [1, 0, 0] });
+  loft(sc, spline([[0, 6.2, 7.2], [0, 7.4, 7.6], [0, 8.4, 7.2]], 3), (t) => [0.34, 0.6 - t * 0.1],
+    glow(0.5), { segs: 8, up: [1, 0, 0], capEnd: 'round' });
+  // fore-grip: a chunky block under the front of the spine
+  box3(sc, -2.6, 5.4, 12.5, 2.6, 8.2, 19.5, body);
+  rightGrip3(sc, gTop, gDir, [0, 7.4, 7.6], { thumbY: -0.8, thumbX: -3.4 });
+  leftForeGrip3(sc, 0, 6.8, 18.6, 2.7, 1.5);
+
+  return { muzzle: [0, 3.0, H3.ringZ + 0.8] };
+}
+
+// ---------------------------------------------------------------------------
+// WEAPON 6 - DEADMAN'S SWITCH: a detonator you hold, and a thumb on it
+// ---------------------------------------------------------------------------
+
+const DEADMAN3 = {
+  pos: [6.4, 8.8, 19], yaw: -0.3, pitch: 0.6, roll: 0.22,
+};
+
+function drawDeadman3(sc, P) {
+  const cover = clamp(P.cover || 0, 0, 1);
+  const plunge = clamp(P.plunge || 0, 0, 1);
+  const lamp = clamp(P.lamp || 0, 0, 1);
+  const count = P.count === undefined ? '09' : String(P.count);
+  const alum = metal3(ALUM, {
+    gl: 0.5, grain: 0.14, brush: 0.12, scratch: 1.0, wear: 0.7, grime: 0.7, seed: 121, bevel: 0.6,
+    bare: rgba(210, 212, 218, 255),
+    decal: (S) => {
+      if (S.face !== F_TOP) return;
+      const u = S.u, v = S.v;
+      // warning plate at the back of the top face
+      if (v < 3.2 && v > 0.6 && u > 0.8 && u < S.prim.su - 0.8) {
+        const t = ((u + v) * 0.8) % 1;
+        S.col = v < 1.0 || v > 2.8 ? (t < 0.5 ? HAZ_Y : rgba(24, 20, 18, 255)) : rgba(214, 196, 60, 255);
+        if (v >= 1.0 && v <= 2.8 && glyph3('DO NOT', u, S.prim.sv - v, 1.4, S.prim.sv - 2.8, 0.62)) S.col = rgba(20, 16, 14, 255);
+        if (v >= 1.0 && v <= 2.8 && glyph3('PRESS', u, S.prim.sv - v, 1.6, S.prim.sv - 2.0, 0.62)) S.col = rgba(20, 16, 14, 255);
+        S.gl = 0.3;
+      }
+      if (glyph3('S-9', u, S.prim.sv - v, 0.8, 0.8, 0.8)) S.col = mix(S.col, rgba(40, 40, 44, 255), 0.7);
+    },
+  });
+  const steel = metal3(rgba(96, 98, 106, 255), { gl: 0.6, grain: 0.1, scratch: 0.6, wear: 0.6, seed: 123, bevel: 0.2 });
+
+  // ---- the case: z forward, top face toward him ----
+  box3(sc, -3.6, 0, 0, 3.6, 4.4, 14.5, alum);
+  // countdown window near the back
+  box3(sc, -2.4, -0.25, 3.8, 2.4, 0.05, 6.4, flat3(rgba(20, 16, 14, 255), 0.6, (S) => {
+    let c = rgba(24, 8, 6, 255), em = 0.3;
+    if (glyph3(count.slice(0, 2), S.u, S.prim.sv - S.v, 0.9, 0.45, 1.6)) { c = rgba(255, 70, 40, 255); em = 1; }
+    S.col = c; S.em = em; S.gl = 0.7;
+  }), { skip: (1 << F_BOT) });
+  // arming lamp
+  ball3(sc, [2.4, -0.1, 8.0], 0.7, 0.5, 0.7, flat3(rgba(80, 20, 16, 255), 0.6, (S) => {
+    S.col = mix(rgba(90, 22, 18, 255), rgba(255, 150, 110, 255), lamp); S.em = 0.2 + lamp * 0.8;
+  }), { rings: 5, segs: 10 });
+  // the button: chrome collar, big red mushroom, pushed down by `plunge`
+  const bz = 10.2;
+  tube3(sc, [0, -0.6, bz], [0, 0.05, bz], 2.4, 2.4, steel, { segs: 18, capStart: 'flat' });
+  push3(sc, mT(0, plunge * 0.9, 0));
+  const red = {
+    col: rgba(206, 34, 28, 255), gl: 0.7,
+    shade(S) {
+      const n = nz3(S.u * 2, S.v * 6);
+      S.col = mix(shadeC(S.col, 0.85 + n * 0.3), rgba(250, 120, 100, 255), clamp(-S.ny - 0.6, 0, 1) * 0.5);
+      if (plunge > 0.5) S.em = 0.2;
+    },
+  };
+  push3(sc, mChain(mT(0, -1.2, bz), mRX(-PI / 2)));
+  ball3(sc, [0, 0, 0], 2.0, 2.0, 1.1, red, { rings: 8, segs: 16 });
+  pop3(sc);
+  pop3(sc);
+  // ---- the flip cover, hinged at the front edge of the button well ----
+  const ca = -cover * 2.0;
+  push3(sc, mAbout(0, -0.6, bz + 2.8, mRX(-ca)));
+  const coverMat = metal3(rgba(160, 40, 34, 255), {
+    gl: 0.5, grain: 0.12, scratch: 1.0, wear: 0.9, grime: 0.5, seed: 125, bevel: 0.3, refl: 0.5,
+    bare: rgba(200, 200, 206, 255),
+    decal: (S) => {
+      if (S.face === F_TOP && glyph3('ARM', S.u, S.prim.sv - S.v, 1.2, 1.4, 1.2)) S.col = rgba(236, 226, 206, 255);
+      if (S.face === F_TOP) {
+        const t = ((S.u + S.v) * 0.9) % 1;
+        if (S.v > S.prim.sv - 1.0) S.col = mix(S.col, t < 0.5 ? HAZ_Y : rgba(24, 20, 18, 255), 0.85);
+      }
+    },
+  });
+  box3(sc, -2.8, -3.2, bz - 2.8, 2.8, -2.7, bz + 2.8, coverMat);
+  box3(sc, -2.8, -3.2, bz - 2.8, -2.4, -0.6, bz + 2.8, coverMat);
+  box3(sc, 2.4, -3.2, bz - 2.8, 2.8, -0.6, bz + 2.8, coverMat);
+  box3(sc, -2.8, -3.2, bz - 3.2, 2.8, -0.6, bz - 2.8, coverMat);
+  pop3(sc);
+  tube3(sc, [-3.0, -0.6, bz + 2.8], [3.0, -0.6, bz + 2.8], 0.45, 0.45, steel, { segs: 8, capStart: 'flat', capEnd: 'flat' });
+  // ---- wires out of the back, taped, running off down the arm ----
+  for (const [wx, col] of [[-1.6, rgba(170, 36, 30, 255)], [0, rgba(36, 34, 40, 255)], [1.6, rgba(200, 170, 40, 255)]]) {
+    const w = spline([[wx, 2.2, 0.4], [wx * 1.3, 3.2, -2.5], [wx * 1.8 + 2, 7, -5], [wx * 2 + 5, 14, -6]], 4);
+    loft(sc, w, () => 0.42, flat3(col, 0.5, (S) => {
+      S.col = mix(shadeC(col, 0.9 + nz3(S.u, S.v * 3) * 0.2), rgba(10, 8, 8, 255), clamp((1 - S.ao) * 1.2, 0, 0.6));
+    }), { segs: 8, up: [1, 0, 0] });
+  }
+  // ---- the hand: fingers round the case, thumb on the button ----
+  const thumbDown = plunge * 0.9;
+  hand3(sc, {
+    c: [0, 2.2, 7.6], a: [0, 0, -1], p: [1, 0, 0], q: [0, 1, 0], rp: 3.6, rq: 2.2,
+    s: [-2.2, -0.2, 1.8, 3.6], sMid: 0.6, mcpQ: -1.0, slope: 0, wrap: 1,
+    thumbL: [[5.2, 2.0, 3.0], [4.8, -0.2, 5.4], [3.0, -1.6 + thumbDown * 0.5, 7.6], [1.2, -1.9 + thumbDown, 9.2],
+      [0.2, -2.0 + thumbDown, 10.4]],
+    thumbCut: 4.6, thumbNailV: 0.5, thumbR: [1.6, 1.35, 1.15, 1.05], thumbUp: [0, -1, 0],
+    wristL: [5.8, 3.6, 0.8], wristQ: -6.0,
+    arm: [0.5, 0.35, -1], armLen: 36, armUp: [1, -0.4, 0], armBend: [0.05, 0.2, 0],
+    tattoo: { u: 15, v: 0.6, s: 2.6 }, seed: 7,
+  });
+  return { muzzle: [0, -2, bz] };
+}
+
+// ---------------------------------------------------------------------------
+// THE BOOT: first person kick, seen from above and behind
+// ---------------------------------------------------------------------------
+// Boot-local space: the sole's centre line at y = 0, toe toward +z, the top of
+// the foot toward -y. The camera sees the laces, the toe cap and the shin.
+
+const BOOT3_LEATHER = rgba(30, 28, 28, 255);
+
+/** Polished black leather: mostly highlight, a few scuffs gone grey. */
+function bootLeather3(o = {}) {
+  return {
+    col: BOOT3_LEATHER, gl: 0.5,
+    shade(S) {
+      const n = nz3(S.u * 0.5 + 7, S.v * 3);
+      const f = nz3(S.u * 2.2, S.v * 11);
+      let c = shadeC(BOOT3_LEATHER, 0.86 + n * 0.3 + (f - 0.5) * 0.12);
+      // scuffs where the polish has gone
+      const sc2 = nz3(S.u * 0.3 + 3, S.v * 1.6);
+      if (sc2 > 0.68) c = mix(c, rgba(96, 84, 76, 255), (sc2 - 0.68) * 2.2);
+      if (o.mud) c = mix(c, MUD, clamp((nz3(S.u * 0.5, S.v * 2.4 + 5) - 0.55) * 2.5 * o.mud, 0, 0.8));
+      c = mix(c, rgba(8, 6, 6, 255), clamp((1 - S.ao) * 1.0, 0, 0.6));
+      const h = studio3(S) * 0.38;
+      if (h > 0.02) { c = mix(c, rgba(150, 146, 142, 255), clamp(h, 0, 0.5)); S.em = max(S.em, h * 0.4); }
+      S.col = c; S.gl = 0.5 + f * 0.2;
+      if (o.decal) o.decal(S);
+    },
+  };
+}
+
+// the last the boot is built on, as a table: z, centre height, half height,
+// half width. The sole sits flat at y = +1.3 all the way along.
+const BOOT_LAST = [
+  [-6, -3.0, 4.3, 3.7], [0, -3.2, 4.6, 3.9], [6, -2.8, 4.1, 4.1], [12, -2.2, 3.4, 4.4],
+  [18, -1.5, 2.8, 4.6], [22, -1.1, 2.4, 4.3], [25, -0.8, 2.0, 3.4],
+];
+function bootAt(z) {
+  const T = BOOT_LAST;
+  if (z <= T[0][0]) return T[0];
+  for (let i = 1; i < T.length; i++) {
+    if (z <= T[i][0]) {
+      const t = (z - T[i - 1][0]) / (T[i][0] - T[i - 1][0]);
+      return [z, lerp(T[i - 1][1], T[i][1], t), lerp(T[i - 1][2], T[i][2], t), lerp(T[i - 1][3], T[i][3], t)];
+    }
+  }
+  return T[T.length - 1];
+}
+
+function drawBoot3(sc, P) {
+  const blood = P.blood || 0;
+  // ---- the foot ----
+  const lth = bootLeather3({
+    mud: P.mud || 0,
+    decal: (S) => {
+      // the tongue under the laces, with its stitched edge
+      const top = S.v < 0.09 || S.v > 0.91;
+      if (top && S.u > 6 && S.u < 20) {
+        S.col = shadeC(S.col, 1.25);
+        const e = min(abs(S.v - 0.09), abs(S.v - 0.91));
+        if (e < 0.012 && (floor(S.u * 3) & 1)) S.col = rgba(140, 120, 90, 255);
+      }
+    },
+  });
+  const fp = [], fr = [];
+  for (let z = -6; z <= 25; z += 1.5) {
+    const b = bootAt(z);
+    fp.push([0, b[1], z]); fr.push([b[2], b[3]]);
+  }
+  loft(sc, fp, (t, i) => fr[min(fr.length - 1, i)], lth, { segs: 18, up: [0, -1, 0], capEnd: 'round', capLen: 0.7 });
+  // ---- steel toe cap, the leather long since worn off it ----
+  const toe = metal3(rgba(104, 106, 114, 255), { gl: 0.66, grain: 0.12, scratch: 1.4, wear: 0.4, seed: 131, refl: 0.55 });
+  const tp = [], tr = [];
+  for (let z = 18.5; z <= 25; z += 1.3) { const b = bootAt(z); tp.push([0, b[1], z]); tr.push([b[2] + 0.14, b[3] + 0.14]); }
+  loft(sc, tp, (t, i) => tr[min(tr.length - 1, i)], Object.assign({}, toe, {
+    shade(S) {
+      toe.shade(S);
+      // blood: a splash on the cap and a few spots, not a paint job
+      if (blood > 0) {
+        const bn = nz3(S.u * 1.1 + 4, S.v * 5.5);
+        if (bn > 0.66 - blood * 0.12) { S.col = mix(S.col, rgba(150, 10, 14, 255), 0.9); S.gl = 0.85; }
+      }
+    },
+  }), { segs: 18, up: [0, -1, 0], capEnd: 'round', capLen: 0.75, bias: 0.004 });
+  // ---- sole: a thick lugged slab, mud in the tread ----
+  const sole = {
+    col: rgba(34, 30, 28, 255), gl: 0.2,
+    shade(S) {
+      let c = shadeC(S.col, 0.9 + nz3(S.u, S.v * 4) * 0.3);
+      if ((S.u * 0.9) % 1 < 0.3) c = shadeC(c, 0.5);
+      if (P.mud) c = mix(c, MUD, clamp((nz3(S.u * 0.8, S.v * 3) - 0.45) * 2 * P.mud, 0, 0.7));
+      S.col = c;
+    },
+  };
+  const sp = [], sr = [];
+  for (let z = -6.4; z <= 25.6; z += 2) { const b = bootAt(z); sp.push([0, 1.9, z]); sr.push([0.8, b[3] + 0.35]); }
+  loft(sc, sp, (t, i) => sr[min(sr.length - 1, i)], sole, { segs: 12, up: [0, -1, 0], capEnd: 'round', capStart: 'round', capLen: 0.5 });
+  // ---- laces criss-crossing the tongue, brass eyelets ----
+  const laceMat = flat3(rgba(160, 140, 104, 255), 0.25, (S) => { S.col = shadeC(S.col, 0.8 + nz3(S.u * 3, S.v * 4) * 0.4); });
+  const eye = brass3({ seed: 135 });
+  const topAt = (z, x) => { const b = bootAt(z); return b[1] - b[2] * sqrt(max(0, 1 - (x / b[3]) * (x / b[3]))) - 0.15; };
+  for (let k = 0; k < 6; k++) {
+    const z0 = 6.5 + k * 2.1, z1 = z0 + 1.7;
+    tube3(sc, [-2.0, topAt(z0, 2.0), z0], [2.0, topAt(z1, 2.0) - 0.35, z1], 0.3, 0.3, laceMat, { segs: 6 });
+    tube3(sc, [2.0, topAt(z0, 2.0), z0], [-2.0, topAt(z1, 2.0) - 0.35, z1], 0.3, 0.3, laceMat, { segs: 6 });
+    for (const sx of [-1, 1]) ball3(sc, [sx * 2.3, topAt(z0, 2.3) + 0.1, z0], 0.42, 0.42, 0.28, eye, { rings: 4, segs: 8 });
+  }
+  // the bow, flopping over the top
+  loft(sc, spline([[0, topAt(19, 0) - 0.4, 19.4], [-1.6, topAt(19, 0) - 1.2, 18.6], [-2.6, topAt(18, 0) - 0.6, 17.6]], 3),
+    () => 0.32, laceMat, { segs: 6, up: [0, -1, 0] });
+  loft(sc, spline([[0, topAt(19, 0) - 0.4, 19.4], [1.8, topAt(19, 0) - 1.1, 19.8], [2.8, topAt(19, 0) - 0.4, 20.6]], 3),
+    () => 0.32, laceMat, { segs: 6, up: [0, -1, 0] });
+  // ---- the shaft: the foot is pointed, so the leg carries straight on ----
+  loft(sc, spline([[0, -3.3, -2], [0, -3.8, -7], [0, -4.2, -12]], 3),
+    (t) => [lerp(4.5, 4.6, t), lerp(4.1, 4.5, t)], lth, { segs: 18, up: [0, -1, 0] });
+  // padded collar
+  loft(sc, [[0, -4.2, -11.6], [0, -4.3, -12.6], [0, -4.4, -13.4]], (t) => [4.9 + sin(t * PI) * 0.4, 4.8 + sin(t * PI) * 0.4],
+    bootLeather3(), { segs: 18, up: [0, -1, 0] });
+  // ---- the trouser leg, bloused over the top of the boot ----
+  const trou = {
+    col: TROUSER, gl: 0.12,
+    shade(S) {
+      const n = nz3(S.u * 0.4, S.v * 3);
+      let c = shadeC(rgba(84, 88, 60, 255), 0.8 + n * 0.4);
+      // woodland camo blotches
+      const cm = nz3(S.u * 0.12 + 5, S.v * 1.4 + 2);
+      if (cm > 0.58) c = shadeC(rgba(60, 54, 40, 255), 0.9 + n * 0.2);
+      else if (cm < 0.38) c = shadeC(rgba(110, 112, 80, 255), 0.9 + n * 0.2);
+      c = shadeC(c, 0.85 + 0.25 * sin(S.u * 1.3 + S.v * 12 + n * 4));
+      c = mix(c, rgba(14, 14, 10, 255), clamp((1 - S.ao) * 1.0, 0, 0.6));
+      S.col = c; S.gl = 0.1;
+    },
+  };
+  const lp = [];
+  for (let k = 0; k <= 8; k++) {
+    const t = k / 8;
+    lp.push([sin(t * 3) * 0.6, -4.5 - t * 3, -12.8 - t * 60]);
+  }
+  loft(sc, lp, (t) => { const b = t < 0.1 ? 1.2 - t : 1.1 + t * 0.3; return [5.2 * b, 5.2 * b]; }, trou, { segs: 18, up: [0, -1, 0] });
+  return { muzzle: [0, -1.5, 26] };
+}
+
+function steel3() {
+  return metal3(rgba(150, 150, 158, 255), { gl: 0.7, grain: 0.08, scratch: 0.3, wear: 0.2, seed: 133 });
+}
+
+// ---------------------------------------------------------------------------
+// WEAPON 5 - THE PIPE BOMB
+// ---------------------------------------------------------------------------
+
+const PIPEBOMB3 = {
+  pos: [3.6, 8.4, 20], yaw: -0.3, pitch: 0.45, roll: 0.12,
+};
+
+/** The bomb itself, axis along local z, timer box on top (-y). */
+function pipeBomb3(sc, M, o = {}) {
+  push3(sc, M);
+  const L = 13, R = 2.0;
+  const galv = metal3(PIPE, { gl: 0.55, grain: 0.18, brush: 0.1, scratch: 1.0, wear: 0.5, grime: 0.8, seed: 141, bare: rgba(210, 214, 220, 255) });
+  tube3(sc, [0, 0, -L / 2], [0, 0, L / 2], R, R, galv, { segs: 16, rings: 4 });
+  // end caps: hex-ish, a bit fatter
+  for (const s of [-1, 1]) {
+    tube3(sc, [0, 0, s * (L / 2 - 1.1)], [0, 0, s * (L / 2 + 0.6)], R * 1.22, R * 1.18,
+      metal3(rgba(120, 124, 132, 255), { gl: 0.6, grain: 0.12, scratch: 0.8, wear: 0.7, seed: 143 }),
+      { segs: 6, capStart: s < 0 ? 'flat' : undefined, capEnd: s > 0 ? 'flat' : undefined });
+  }
+  // tape wraps
+  for (const z of [-3.2, 2.6]) tube3(sc, [0, 0, z - 1.3], [0, 0, z + 1.3], R * 1.05, R * 1.05, tape3(rgba(52, 50, 56, 255), { pitch: 0.9 }), { segs: 16, bias: 0.001 });
+  // the timer: a little box of electronics strapped on top
+  // (on the top face u runs toward him and v along the pipe, so text reads
+  // along v)
+  box3(sc, -1.5, -R - 1.3, -5.6, 1.5, -R + 0.4, -1.4, metal3(rgba(40, 44, 40, 255), {
+    gl: 0.4, grain: 0.1, scratch: 0.6, wear: 0.6, seed: 145, bevel: 0.3,
+    decal: (S) => {
+      if (S.face !== F_TOP) return;
+      if (S.u > 0.3 && S.u < 1.5 && S.v > 0.3 && S.v < 3.9) {
+        S.col = rgba(20, 8, 6, 255); S.em = 0.3; S.gl = 0.7;
+        if (glyph3(o.time || '0:06', S.v, S.u, 0.45, 0.45, 0.75)) { S.col = rgba(255, 60, 40, 255); S.em = 1; }
+      }
+      if (glyph3('TNT', S.v, S.u, 1.1, 1.85, 0.7)) S.col = rgba(220, 200, 80, 255);
+    },
+  }));
+  // the blinking LED on a little stalk
+  const led = o.led === undefined ? 1 : o.led;
+  ball3(sc, [0.9, -R - 1.6, -0.8], 0.42, 0.42, 0.42, flat3(rgba(255, 60, 40, 255), 0.6, (S) => {
+    S.col = mix(rgba(70, 14, 10, 255), rgba(255, 80, 50, 255), led); S.em = 0.2 + led * 0.8;
+    if (led > 0.5 && S.nz < -0.8) S.col = rgba(255, 210, 190, 255);
+  }), { rings: 5, segs: 8 });
+  // wires into the cap
+  for (const [wx, col] of [[-0.8, rgba(170, 36, 30, 255)], [0.6, rgba(210, 180, 50, 255)]]) {
+    loft(sc, spline([[wx, -R - 1.0, -5.4], [wx, -R - 1.4, -6.6], [wx * 0.5, -R * 0.6, -7.4], [wx * 0.3, 0, -7.4]], 3), () => 0.28,
+      flat3(col, 0.5, null), { segs: 6, up: [1, 0, 0] });
+  }
+  pop3(sc);
+}
+
+function drawPipebomb3(sc, P) {
+  const stage = P.stage || 'hold';
+  const led = P.led === undefined ? 1 : P.led;
+  // Everything is authored in the bomb's frame: its axis on local z, which
+  // this turns to run across the view, timer on top, his palm underneath.
+  const B = mChain(mT(0, -(P.lift || 0), 0), mRY(PI / 2));
+  const hold = (o) => Object.assign({
+    c: [0, 0, 4.4], a: [0, 0, -1], p: [0, 1, 0], q: [-1, 0, 0], rp: 2.15, rq: 2.15,
+    s: [0, 2.05, 4.05, 5.85], sMid: 2.9, mcpQ: -0.8, slope: 0,
+    thumbL: [[2.8, 3.8, 6.4], [3.4, 1.0, 5.6], [2.8, -1.4, 4.6], [1.6, -2.6, 3.4], [0.4, -2.9, 2.2]],
+    thumbCut: 4.2, thumbNailV: 0.6, thumbR: [1.5, 1.25, 1.1, 1.0], thumbUp: [0, -1, 0],
+    wristL: [3.0, 5.2, 6.6], wristQ: -6.0,
+    arm: [1, 0.62, 0.35], armLen: 36, armUp: [0, -1, 0], armBend: [0.1, 0.3, 0],
+    tattoo: { u: 14, v: 0.55, s: 2.6 }, seed: 7,
+  }, o);
+  push3(sc, B);
+  if (stage === 'hold' || stage === 'wind') {
+    pipeBomb3(sc, M_ID, { led, time: P.time });
+    hand3(sc, hold({}));
+  } else if (stage === 'throw') {
+    // release: the bomb tumbling away up the screen, fingers flung open
+    const t = P.t || 0.5;
+    pipeBomb3(sc, mChain(mT(-8 - t * 26, -5 - t * 6, -1 - t * 3), mRZ(0.8 + t * 2.4), mRX(0.6 + t * 2)), { led, time: P.time });
+    hand3(sc, hold({
+      wrap: 0.3, rp: 2.6, rq: 2.6,
+      thumbL: [[2.8, 3.8, 6.4], [3.8, 1.4, 6.2], [4.2, -0.8, 5.8], [4.2, -2.4, 5.2], [4.0, -3.4, 4.6]],
+    }));
+  } else {
+    // empty hand, curling shut on the way back down
+    const close = P.close || 0;
+    hand3(sc, hold({
+      wrap: 0.45 + close * 0.6, rp: 2.4 - close, rq: 2.4 - close,
+      thumbL: [[2.8, 3.8, 6.4], [3.6, 1.2, 5.8], [3.4, -0.9, 5.0], [2.6, -2.0, 4.0], [1.8, -2.4, 3.0]],
+    }));
+  }
+  pop3(sc);
+  return { muzzle: [0, -4, 0] };
+}
+
+// ---------------------------------------------------------------------------
+// 3D weapon frame assembly
+// ---------------------------------------------------------------------------
+
+/**
+ * Where each weapon sits in camera space, and the point it recoils about
+ * (gun-local, usually the web of the hand). `draw` returns the gun-local
+ * muzzle so the flash light, the smoke and the in-game flash sprite all find
+ * the real bore end whatever the pose did to it.
+ */
+const WEAPON3 = {
+  pistol: {
+    draw: drawWidow3, pos: WIDOW3.pos, yaw: WIDOW3.yaw, pitch: WIDOW3.pitch, roll: WIDOW3.roll,
+    pivot: [0, 6, 0],
+  },
+  splitter: {
+    draw: drawSplitter3, pos: SPLITTER3.pos, yaw: SPLITTER3.yaw, pitch: SPLITTER3.pitch, roll: SPLITTER3.roll,
+    pivot: [0, 8, 2],
+  },
+  nailer: {
+    draw: drawNailer3, pos: NAILER3.pos, yaw: NAILER3.yaw, pitch: NAILER3.pitch, roll: NAILER3.roll,
+    pivot: [0, 8, 4],
+  },
+  halo: {
+    draw: drawHalo3, pos: HALO3.pos, yaw: HALO3.yaw, pitch: HALO3.pitch, roll: HALO3.roll,
+    pivot: [0, 8, 4],
+  },
+  deadman: {
+    draw: drawDeadman3, pos: DEADMAN3.pos, yaw: DEADMAN3.yaw, pitch: DEADMAN3.pitch, roll: DEADMAN3.roll,
+    pivot: [4, 3, 2],
+  },
+  boot: {
+    draw: drawBoot3, pos: [3.5, 21, 33], yaw: -0.12, pitch: 0.68, roll: 0.3,
+    pivot: [0, -8, -40],
+  },
+  pipebomb: {
+    draw: drawPipebomb3, pos: PIPEBOMB3.pos, yaw: PIPEBOMB3.yaw, pitch: PIPEBOMB3.pitch, roll: PIPEBOMB3.roll,
+    pivot: [0, 4, -4],
+  },
+};
+
+// The gun rig's key sits further round to the left than the portrait rig's,
+// so the left flank (where all the engraving is) is lit rather than grazed.
+const WEAPON_KEY = norm3(-0.62, -0.62, 0.48);
+
+function buildWeapon3(out, name) {
+  const def = WEAPON3[name];
+  const poses = WEAPON_POSES3[name];
+  ntab();
+  let seed = 9000;
+  for (const k of POSE_KEYS) {
+    const pose = poses[k] || poses.idle;
+    const R = pose.R || {};
+    const sc = scene3();
+    push3(sc, mChain(
+      mT(def.pos[0] + (R.dx || 0), def.pos[1] + (R.dy || 0), def.pos[2] + (R.dz || 0)),
+      mRY(def.yaw + (R.ry || 0)), mRX(def.pitch), mRZ(def.roll + (R.rz || 0)),
+      mAbout(def.pivot[0], def.pivot[1], def.pivot[2], mRX(R.rx || 0)),
+    ));
+    const info = def.draw(sc, pose.P || {}) || {};
+    const m = info.muzzle || [0, 0, 20];
+    const mz = mP(sc.M, m[0], m[1], m[2]);
+    pop3(sc);
+    const cv = resolve3(sc);
+    const [fx, fy] = proj(mz);
+    const f = bake(cv, {
+      flash: pose.flash || 0,
+      fx, fy, fz: 36,
+      flashCol: pose.flashCol || [1.0, 0.78, 0.46],
+      flashR: pose.flashR || 150,
+      key: WEAPON_KEY, keyCol: [1.0, 0.95, 0.86], fill: 0.2, fillCol: [0.56, 0.56, 0.62],
+      rim: 0.36, rimCol: [0.5, 0.6, 0.9], env: 0.55, botDark: 0.22, bounce: 0.16, exposure: 1.08,
+    });
+    rimOutline(f, rgba(12, 10, 14, 255));
+    if (pose.smoke) muzzleSmoke(f, fx, fy - 2, pose.smoke, (seed += 137), { spread: pose.smokeSpread || 1 });
+    // where the bore ends in this frame, and how big a centimetre is there:
+    // render.js hangs the flash sprite on it
+    f.mz = [fx, fy, CAM_F / mz[2]];
+    f.cx = CAM_CX; f.cy = CAM_CY;
+    out[name + '_' + k] = f;
+  }
+}
+
+const WEAPON_POSES3 = {
+  pistol: {
+    idle: { P: { hammer: 1 } },
+    fire0: { flash: 1.0, R: { rx: 0.16, dz: -2.2, dy: -0.6 }, P: { hammer: 0, slide: 2.6, heat: 1 } },
+    fire1: { flash: 0.3, smoke: 0.8, R: { rx: 0.09, dz: -1.2 }, P: { hammer: 0.6, slide: 1.6, casing: 0.35, heat: 0.6 } },
+    fire2: { flash: 0.06, smoke: 0.35, R: { rx: 0.03, dz: -0.4 }, P: { hammer: 1, slide: 0.4, casing: 1, heat: 0.3 } },
+    reload0: { R: { rx: 0.25, rz: -0.35, dy: 2 }, P: { hammer: 1 } },
+    reload1: { R: { rx: 0.12, rz: -0.18, dy: 1 }, P: { hammer: 1 } },
+  },
+  // The Splitter's reload frames ARE the pump: the game shows them while the
+  // refire timer runs down, right after the three fire frames.
+  splitter: {
+    idle: { P: {} },
+    fire0: { flash: 1.0, flashR: 210, R: { rx: 0.14, dz: -3.2, dy: -0.4 }, P: { heat: 1 } },
+    fire1: { flash: 0.3, smoke: 1.0, smokeSpread: 1.5, R: { rx: 0.08, dz: -1.8 }, P: { heat: 0.7 } },
+    fire2: { flash: 0.06, smoke: 0.45, smokeSpread: 1.5, R: { rx: 0.03, dz: -0.6 }, P: { heat: 0.4 } },
+    reload0: { smoke: 0.2, smokeSpread: 1.3, R: { rx: -0.03, rz: 0.06, dz: -1 }, P: { pump: 1, hull: 0.4, heat: 0.3 } },
+    reload1: { R: { rx: 0.02, rz: 0.02 }, P: { pump: 0.25, hull: 1, heat: 0.2 } },
+  },
+  // six barrels, so a 20 degree step per fire frame reads as continuous spin
+  // when the three frames cycle under sustained fire
+  nailer: {
+    idle: { P: { spin: 0, pressure: 0.5 } },
+    fire0: { flash: 1.0, flashR: 190, R: { rx: 0.05, dz: -1.4, dx: -0.2 }, P: { spin: 0, heat: 1, pressure: 0.8 } },
+    fire1: { flash: 0.6, smoke: 0.5, R: { rx: 0.03, dz: -0.9, dx: 0.25 }, P: { spin: PI / 9, heat: 0.9, pressure: 0.74 } },
+    fire2: { flash: 0.2, smoke: 0.3, R: { rx: 0.02, dz: -0.5, dx: -0.1 }, P: { spin: 2 * PI / 9, heat: 0.7, pressure: 0.68 } },
+    reload0: { R: { rx: -0.05, rz: 0.12, dy: 1.5 }, P: { spin: PI / 18, pressure: 0.2 } },
+    reload1: { R: { rx: -0.02, rz: 0.05, dy: 0.6 }, P: { spin: PI / 12, pressure: 0.4 } },
+  },
+  // reload frames are the capacitors winding back up after the ring goes
+  halo: {
+    idle: { P: { charge: 1, arc: 0.3, arcPhase: 0 } },
+    fire0: { flash: 1.0, flashR: 220, flashCol: [0.52, 0.95, 1.0], R: { rx: 0.1, dz: -3.4 }, P: { charge: 0.6, arc: 1, arcPhase: 1.2 } },
+    fire1: { flash: 0.35, flashCol: [0.5, 0.9, 1.0], R: { rx: 0.06, dz: -2 }, P: { charge: 0.34, arc: 0.7, arcPhase: 2.4 } },
+    fire2: { flash: 0.1, flashCol: [0.5, 0.9, 1.0], R: { rx: 0.02, dz: -0.7 }, P: { charge: 0.1, arc: 0.35, arcPhase: 3.6 } },
+    reload0: { flash: 0.05, flashCol: [0.5, 0.9, 1.0], R: { rx: -0.04, rz: 0.08, dy: 1 }, P: { charge: 0.02, arc: 0.05, arcPhase: 4.8 } },
+    reload1: { flash: 0.16, flashCol: [0.5, 0.9, 1.0], R: { rx: -0.02, rz: 0.03, dy: 0.4 }, P: { charge: 0.55, arc: 0.5, arcPhase: 5.9 } },
+  },
+  deadman: {
+    idle: { P: { cover: 0, plunge: 0, count: '09', lamp: 0.15 } },
+    fire0: { flash: 1.0, flashR: 260, flashCol: [1.0, 0.94, 0.86], R: { rx: -0.08, dy: 1.2 }, P: { cover: 1, plunge: 1, count: '00', lamp: 1 } },
+    fire1: { flash: 0.42, flashCol: [1.0, 0.86, 0.62], R: { rx: -0.04, dy: 0.6 }, P: { cover: 1, plunge: 0.7, count: '00', lamp: 0.8 } },
+    fire2: { flash: 0.12, flashCol: [1.0, 0.8, 0.6], R: { rx: -0.01 }, P: { cover: 0.9, plunge: 0.25, count: '01', lamp: 0.45 } },
+    reload0: { R: { rz: 0.06, dy: 0.8 }, P: { cover: 0.55, plunge: 0, count: '05', lamp: 0.25 } },
+    reload1: { R: { rz: 0.02, dy: 0.3 }, P: { cover: 0.12, plunge: 0, count: '09', lamp: 0.15 } },
+  },
+  // the kick: full extension, then the leg pulling back down out of frame
+  boot: {
+    idle: { R: { dy: 7.5, dz: -7, rx: -0.12 }, P: { ext: 0 } },
+    fire0: { flash: 0.4, flashR: 170, flashCol: [1.0, 0.92, 0.8], smoke: 0.6, smokeSpread: 1.6, P: { ext: 1, mud: 0.6, blood: 0.75 } },
+    fire1: { smoke: 0.4, smokeSpread: 1.8, R: { dy: 2.5, dz: -3, rx: -0.04 }, P: { ext: 0.9, mud: 0.6, blood: 0.75 } },
+    fire2: { R: { dy: 5.5, dz: -5.5, rx: -0.09 }, P: { ext: 0.75, mud: 0.55, blood: 0.75 } },
+    reload0: { R: { dy: 6.2, dz: -6, rx: -0.1 }, P: { ext: 0.6, mud: 0.55, blood: 0.6 } },
+    reload1: { R: { dy: 7, dz: -6.6, rx: -0.11 }, P: { ext: 0.2, mud: 0.5 } },
+  },
+  // the pipe bomb: held, thrown, then the next one comes up out of the bag
+  pipebomb: {
+    idle: { P: { stage: 'hold', led: 1, time: '0:06' } },
+    fire0: { R: { dy: -3, dz: 6, rx: 0.3 }, P: { stage: 'throw', t: 0.2, led: 1, time: '0:06' } },
+    fire1: { R: { dy: -1, dz: 4, rx: 0.15 }, P: { stage: 'empty', t: 0.6, close: 0.1 } },
+    fire2: { R: { dy: 1.5, dz: 1 }, P: { stage: 'empty', close: 0.5 } },
+    reload0: { R: { dy: 2.8, dz: -1.5, rx: -0.12 }, P: { stage: 'hold', led: 0, time: '----' } },
+    reload1: { R: { dy: 2, dz: -1, rx: -0.1 }, P: { stage: 'hold', led: 0, time: '0:06' } },
+  },
+};
 
 // ---------------------------------------------------------------------------
 // WEAPON 1 - THE WIDOW: break-action flak pistol
@@ -2600,8 +4820,8 @@ function drawShockRing(size, k) {
 export function buildViewmodels() {
   const frames = {};
 
-  // --- weapon viewmodels (5 weapons x 6 poses, 200x150) ---
-  for (const name of ['pistol', 'splitter', 'nailer', 'halo', 'deadman']) buildWeapon(frames, name);
+  // --- weapon viewmodels (5 weapons x 6 poses, 256x192, see buildWeapon3) ---
+  for (const name of ['pistol', 'splitter', 'nailer', 'halo', 'deadman']) buildWeapon3(frames, name);
 
   // --- muzzle flashes (128x128, additive) ---
   frames.flash_small = drawFlash(128, { R: 32, lobes: 4, seed: 2101, spikes: 2, core: 0.34, sparks: 18, rough: 0.5 });
@@ -2651,7 +4871,7 @@ export function buildViewmodels() {
   frames.contrail = drawContrail();
 
   // --- expansion: the kick and the pipe bomb ---
-  for (const name of ['boot', 'pipebomb']) buildWeapon(frames, name);
+  for (const name of ['boot', 'pipebomb']) buildWeapon3(frames, name);
   setModel();
 
   // --- expansion: radio portraits ---

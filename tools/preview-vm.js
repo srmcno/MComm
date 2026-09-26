@@ -21,7 +21,7 @@ const buildMs = Date.now() - t0;
 const WEAPONS = ['pistol', 'splitter', 'nailer', 'halo', 'deadman', 'boot', 'pipebomb'];
 const POSES = ['idle', 'fire0', 'fire1', 'fire2', 'reload0', 'reload1'];
 const EXPECT = {};
-for (const w of WEAPONS) for (const p of POSES) EXPECT[`${w}_${p}`] = [200, 150];
+for (const w of WEAPONS) for (const p of POSES) EXPECT[`${w}_${p}`] = [384, 192];
 for (const k of ['flash_small', 'flash_medium', 'flash_large', 'flash_ring', 'flash_plume']) EXPECT[k] = [128, 128];
 for (let i = 0; i < 8; i++) EXPECT['boom' + i] = [128, 128];
 for (let i = 0; i < 10; i++) EXPECT['nuke' + i] = [192, 192];

@@ -229,19 +229,29 @@ export function drawViewmodel(game, buf, W, H) {
   const art = game.art;
   const spec = p.spec;
   const s = H / 450;
+  // A slow breath when standing still, so the gun is never nailed to the glass.
+  const breathe = Math.sin((game.time || 0) * 1.7) * (1 - p.bob) * 2.2 * s;
 
   // The Boot overrides whatever is in his hands, then hands it back.
   if (p.kickAnim > 0) {
     const k = 1 - p.kickAnim / 0.34;
     const bf = art.vm[k < 0.35 ? 'boot_fire0' : k < 0.68 ? 'boot_fire1' : 'boot_fire2'] || art.vm.boot_idle;
     if (bf) {
-      const bs = (H * 0.60) / bf.h;
-      const bx = W / 2 - (bf.w * bs) / 2 + Math.sin(p.bobPhase) * 6 * s;
-      const by = H - bf.h * bs + (1 - Math.sin(Math.min(1, k) * Math.PI)) * H * 0.34;
       const L0 = game.lights.sample(p.x, p.y);
-      blitFrame(buf, W, H, bf, bx, by, {
-        scale: bs, lum: clamp(0.7 + (L0[0] + L0[1] + L0[2]) / 3 * 0.5, 0.6, 1.6),
-      });
+      const lum = clamp(0.7 + (L0[0] + L0[1] + L0[2]) / 3 * 0.5, 0.6, 1.6);
+      if (bf.cy !== undefined) {
+        // The frames already carry the leg's travel; this only adds the snap
+        // up out of the bottom of the screen and the drop back into it.
+        const bs = vmScale(bf, H);
+        const bx = W / 2 - bf.cx * bs + Math.sin(p.bobPhase) * 6 * s;
+        const by = H / 2 - bf.cy * bs + (1 - Math.sin(Math.min(1, k) * Math.PI)) * H * 0.16;
+        blitFrame(buf, W, H, bf, bx, by, { scale: bs, lum });
+      } else {
+        const bs = (H * 0.60) / bf.h;
+        const bx = W / 2 - (bf.w * bs) / 2 + Math.sin(p.bobPhase) * 6 * s;
+        const by = H - bf.h * bs + (1 - Math.sin(Math.min(1, k) * Math.PI)) * H * 0.34;
+        blitFrame(buf, W, H, bf, bx, by, { scale: bs, lum });
+      }
     }
     return;
   }
@@ -253,7 +263,7 @@ export function drawViewmodel(game, buf, W, H) {
   } else if (p.cooldown > spec.refire * 0.45 && spec.refire > 0.5) {
     stateKey = p.cooldown > spec.refire * 0.7 ? 'reload0' : 'reload1';
   }
-  const f = art.vm[`${spec.vm}_${stateKey}`] || art.vm[`${spec.vm}_idle`];
+  const f = art.vm[spec.vm + '_' + stateKey] || art.vm[spec.vm + '_idle'];
   if (!f) return;
 
   // Weapon swap dip.
@@ -263,31 +273,54 @@ export function drawViewmodel(game, buf, W, H) {
     swapOff = (t < 0.5 ? t / 0.5 : (1 - t) / 0.5) * H * 0.45;
   }
 
-  const scale = (H * 0.52) / f.h;
-  const bobX = Math.sin(p.bobPhase) * 9 * s * p.bob;
-  const bobY = Math.abs(Math.cos(p.bobPhase)) * 7 * s * p.bob + p.swayY * s;
-  const x = W / 2 - (f.w * scale) / 2 + bobX + p.swayX * s + game.shakeX * 40;
-  // Sit the weapon low enough that the crosshair stays clear; the art is
-  // composed for the lower two-thirds of its frame, so push the rest off-screen.
-  const y = H - f.h * scale + bobY + p.kick * 1.4 * s + swapOff + f.h * scale * 0.13;
-
-  // Light the weapon by whatever is lighting the player.
+  // Walk bob traces a lazy figure-eight: side to side once per stride, down
+  // on every footfall. Recoil shoves the gun down and toward the camera.
+  const bobX = Math.sin(p.bobPhase) * 10 * s * p.bob;
+  const bobY = Math.abs(Math.cos(p.bobPhase)) * 8 * s * p.bob + p.swayY * s + breathe;
+  const kick = Math.max(0, p.kick);
+  const punch = 1 + Math.min(0.09, kick * 0.0062);
   const L = game.lights.sample(p.x, p.y);
   const lum = clamp(0.62 + (L[0] + L[1] + L[2]) / 3 * 0.55 + (p.flashTimer > 0 ? 0.7 : 0), 0.5, 1.9);
+
+  let scale, x, y;
+  if (f.cy !== undefined) {
+    // The art is rendered with the crosshair as its principal point, so pin
+    // that point to the middle of the screen and every barrel converges on
+    // the reticle. The bottom edge is then held on the screen's bottom edge.
+    scale = vmScale(f, H) * punch;
+    x = W / 2 - f.cx * scale + bobX + p.swayX * s + game.shakeX * 40 + kick * 0.5 * s;
+    y = H / 2 - f.cy * scale + bobY + kick * 1.7 * s + swapOff;
+    y = Math.max(y, H - f.h * scale + 1);
+  } else {
+    scale = (H * 0.52) / f.h;
+    x = W / 2 - (f.w * scale) / 2 + bobX + p.swayX * s + game.shakeX * 40;
+    y = H - f.h * scale + bobY + kick * 1.4 * s + swapOff + f.h * scale * 0.13;
+  }
   blitFrame(buf, W, H, f, x, y, { scale, lum });
 
   if (p.flashTimer > 0) {
     const fl = art.vm[spec.flash] || art.vm.flash_medium;
     if (fl) {
       const k = p.flashTimer / 0.075;
-      const fs = scale * (1.6 + (1 - k) * 0.9);
-      blitFrame(buf, W, H, fl,
-        x + f.w * scale * 0.5 - (fl.w * fs) / 2,
-        y - fl.h * fs * 0.34,
-        { scale: fs, additive: true, alpha: 0.55 + k * 0.45 });
+      if (f.mz) {
+        // hang the flash on the bore, sized by how far away the bore is
+        const size = clamp(f.mz[2] * 0.2, 0.75, 1.7);
+        const fs = scale * size * (1.05 + (1 - k) * 0.55);
+        blitFrame(buf, W, H, fl, x + f.mz[0] * scale - (fl.w * fs) / 2, y + f.mz[1] * scale - (fl.h * fs) / 2,
+          { scale: fs, additive: true, alpha: 0.6 + k * 0.4 });
+      } else {
+        const fs = scale * (1.6 + (1 - k) * 0.9);
+        blitFrame(buf, W, H, fl,
+          x + f.w * scale * 0.5 - (fl.w * fs) / 2,
+          y - fl.h * fs * 0.34,
+          { scale: fs, additive: true, alpha: 0.55 + k * 0.45 });
+      }
     }
   }
 }
+
+/** Viewmodel frames are drawn so their full height covers 64% of the screen. */
+function vmScale(f, H) { return (H * 0.64) / f.h; }
 
 // ------------------------------------------------------------ full screens
 
