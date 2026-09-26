@@ -116,7 +116,7 @@ export class TitleScreen {
     return [
       { label: 'MASTER VOLUME', value: () => pct(game.volMaster), adj: (d) => { game.volMaster = step(game.volMaster, d, 0, 1); game.sound.setMaster(game.volMaster); } },
       { label: 'MUSIC', value: () => pct(game.volMusic), adj: (d) => { game.volMusic = step(game.volMusic, d, 0, 1); game.sound.setMusicVol(game.volMusic); } },
-      { label: 'ANNOUNCER', value: () => pct(game.volVox), adj: (d) => { game.volVox = step(game.volVox, d, 0, 1); game.vox.setVolume(game.volVox); } },
+      { label: 'VOICE VOLUME', value: () => pct(game.volVox), adj: (d) => { game.volVox = step(game.volVox, d, 0, 1); game.vox.setVolume(game.volVox); } },
       { label: 'VOICE', value: () => voiceLabel(game), adj: (d) => cycleVoice(game, d) },
       { label: 'SUBTITLES', value: () => (game.subtitlesOn ? 'ON' : 'OFF'), adj: () => { game.subtitlesOn = !game.subtitlesOn; } },
       { label: 'CRT SCANLINES', value: () => pct(s.scan / 0.6), adj: (d) => { s.scan = clamp(s.scan + d * 0.06, 0, 0.6); } },

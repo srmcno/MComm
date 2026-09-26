@@ -352,6 +352,15 @@ export class Radio {
       return;
     }
     if (this.cooldown > 0 || !this.queue.length) return;
+    // Somebody (MUTTER on the tannoy, usually) still has the floor. Wait for
+    // it so the caption and the voice arrive together, but not forever, and
+    // not at all for anything urgent: a stuck engine must not gag the plot.
+    const urgent = this.queue.some((q) => (q.priority || 0) >= 5);
+    if (!urgent && (this.floorWait || 0) < 6 && this.voiceBusy()) {
+      this.floorWait = (this.floorWait || 0) + dt;
+      return;
+    }
+    this.floorWait = 0;
     const m = this.queue.shift();
     if (m.delay > 0) { m.delay = 0; this.cooldown = 0.3; this.queue.unshift(m); return; }
     const g = this.game;

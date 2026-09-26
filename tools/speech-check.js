@@ -578,6 +578,18 @@ function rig(plat, behaviour = {}, opts = {}) {
   radio.update(1 / 60);
   check('the radio holds the next line while the voice is still talking', /First/.test(radio.current && radio.current.text));
 
+  // ...and does not start a line while somebody else (MUTTER on the tannoy)
+  // is still talking, unless it is urgent
+  radio.reset();
+  sp.say('Attention. This is a long and very important announcement about nothing.', { voice: 'mutter' });
+  radio.say('ilsa', 'z', 'Wait for it.', { exact: true });
+  for (let i = 0; i < 30; i++) radio.update(1 / 60);
+  check('the radio waits for the tannoy to finish before it speaks', !radio.current && radio.queue.length === 1);
+  radio.say('ilsa', 'u', 'Incoming, now!', { exact: true, priority: 6 });
+  for (let i = 0; i < 30; i++) radio.update(1 / 60);
+  check('...but an urgent line in the queue ends the wait', !!radio.current);
+  radio.reset();
+
   const gsrc = fs.readFileSync(new URL('../src/game/game.js', import.meta.url), 'utf8');
   check('game.js stops the radio when the game pauses', /s === STATE\.PAUSE\)[^\n]*radio\.hold\(\)/.test(gsrc) ||
     /STATE\.PAUSE[\s\S]{0,80}radio\.hold\(\)/.test(gsrc));

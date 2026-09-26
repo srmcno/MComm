@@ -489,7 +489,6 @@ export class Game {
     const entry = key ? lines[key] : null;
     if (entry) text = Array.isArray(entry) ? entry[(this.rng() * entry.length) | 0] : entry;
     if (args) for (const a of args) text = text.replace('%s', a);
-    this.sound.duck(0.45, 1.8);
     let dur = 0;
     if (key) { try { dur = this.vox.sayLine(key, { voice, args }) || 0; } catch { dur = 0; } }
     // The announcer chose a variant; caption that one, not another roll.
@@ -497,6 +496,9 @@ export class Game {
     if (!dur && text) { try { dur = this.vox.say(text, { voice }) || 0; } catch { dur = 0; } }
     if (args && spoken) for (const a of args) spoken = spoken.replace('%s', a);
     const caption = plainText(spoken);
+    // Hold the music down for the whole line, not a fixed second and a half:
+    // a natural voice takes its time and the siege score is loud.
+    if (dur > 0) this.sound.duck(0.45, Math.min(12, Math.max(1.8, dur)));
     this.lastSpoken = { voice, text: caption };
     if (this.subtitlesOn && caption) this.hud.say(caption, Math.max(2.6, dur || 3.2));
     return dur;
@@ -518,10 +520,10 @@ export class Game {
     if (opts.args) {
       for (const a of opts.args) text = text.replace('%s', a);
     }
-    this.sound.duck(0.4, 1.6);
-    const dur = this.vox.sayLine ? this.vox.sayLine(key, opts) : 0;
+    let dur = this.vox.sayLine ? this.vox.sayLine(key, opts) : 0;
     let spoken = dur ? (this.vox.lastRequested || this.vox.lastLine || text) : text;
-    if (!dur && text) this.vox.say(text, opts);
+    if (!dur && text) dur = this.vox.say(text, opts) || 0;
+    if (dur > 0) this.sound.duck(0.4, Math.min(12, Math.max(1.6, dur)));
     if (opts.args && spoken) for (const a of opts.args) spoken = String(spoken).replace('%s', a);
     const caption = plainText(spoken);
     if (this.subtitlesOn && caption) this.hud.say(caption, Math.max(2.6, (dur || 3.2)));

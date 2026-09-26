@@ -10,6 +10,10 @@
 // limiting, slapback + concrete reverb, and a bit-crush/dropout glitch stage.
 //
 // No speechSynthesis. No samples. No network. No libraries.
+//
+// Since the cast moved to the browser's own voices (speech.js), this is the
+// ROBOT setting, the fallback wherever the browser has no voices, and the
+// quiet machine undertone under MUTTER's natural voice.
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /* small utilities                                                            */
