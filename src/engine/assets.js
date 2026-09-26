@@ -407,6 +407,14 @@ export async function loadAssets(onProgress = () => {}) {
   try { sprites = buildSprites(); }
   catch (e) { warn('sprites.build', e); }
   if (!sprites || !sprites.frames) sprites = fallbackSprites();
+  // Dismemberment art is optional: the fallback set has none, and a painter that
+  // throws mid-game must cost a limb its stump, never the frame.
+  const maimFn = typeof sprites.maim === 'function' ? sprites.maim : null;
+  const maim = (key, mask) => {
+    if (!maimFn) return null;
+    try { return maimFn(key, mask) || null; } catch (e) { return null; }
+  };
+  const rig = sprites.rig && typeof sprites.rig === 'object' ? sprites.rig : {};
 
   onProgress(0.52, 'ISSUING ORDNANCE');
   await yieldFrame();
@@ -478,6 +486,7 @@ export async function loadAssets(onProgress = () => {}) {
     texNames: textures.names || TEXTURE_ORDER,
     texIndex,
     sprites: sprites.frames,
+    maim, rig,
     vm: viewmodels.frames,
     decalAtlas, decalNames, decalIndex, decalCount: decalNames.length,
     maps,

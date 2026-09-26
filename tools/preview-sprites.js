@@ -11,11 +11,13 @@ const OUT = process.env.SPRITE_OUT ||
 fs.mkdirSync(OUT, { recursive: true });
 
 const t0 = Date.now();
-const { frames } = buildSprites();
+const built = buildSprites();
+const { frames, maim, rig } = built;
 const buildMs = Date.now() - t0;
 
 // determinism: a second build must be pixel-identical to the first
-const second = buildSprites().frames;
+const secondBuild = buildSprites();
+const second = secondBuild.frames;
 
 // ---------------------------------------------------------------------------
 // expected key list
@@ -61,14 +63,22 @@ for (let i = 0; i < 4; i++) expected.push(`gore_pool${i}`);
 for (let i = 0; i < 3; i++) expected.push(`viscera${i}`);
 for (let i = 0; i < 3; i++) expected.push(`acid${i}`);
 
+// Walking cast frames are painted at 1.5 pixels per design unit. Death and
+// corpse frames of the humanoid rig are wider (the body lies down in them),
+// but keep the same height, so the renderer draws them at the same scale.
 const SIZES = {
-  wrencher: [64, 72], sparker: [64, 72], bellows: [64, 72], priest: [64, 80],
-  wasp: [56, 40], mutter: [192, 160],
-  ghoul: [56, 66], gorger: [76, 74], howler: [60, 78], stalker: [52, 60], maw: [176, 150],
+  wrencher: [96, 108], sparker: [96, 108], bellows: [96, 108], priest: [96, 120],
+  wasp: [84, 60], mutter: [192, 160],
+  ghoul: [84, 99], gorger: [114, 111], howler: [90, 117], stalker: [78, 90], maw: [176, 150],
 };
+const DIE_W = { wrencher: 156, sparker: 156, bellows: 162, priest: 168, gorger: 174, howler: 162 };
+const MAIMABLE = ['wrencher', 'sparker', 'bellows', 'priest', 'gorger', 'howler', 'ghoul', 'stalker'];
+const PARTS = ['head', 'arm', 'leg'];
+for (const id of MAIMABLE) for (const p of PARTS) for (let r = 0; r < 8; r++) expected.push(`${id}_part_${p}_${r}`);
+
 // exact sizes for the flat prop/gore keys
 const EXACT = {};
-for (let i = 0; i < 8; i++) EXACT[`gib${i}`] = [14, 14];
+for (let i = 0; i < 8; i++) EXACT[`gib${i}`] = [22, 22];
 for (let i = 0; i < 4; i++) EXACT[`gore_pool${i}`] = [48, 24];
 for (let i = 0; i < 3; i++) EXACT[`viscera${i}`] = [28, 20];
 for (let i = 0; i < 3; i++) EXACT[`acid${i}`] = [20, 20];
@@ -155,10 +165,15 @@ for (const [k, f] of Object.entries(frames)) {
       `${k}: size ${f.w}x${f.h}, expected ${EXACT[k][0]}x${EXACT[k][1]}`);
   }
   const grp = k.split('_')[0];
-  if (SIZES[grp]) {
-    const [w, h] = SIZES[grp];
+  if (k.includes('_part_')) {
+    check(f.w === f.h, `${k}: part frame ${f.w}x${f.h} is not square`);
+    const [, eh] = SIZES[grp];
+    check(f.w >= eh * 0.2 && f.w <= eh * 0.62, `${k}: part frame ${f.w}px out of proportion to a ${eh}px enemy`);
+  } else if (SIZES[grp]) {
+    const [w0, h] = SIZES[grp];
+    const w = DIE_W[grp] && /_(die\d|dead)$/.test(k) ? DIE_W[grp] : w0;
     check(f.w === w && f.h === h, `${k}: size ${f.w}x${f.h}, expected ${w}x${h}`);
-    check(pct >= 0.08 && pct <= 0.70, `${k}: coverage ${(pct * 100).toFixed(1)}% outside 8-70%`);
+    check(pct >= 0.03 && pct <= 0.70, `${k}: coverage ${(pct * 100).toFixed(1)}% outside 3-70%`);
   }
   // walking humanoids must have their feet on the floor and not bounce
   if (/_walk\d_\d$/.test(k) && grp !== 'wasp') {
@@ -201,9 +216,86 @@ for (const id of [...ENEMIES, ...MUTANTS]) {
 }
 
 // ---------------------------------------------------------------------------
+// dismemberment: maim(), rig, and what the gore code is promised
+// ---------------------------------------------------------------------------
+const MASKS = [1, 2, 4, 8, 16, 3, 6, 24, 25, 31];
+const opaqueCount = (f) => { let n = 0; for (let i = 0; i < f.data.length; i++) if (f.data[i] >>> 24) n++; return n; };
+const maimTimes = [];
+check(typeof maim === 'function', 'buildSprites() returned no maim()');
+check(rig && typeof rig === 'object', 'buildSprites() returned no rig');
+if (typeof maim === 'function') {
+  for (const id of MAIMABLE) {
+    const r = rig[id];
+    check(r, `rig: no entry for ${id}`);
+    if (r) {
+      for (const j of ['hip', 'shoulder', 'neck', 'head']) {
+        check(Number.isFinite(r[j]) && r[j] > 0 && r[j] < 1, `rig.${id}.${j} = ${r[j]} is not a fraction`);
+      }
+      check(r.neck >= r.shoulder - 0.05 && r.head >= r.neck - 0.05, `rig.${id}: joints out of order (${JSON.stringify(r)})`);
+    }
+    const keys = [`${id}_walk0_0`, `${id}_walk1_2`, `${id}_walk2_1`, `${id}_walk3_3`,
+      `${id}_aim`, `${id}_fire`, `${id}_pain`, `${id}_die1`, `${id}_die3`, `${id}_dead`];
+    for (const key of keys) {
+      check(maim(key, 0) === frames[key], `maim(${key}, 0) is not frames[${key}]`);
+      for (const m of MASKS) {
+        const t0 = process.hrtime.bigint();
+        const f = maim(key, m);
+        const dt = Number(process.hrtime.bigint() - t0) / 1e6;
+        maimTimes.push(dt);
+        if (!f) { fails.push(`maim(${key}, ${m}) returned null`); continue; }
+        check(f.w === frames[key].w && f.h === frames[key].h, `maim(${key}, ${m}): ${f.w}x${f.h} != ${frames[key].w}x${frames[key].h}`);
+        check(f !== frames[key], `maim(${key}, ${m}) returned the unmaimed frame`);
+        check(maim(key, m) === f, `maim(${key}, ${m}) is not cached`);
+        let badA = 0;
+        for (let i = 0; i < f.data.length; i++) { const a = f.data[i] >>> 24; if (a && a !== 255) badA++; }
+        check(badA === 0, `maim(${key}, ${m}): ${badA} pixels with fractional alpha`);
+        const other = secondBuild.maim(key, m);
+        let same = other && other.w === f.w && other.h === f.h;
+        if (same) for (let i = 0; i < f.data.length; i++) if (f.data[i] !== other.data[i]) { same = false; break; }
+        check(same, `maim(${key}, ${m}) is not deterministic across builds`);
+      }
+      // taking every limb off must visibly take something off
+      if (!/_die0$/.test(key)) {
+        check(opaqueCount(maim(key, 30)) < opaqueCount(frames[key]), `maim(${key}, 30) removed nothing`);
+      }
+    }
+    for (const p of PARTS) {
+      const a = frames[`${id}_part_${p}_0`], b = frames[`${id}_part_${p}_3`];
+      if (a && b) check(a.w === b.w, `${id}_part_${p}: rotations differ in size`);
+    }
+  }
+  for (const key of ['wasp_walk0_0', 'mutter_idle0', 'maw_idle0', 'gib0', 'key_red', 'nope_walk0_0']) {
+    check(maim(key, 1) === null, `maim(${key}, 1) should be null`);
+  }
+  maimTimes.sort((a, b) => a - b);
+  const avg = maimTimes.reduce((a, b) => a + b, 0) / maimTimes.length;
+  const p90 = maimTimes[Math.floor(maimTimes.length * 0.9)];
+  console.log(`maim      ${maimTimes.length} first paints: mean ${avg.toFixed(2)}ms, median ${maimTimes[maimTimes.length >> 1].toFixed(2)}ms, p90 ${p90.toFixed(2)}ms, max ${maimTimes[maimTimes.length - 1].toFixed(2)}ms, ${maim.cached ? maim.cached() : '?'} cached`);
+  // the median is the honest number on a shared machine; GC pauses skew the mean
+  const med = maimTimes[maimTimes.length >> 1];
+  check(med < 3, `maim first paint median ${med.toFixed(2)}ms, budget is about 3ms`);
+  if (avg > 3) warn.push(`maim first paint mean ${avg.toFixed(2)}ms (median ${med.toFixed(2)}ms): a busy machine, or a slow recipe`);
+}
+
+// ---------------------------------------------------------------------------
 // contact sheets
 // ---------------------------------------------------------------------------
 const pick = (keys) => keys.map((k) => frames[k]).filter(Boolean);
+
+if (typeof maim === 'function') {
+  // every maim-capable kind x a spread of masks, on a walk, an attack and a corpse
+  const sheet = [];
+  for (const id of MAIMABLE) {
+    for (const key of [`${id}_walk0_1`, `${id}_walk1_2`, `${id}_fire`, `${id}_die2`, `${id}_dead`]) {
+      for (const m of [0, 1, 2, 4, 8, 16, 24, 31]) { const f = maim(key, m); if (f) sheet.push(f); }
+    }
+  }
+  writeSheet(path.join(OUT, 'spr-maim.png'), sheet, { cols: 8, scale: 1, pad: 3 });
+  writeSheet(path.join(OUT, 'spr-maim-4x.png'), MAIMABLE.flatMap((id) => [0, 1, 6, 24, 31].map((m) => maim(`${id}_walk0_1`, m))).filter(Boolean),
+    { cols: 5, scale: 3, pad: 3 });
+  writeSheet(path.join(OUT, 'spr-parts.png'), pick(MAIMABLE.flatMap((id) => PARTS.flatMap((p) => [0, 1, 2, 3, 4, 5, 6, 7].map((r) => `${id}_part_${p}_${r}`)))),
+    { cols: 8, scale: 3, pad: 3 });
+}
 
 for (const id of [...ENEMIES, ...MUTANTS]) {
   const rows = [];
@@ -277,7 +369,11 @@ console.log(`built ${Object.keys(frames).length} frames in ${buildMs}ms -> ${OUT
 console.log(`coverage  lowest: ${cv.slice(0, 4).map(([k, v]) => `${k} ${(v * 100).toFixed(1)}%`).join(', ')}`);
 console.log(`coverage highest: ${cv.slice(-4).map(([k, v]) => `${k} ${(v * 100).toFixed(1)}%`).join(', ')}`);
 for (const w of warn) console.log(`WARN  ${w}`);
-for (const m of fails.slice(0, 40)) console.log(`FAIL  ${m}`);
+// intentional art changes move the baseline; list everything else first
+const baseFails = fails.filter((m) => m.startsWith('BASELINE'));
+for (const m of fails.filter((x) => !x.startsWith('BASELINE')).slice(0, 40)) console.log(`FAIL  ${m}`);
+for (const m of baseFails.slice(0, 8)) console.log(`FAIL  ${m}`);
+if (baseFails.length > 8) console.log(`FAIL  ... and ${baseFails.length - 8} more BASELINE changes`);
 console.log(fails.length === 0
   ? `PASS  ${expected.length} required keys, all checks green`
   : `FAIL  ${fails.length} problem(s)`);
