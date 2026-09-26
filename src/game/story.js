@@ -262,6 +262,29 @@ export class Radio {
   }
 
   /**
+   * The game paused mid-line. The browser's speech engine runs on its own
+   * clock, not the game's, so it has to be stopped outright; the line goes
+   * back on the front of the queue so it is heard whole on resume, unless it
+   * was nearly finished anyway.
+   */
+  hold() {
+    const m = this.current;
+    this.current = null;
+    if (m && m.t < m.life * 0.7) {
+      this.queue.unshift({ speaker: m.speaker, key: m.key, text: m.text, priority: m.priority,
+        args: null, delay: 0.3, exact: true });
+      if (this.queue.length > 3) this.queue.length = 3;
+    }
+    this.cancelVoice();
+  }
+
+  /** Whether the voice engine is still audibly on the line. */
+  voiceBusy() {
+    const v = this.game && this.game.vox;
+    try { return !!(v && v.busy); } catch { return false; }
+  }
+
+  /**
    * @param {string} speaker  brick | ilsa | mutter
    * @param {string} key      announcer line key
    * @param {string} text     fallback text, also the subtitle
@@ -319,6 +342,10 @@ export class Radio {
     if (this.current) {
       this.current.t += dt;
       if (this.current.t >= this.current.life) {
+        // The caption's clock is an estimate and the voice is the truth: a
+        // natural voice can run long, and the next speaker must not start
+        // over the end of it. Hold the floor while it talks, within reason.
+        if (this.current.t < this.current.life + 4 && this.voiceBusy()) return;
         this.current = null;
         this.cooldown = 0.28;
       }
@@ -334,7 +361,9 @@ export class Radio {
     // Show the line the announcer actually chose, not the fallback we queued.
     const said = (g.lastSpoken && g.lastSpoken.text) || m.text;
     this.current = {
-      ...m, text: said, t: 0, life: Math.max(2.4, Math.min(7.5, dur || estimate(said))),
+      // A long transmission is allowed its length; the old 7.5 s cap cut the
+      // caption (and the portrait's mouth) off while the voice went on.
+      ...m, text: said, t: 0, life: Math.max(2.4, Math.min(14, dur || estimate(said))),
       speakerDef: sp,
     };
   }
@@ -351,7 +380,7 @@ export class Radio {
   }
 }
 
-function estimate(text) { return Math.max(2.2, Math.min(7, (text || '').length * 0.055 + 1.1)); }
+function estimate(text) { return Math.max(2.2, Math.min(9, (text || '').length * 0.055 + 1.1)); }
 
 function shuffled(n, rng) {
   const a = [];

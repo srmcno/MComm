@@ -91,16 +91,32 @@ function safeSound(s) {
   return wrap;
 }
 
+/**
+ * Caption text: {Word|PHONES} shows the word, and a phones-only {PHONES} group
+ * (the synthesiser's business) shows nothing. Same rules as speech.js.
+ */
+function plainText(s) {
+  return String(s == null ? '' : s).replace(/\{([^{}|]*)\|[^{}]*\}/g, '$1').replace(/\{[^{}]*\}/g, ' ')
+    .replace(/%s/g, '').replace(/\s+([,.;:!?])/g, '$1').replace(/([,;:])(?=[,;:.!?])/g, '')
+    .replace(/\s{2,}/g, ' ').trim();
+}
+
 function safeVox(v) {
   const noop = () => 0;
-  if (!v) return { say: noop, sayLine: noop, cancel: () => {}, setVolume: () => {}, busy: false, LINES: {} };
+  if (!v) {
+    return { say: noop, sayLine: noop, cancel: () => {}, setVolume: () => {}, setMode: () => {},
+      busy: false, engine: 'none', LINES: {} };
+  }
   return {
     say: (...a) => { try { return v.say(...a) || 0; } catch { return 0; } },
     sayLine: (...a) => { try { return (v.sayLine ? v.sayLine(...a) : v.say(...a)) || 0; } catch { return 0; } },
     cancel: () => { try { v.cancel && v.cancel(); } catch { /* ignore */ } },
     setVolume: (x) => { try { v.setVolume && v.setVolume(x); } catch { /* ignore */ } },
-    get busy() { return !!v.busy; },
+    setMode: (m) => { try { v.setMode && v.setMode(m); } catch { /* ignore */ } },
+    get busy() { try { return !!v.busy; } catch { return false; } },
+    get engine() { try { return v.engine || 'robot'; } catch { return 'none'; } },
     get lastLine() { return v.lastLine; },
+    get lastRequested() { return v.lastRequested; },
     get lastVoice() { return v.lastVoice; },
   };
 }
@@ -332,6 +348,10 @@ export class Game {
   setState(s) {
     this.state = s;
     if (s === STATE.PAUSE) { this.pauseSel = 0; this.pausePage = 'menu'; this.pauseOptSel = 0; this.pauseT = 0; }
+    // The browser speaks on its own clock, so the hard stops stop it too. A
+    // pause keeps the radio line to replay; game over and the floor card drop it.
+    if (s === STATE.PAUSE) this.radio.hold();
+    else if (s === STATE.GAMEOVER || s === STATE.INTERMISSION) this.radio.reset();
     if (s === STATE.PLAY) {
       this.sound.music(this.sky.active ? 'siege' : this.corridorTrack(),
         { fadeIn: 1.2, intensity: this.sky.intensity });
@@ -476,7 +496,7 @@ export class Game {
     let spoken = dur ? (this.vox.lastRequested || this.vox.lastLine || text) : text;
     if (!dur && text) { try { dur = this.vox.say(text, { voice }) || 0; } catch { dur = 0; } }
     if (args && spoken) for (const a of args) spoken = spoken.replace('%s', a);
-    const caption = String(spoken || '').replace(/\{[^}]*\}/g, (m) => m.slice(1, -1).replace(/[0-9]/g, '').toLowerCase());
+    const caption = plainText(spoken);
     this.lastSpoken = { voice, text: caption };
     if (this.subtitlesOn && caption) this.hud.say(caption, Math.max(2.6, dur || 3.2));
     return dur;
@@ -503,7 +523,7 @@ export class Game {
     let spoken = dur ? (this.vox.lastRequested || this.vox.lastLine || text) : text;
     if (!dur && text) this.vox.say(text, opts);
     if (opts.args && spoken) for (const a of opts.args) spoken = String(spoken).replace('%s', a);
-    const caption = String(spoken || '').replace(/\{[^}]*\}/g, (m) => m.slice(1, -1).replace(/[0-9]/g, '').toLowerCase());
+    const caption = plainText(spoken);
     if (this.subtitlesOn && caption) this.hud.say(caption, Math.max(2.6, (dur || 3.2)));
   }
 

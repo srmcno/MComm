@@ -6,6 +6,7 @@ import { clamp, lerp, makeRng, TAU } from '../core/math.js';
 import { fillRectBuf, addRectBuf, lineBuf, blitFrame } from './text.js';
 import { getScores } from '../core/scores.js';
 import { PAD_GLYPHS } from '../core/input.js';
+import { VOICE_MODES, saveVoiceMode } from '../audio/speech.js';
 
 const AMBER = rgba(255, 186, 64, 255);
 const HOT = rgba(255, 236, 190, 255);
@@ -116,6 +117,7 @@ export class TitleScreen {
       { label: 'MASTER VOLUME', value: () => pct(game.volMaster), adj: (d) => { game.volMaster = step(game.volMaster, d, 0, 1); game.sound.setMaster(game.volMaster); } },
       { label: 'MUSIC', value: () => pct(game.volMusic), adj: (d) => { game.volMusic = step(game.volMusic, d, 0, 1); game.sound.setMusicVol(game.volMusic); } },
       { label: 'ANNOUNCER', value: () => pct(game.volVox), adj: (d) => { game.volVox = step(game.volVox, d, 0, 1); game.vox.setVolume(game.volVox); } },
+      { label: 'VOICE', value: () => voiceLabel(game), adj: (d) => cycleVoice(game, d) },
       { label: 'SUBTITLES', value: () => (game.subtitlesOn ? 'ON' : 'OFF'), adj: () => { game.subtitlesOn = !game.subtitlesOn; } },
       { label: 'CRT SCANLINES', value: () => pct(s.scan / 0.6), adj: (d) => { s.scan = clamp(s.scan + d * 0.06, 0, 0.6); } },
       { label: 'BLOOM', value: () => pct(s.bloom / 1.6), adj: (d) => { s.bloom = clamp(s.bloom + d * 0.16, 0, 1.6); } },
@@ -599,9 +601,11 @@ export class TitleScreen {
     const T = game.text;
     const p = this.drawPanel(buf, W, H, s, 'CALIBRATION', game);
     const opts = this.optionList(game);
+    // Tighten the rows rather than run off the plate as the list grows.
+    const row = Math.min(16, 156 / Math.max(1, opts.length - 1));
     opts.forEach((o, i) => {
       const on = i === this.optSel;
-      const y = p.y + 40 * s + i * 16 * s;
+      const y = p.y + 40 * s + i * row * s;
       if (on) fillRectBuf(buf, W, H, p.x + 10 * s, y - 10 * s, p.w - 20 * s, 14 * s, rgba(40, 28, 18, 255), 0.66);
       T.draw(buf, W, H, p.x + 20 * s, y, o.label, {
         size: Math.round(8.5 * s), color: on ? HOT : DIM, track: 2,
@@ -640,3 +644,39 @@ export class TitleScreen {
 }
 
 function pct(v) { return `${Math.round(v * 100)}%`; }
+
+// ------------------------------------------------------------------ voice
+
+const VOICE_LABEL = { natural: 'NATURAL', robot: 'ROBOT', off: 'OFF' };
+
+function voiceLabel(game) {
+  const m = VOICE_MODES.includes(game.voiceMode) ? game.voiceMode : 'natural';
+  // Asked for the browser's voices on a browser that has none: say what is
+  // actually playing instead of pretending.
+  if (m === 'natural' && game.vox && game.vox.engine === 'robot') return 'ROBOT (NO BROWSER VOICES)';
+  return VOICE_LABEL[m];
+}
+
+// Somebody has to say something, or the setting is a guess.
+const VOICE_SAMPLES = [
+  ['brick', 'Check, one two. Brick Hardigan. Still the best-looking son of a bitch in this bunker.'],
+  ['ilsa', 'Vance here. If you can understand me, stop playing with the settings and go to work.'],
+  ['mutter', 'Voice calibration complete. You sound wonderful. I sound wonderful. We are all going to die.'],
+];
+let voiceSample = 0;
+
+function cycleVoice(game, d) {
+  const n = VOICE_MODES.length;
+  const i = Math.max(0, VOICE_MODES.indexOf(game.voiceMode));
+  const m = VOICE_MODES[(i + (d < 0 ? n - 1 : 1)) % n];
+  game.voiceMode = m;
+  saveVoiceMode(m);
+  const v = game.vox;
+  if (!v) return;
+  if (v.setMode) v.setMode(m);
+  if (m !== 'off' && v.say) {
+    const [who, text] = VOICE_SAMPLES[voiceSample++ % VOICE_SAMPLES.length];
+    if (v.cancel) v.cancel();
+    v.say(text, { voice: who, priority: 4 });
+  }
+}

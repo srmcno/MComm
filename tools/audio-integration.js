@@ -218,6 +218,106 @@ for (const [k, v] of Object.entries(r)) {
     `peak ${v.peak} rms ${v.rms}`);
 }
 
+// ------------------------------------------------------------- voices
+// Headless Chromium has a speechSynthesis with no voices, so the game must have
+// fallen back to the formant synth on its own, and said so on the options page.
+r = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  let voices = -1;
+  try { voices = window.speechSynthesis ? window.speechSynthesis.getVoices().length : -1; } catch { voices = -2; }
+  const opt = g.titleScreen.optionList(g).find((o) => o.label === 'VOICE');
+  return { engine: g.vox.engine, voices, label: opt ? opt.value() : null, mode: g.voiceMode };
+});
+check('with no browser voices the game falls back to the formant synth',
+  r.engine === 'robot' || r.voices > 0, `engine ${r.engine}, ${r.voices} voices`);
+check('the VOICE option exists and reports what is playing', !!r.label && r.mode === 'natural', `${r.label}`);
+
+// A second page with a stand-in speechSynthesis that has a desktop's voices,
+// to drive the natural path through the real boot wiring: casting, captions,
+// the pause cutting speech off, and the VOICE switch.
+{
+  const pg = await browser.newPage({ viewport: { width: 900, height: 560 } });
+  pg.on('pageerror', (e) => errs.push(e.message));
+  await pg.addInitScript(() => {
+    const V = (name, lang) => ({ name, lang, voiceURI: name, localService: false, default: false });
+    const voices = [
+      V('Microsoft Davis Online (Natural) - English (United States)', 'en-US'),
+      V('Microsoft Jenny Online (Natural) - English (United States)', 'en-US'),
+      V('Microsoft Ryan Online (Natural) - English (United Kingdom)', 'en-GB'),
+      V('Microsoft Katja Online (Natural) - German (Germany)', 'de-DE'),
+    ];
+    const log = [];
+    const synth = {
+      speaking: false, pending: false, paused: false, cancels: 0, cur: null,
+      getVoices: () => voices,
+      addEventListener() {},
+      speak(u) {
+        log.push({ text: u.text, voice: u.voice && u.voice.name, pitch: u.pitch, rate: u.rate, volume: u.volume });
+        synth.speaking = true; synth.cur = u;
+        setTimeout(() => { if (synth.cur === u && u.onstart) u.onstart({}); }, 20);
+        setTimeout(() => { if (synth.cur === u) { synth.cur = null; synth.speaking = false; if (u.onend) u.onend({}); } },
+          20 + u.text.length * 55);
+      },
+      cancel() { synth.cancels++; synth.cur = null; synth.speaking = false; },
+      pause() {}, resume() {},
+    };
+    function Utterance(text) { this.text = text; this.volume = 1; this.pitch = 1; this.rate = 1; }
+    Object.defineProperty(window, 'speechSynthesis', { value: synth, configurable: true });
+    Object.defineProperty(window, 'SpeechSynthesisUtterance', { value: Utterance, configurable: true });
+    window.__speechLog = log;
+  });
+  await pg.goto(`http://127.0.0.1:${PORT}/index.html`);
+  await pg.waitForFunction(() => window.NUKEHAUS && window.NUKEHAUS.game, { timeout: 90000 });
+  await sleep(300);
+  await pg.mouse.click(450, 280);
+  await sleep(900);
+  const v = await pg.evaluate(async () => {
+    const g = window.NUKEHAUS.game;
+    const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+    const out = { engine: g.vox.engine, casting: g.vox.casting };
+    window.__speechLog.length = 0;
+    g.newGame(1); g.loadLevel(0); g.setState('play');
+    const dur = g.speakAs('ilsa', 'ilsa_intro', '');
+    out.dur = dur;
+    out.caption = g.lastSpoken && g.lastSpoken.text;
+    await sleep(80);
+    out.first = window.__speechLog.slice();
+    out.busy = g.vox.busy;
+    g.radio.say('brick', 'brick_boot', 'Doctor Vance. Sit tight.', { priority: 3 });
+    g.radio.update(1 / 60);
+    const cancels = window.speechSynthesis.cancels;
+    g.setState('pause');
+    out.pauseCancelled = window.speechSynthesis.cancels > cancels && !g.vox.busy;
+    out.held = g.radio.queue.length;
+    const opt = g.titleScreen.optionList(g).find((o) => o.label === 'VOICE');
+    opt.adj(1);                        // NATURAL -> ROBOT
+    out.robot = { mode: g.voiceMode, engine: g.vox.engine, label: opt.value() };
+    opt.adj(1);                        // ROBOT -> OFF
+    out.off = { mode: g.voiceMode, said: g.vox.say('Anyone there?', { voice: 'brick' }) };
+    opt.adj(1);                        // OFF -> NATURAL
+    let stored = null;
+    try { stored = localStorage.getItem('nukehaus.voice.v1'); } catch { stored = 'blocked'; }
+    out.back = { mode: g.voiceMode, engine: g.vox.engine, stored };
+    const all = window.__speechLog.map((e) => e.text).join(' ');
+    out.leak = /[{}|]|\b[A-Z]{1,2}[012]\b|%s/.test(all + ' ' + out.caption);
+    return out;
+  });
+  await pg.close();
+  check('natural voices: the engine is the browser voice', v.engine === 'natural', v.engine);
+  check('natural voices: Brick, Ilsa and MUTTER are cast to three voices',
+    /Davis/.test(v.casting.brick) && /Katja/.test(v.casting.ilsa) && /Ryan/.test(v.casting.mutter),
+    `${v.casting.brick} / ${v.casting.ilsa} / ${v.casting.mutter}`);
+  const u = v.first[0] || {};
+  check('natural voices: Ilsa speaks in Katja with a duration and a caption',
+    /Katja/.test(u.voice || '') && v.dur > 1 && !!v.caption && v.busy, `${v.dur}s "${String(v.caption).slice(0, 40)}"`);
+  check('natural voices: nothing spoken or captioned carries phones or braces', !v.leak);
+  check('natural voices: pausing cancels speech and holds the radio line', v.pauseCancelled && v.held >= 1, `held ${v.held}`);
+  check('VOICE: ROBOT switches to the formant synth', v.robot.mode === 'robot' && v.robot.engine === 'robot' && v.robot.label === 'ROBOT');
+  check('VOICE: OFF is silent', v.off.mode === 'off' && v.off.said === 0);
+  check('VOICE: back to NATURAL, and the choice is stored', v.back.mode === 'natural' && v.back.engine === 'natural' &&
+    (v.back.stored === 'natural' || v.back.stored === 'blocked'), `${v.back.stored}`);
+}
+
 if (errs.length) { console.log('\nPAGE ERRORS:'); for (const e of errs.slice(0, 6)) console.log('  ' + e); }
 console.log(`\n${fails ? fails + ' failures' : 'all audio checks passed'}`);
 await browser.close();
