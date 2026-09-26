@@ -16,6 +16,110 @@ const GREEN = rgba(126, 232, 128, 255);
 const WHITE = rgba(240, 238, 230, 255);
 const BONE = rgba(214, 204, 180, 255);
 const INK = rgba(10, 8, 12, 255);
+const SMOKE = rgba(214, 208, 198, 255);
+const CORNERS = [[0, 0], [1, 0], [0, 1], [1, 1]];
+
+/**
+ * Bilinear blit with straight alpha, for the painted faces. They are drawn at
+ * roughly 1:1, and nearest-neighbour at 0.9x or 1.3x drops or doubles whole
+ * rows, which reads as a scar across the nose. A face is a few thousand
+ * pixels, so filtering it costs nothing.
+ */
+function blitSmooth(buf, W, H, f, ox, oy, dw, dh, alpha = 1, lum = 1) {
+  ox = Math.round(ox); oy = Math.round(oy); dw = Math.round(dw); dh = Math.round(dh);
+  if (!f || dw < 1 || dh < 1 || alpha <= 0.004) return;
+  const fw = f.w, fh = f.h, src = f.data;
+  const x0 = Math.max(0, -ox), x1 = Math.min(dw, W - ox);
+  const y0 = Math.max(0, -oy), y1 = Math.min(dh, H - oy);
+  const sx = fw / dw, sy = fh / dh;
+  for (let y = y0; y < y1; y++) {
+    let v = (y + 0.5) * sy - 0.5;
+    v = v < 0 ? 0 : v > fh - 1 ? fh - 1 : v;
+    const vi = v | 0, vf = v - vi, r0 = vi * fw, r1 = (vi + 1 < fh ? vi + 1 : vi) * fw;
+    const row = (oy + y) * W + ox;
+    for (let x = x0; x < x1; x++) {
+      let u = (x + 0.5) * sx - 0.5;
+      u = u < 0 ? 0 : u > fw - 1 ? fw - 1 : u;
+      const ui = u | 0, uf = u - ui, ui2 = ui + 1 < fw ? ui + 1 : ui;
+      const c00 = src[r0 + ui], c10 = src[r0 + ui2], c01 = src[r1 + ui], c11 = src[r1 + ui2];
+      const w00 = (1 - uf) * (1 - vf) * (c00 >>> 24), w10 = uf * (1 - vf) * (c10 >>> 24);
+      const w01 = (1 - uf) * vf * (c01 >>> 24), w11 = uf * vf * (c11 >>> 24);
+      const wa = w00 + w10 + w01 + w11;
+      if (wa < 2) continue;
+      const iw = lum / wa;
+      let r = ((c00 & 255) * w00 + (c10 & 255) * w10 + (c01 & 255) * w01 + (c11 & 255) * w11) * iw;
+      let g = (((c00 >>> 8) & 255) * w00 + ((c10 >>> 8) & 255) * w10
+        + ((c01 >>> 8) & 255) * w01 + ((c11 >>> 8) & 255) * w11) * iw;
+      let b = (((c00 >>> 16) & 255) * w00 + ((c10 >>> 16) & 255) * w10
+        + ((c01 >>> 16) & 255) * w01 + ((c11 >>> 16) & 255) * w11) * iw;
+      const a = wa * (1 / 255) * alpha;
+      const o = row + x, d = buf[o];
+      const dr = d & 255, dg = (d >>> 8) & 255, db = (d >>> 16) & 255;
+      r = dr + (r - dr) * a; g = dg + (g - dg) * a; b = db + (b - db) * a;
+      buf[o] = (255 << 24 | (b > 255 ? 255 : b) << 16 | (g > 255 ? 255 : g) << 8 | (r > 255 ? 255 : r)) >>> 0;
+    }
+  }
+}
+
+/** Soft round smudge, alpha falling off to the rim: cigar smoke. */
+function softDot(buf, W, H, cx, cy, r, color, alpha) {
+  if (alpha <= 0.004 || r < 0.5) return;
+  const cr = color & 255, cg = (color >>> 8) & 255, cb = (color >>> 16) & 255;
+  const x0 = Math.max(0, Math.floor(cx - r)), x1 = Math.min(W - 1, Math.ceil(cx + r));
+  const y0 = Math.max(0, Math.floor(cy - r)), y1 = Math.min(H - 1, Math.ceil(cy + r));
+  const ir2 = 1 / (r * r);
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const dx = x - cx, dy = y - cy;
+      const q = 1 - (dx * dx + dy * dy) * ir2;
+      if (q <= 0) continue;
+      const a = alpha * q * q;
+      const o = y * W + x, d = buf[o];
+      const dr = d & 255, dg = (d >>> 8) & 255, db = (d >>> 16) & 255;
+      buf[o] = (255 << 24 | (db + (cb - db) * a) << 16 | (dg + (cg - dg) * a) << 8 | (dr + (cr - dr) * a)) >>> 0;
+    }
+  }
+}
+
+/**
+ * A few puffs of cigar smoke rising off an ember. Positions are in the pixels
+ * of the frame the ember belongs to, so the same smoke works on the status
+ * face and on a radio portrait at any scale.
+ */
+function makeSmoke(n) {
+  const puffs = [];
+  for (let i = 0; i < n; i++) puffs.push({ t: 1, life: 1, x: 0, y: 0, vx: 0, ph: 0 });
+  return { puffs, next: 0, timer: 0, on: false, ex: 0, ey: 0 };
+}
+
+function stepSmoke(S, dt, rate) {
+  for (const p of S.puffs) {
+    if (p.t >= p.life) continue;
+    p.t += dt;
+    p.x += (p.vx + Math.sin(p.t * 3.1 + p.ph) * 2.2) * dt;
+    p.y -= (7 + p.t * 3) * dt;
+  }
+  if (!S.on) return;
+  S.timer -= dt;
+  if (S.timer > 0) return;
+  S.timer = rate * (0.7 + Math.random() * 0.6);
+  const p = S.puffs[S.next];
+  S.next = (S.next + 1) % S.puffs.length;
+  p.t = 0; p.life = 1.5 + Math.random() * 0.9;
+  p.x = S.ex + (Math.random() - 0.5) * 1.2; p.y = S.ey - 1;
+  p.vx = 1.5 + Math.random() * 2.5; p.ph = Math.random() * 6.28;
+}
+
+function drawSmoke(buf, W, H, S, ox, oy, scale, alpha, clipTop) {
+  for (const p of S.puffs) {
+    if (p.t >= p.life) continue;
+    const k = p.t / p.life;
+    const y = oy + p.y * scale;
+    if (y < clipTop) continue;
+    const a = alpha * (k < 0.15 ? k / 0.15 : 1) * (1 - k) * 0.34;
+    softDot(buf, W, H, ox + p.x * scale, y, (1.4 + k * 4.2) * scale, SMOKE, a);
+  }
+}
 
 export class Hud {
   constructor(text) {
@@ -28,6 +132,17 @@ export class Hud {
     this.faceTimer = 0;
     this.faceOverride = null;
     this.faceOverrideT = 0;
+    // Moods the HUD reads straight off the player, no game.js hooks needed:
+    // rage while the trigger stays down, glee on a multi-kill.
+    this.faceClock = -1;
+    this.fireHold = 0;
+    this.fireGap = 9;
+    this.lastKills = -1;
+    this.lastSky = -1;
+    this.killTimes = new Float64Array(6);
+    this.skyTimes = new Float64Array(8);
+    this.faceSmoke = makeSmoke(10);
+    this.radioSmoke = makeSmoke(8);
     this.damageDirs = [];
     this.tick = 0;
     this.hit = 0;
@@ -103,6 +218,8 @@ export class Hud {
     this.faceTimer -= dt;
     if (this.faceTimer <= 0) { this.faceTimer = 1.1 + Math.random() * 2.4; this.faceLook = (Math.random() * 3) | 0; }
     if (this.faceOverrideT > 0) { this.faceOverrideT -= dt; if (this.faceOverrideT <= 0) this.faceOverride = null; }
+    stepSmoke(this.faceSmoke, dt, 0.2);
+    stepSmoke(this.radioSmoke, dt, 0.16);
     for (let i = this.damageDirs.length - 1; i >= 0; i--) {
       this.damageDirs[i].t += dt;
       if (this.damageDirs[i].t > 1.1) this.damageDirs.splice(i, 1);
@@ -403,6 +520,80 @@ export class Hud {
     }
   }
 
+  // ------------------------------------------------------------ status face
+
+  /**
+   * Which face, and why. Death beats everything; a face the game asked for
+   * (hurt, grin, key) beats the moods; the moods beat the health tier.
+   */
+  faceMood(game) {
+    const p = game.player;
+    const now = this.tick;
+    const dt = this.faceClock < 0 ? 0 : Math.min(0.1, Math.max(0, now - this.faceClock));
+    this.faceClock = now;
+    // Sustained fire: Brick starts yelling after about a second and a half.
+    if (p.fireAnim > 0 && p.weapon !== 'boot') { this.fireHold += dt; this.fireGap = 0; }
+    else { this.fireGap += dt; if (this.fireGap > 0.4) this.fireHold = 0; }
+    // Multi-kills: three bodies inside a second and a half, or a sky chain of six.
+    const kills = p.kills | 0, sky = p.skyKills | 0;
+    if (this.lastKills < 0 || kills < this.lastKills) { this.lastKills = kills; this.killTimes.fill(-9); }
+    if (this.lastSky < 0 || sky < this.lastSky) { this.lastSky = sky; this.skyTimes.fill(-9); }
+    let glee = false;
+    for (; this.lastKills < kills; this.lastKills++) {
+      this.killTimes.copyWithin(1, 0); this.killTimes[0] = now;
+      if (now - this.killTimes[2] < 1.5) glee = true;
+    }
+    for (; this.lastSky < sky; this.lastSky++) {
+      this.skyTimes.copyWithin(1, 0); this.skyTimes[0] = now;
+      if (now - this.skyTimes[5] < 1.2) glee = true;
+    }
+    if (glee && !p.dead) {
+      this.setFace('face_ecstatic', 2.2);
+      this.killTimes.fill(-9); this.skyTimes.fill(-9);
+    }
+    const tier = clamp(Math.floor((p.health / p.maxHealth) * 4.999), 0, 4);
+    if (p.dead) return 'face_dead';
+    if (this.faceOverride) return this.faceOverride;
+    if (this.fireHold > 1.5) return 'face_rage';
+    return `face_h${tier}_${this.faceLook}`;
+  }
+
+  /**
+   * The status face in its own recessed window, a touch taller than the bar so
+   * it reads at a glance. Returns the window's half-width so the score
+   * can sit beside it.
+   */
+  drawFace(buf, W, H, s, game) {
+    const p = game.player;
+    const vm = game.art.vm;
+    let key = this.faceMood(game);
+    if (!vm[key]) key = `face_h${clamp(Math.floor((p.health / p.maxHealth) * 4.999), 0, 4)}_1`;
+    const face = vm[key];
+    // Tall enough to read, short enough to stay under the city strip (H - 51s).
+    const fh = Math.round(44 * s), fw = Math.round(fh * (face ? face.w / face.h : 64 / 72));
+    const fx = Math.round(W / 2 - fw / 2), fy = Math.round(H - fh - 2 * s);
+    const pad = Math.round(3 * s);
+    // the window: dark, warm at the bottom, flushed red when he takes a hit
+    fillRectBuf(buf, W, H, fx - pad, fy - pad, fw + pad * 2, fh + pad * 2, INK, 0.86);
+    fillRectBuf(buf, W, H, fx, fy, fw, fh, rgba(40, 24, 22, 255), 0.55);
+    fillRectBuf(buf, W, H, fx, fy + fh * 0.55, fw, fh * 0.45, rgba(70, 36, 24, 255), 0.35);
+    const hurt = clamp(p.hurtFlash || 0, 0, 1);
+    if (hurt > 0.02) addRectBuf(buf, W, H, fx, fy, fw, fh, RED, hurt * 0.28);
+    if (face) blitSmooth(buf, W, H, face, fx, fy, fw, fh, 1, 1.04);
+    // smoke off the cigar, if this face has a lit one
+    const sm = this.faceSmoke;
+    sm.on = !!(face && face.ember);
+    if (sm.on) { sm.ex = face.ember[0]; sm.ey = face.ember[1]; }
+    if (face) drawSmoke(buf, W, H, sm, fx, fy, fw / face.w, 1, fy - 30 * s);
+    const bc = p.health > 60 ? AMBER_DIM : p.health > 25 ? AMBER : RED;
+    for (const [dx, dy] of CORNERS) {
+      const cx = fx - pad + dx * (fw + pad * 2), cy = fy - pad + dy * (fh + pad * 2);
+      fillRectBuf(buf, W, H, cx - (dx ? 7 * s : 0), cy - (dy ? 1.5 * s : 0), 7 * s, 1.5 * s, bc, 0.9);
+      fillRectBuf(buf, W, H, cx - (dx ? 1.5 * s : 0), cy - (dy ? 7 * s : 0), 1.5 * s, 7 * s, bc, 0.9);
+    }
+    return fw / 2 + pad;
+  }
+
   // ------------------------------------------------------------ bottom bar
 
   drawBottom(buf, W, H, s, game) {
@@ -413,15 +604,8 @@ export class Hud {
     fillRectBuf(buf, W, H, 0, y, W, barH, INK, 0.55);
     fillRectBuf(buf, W, H, 0, y, W, 1, AMBER_DIM, 0.5);
 
-    // Warden face, dead centre, Wolf3D style.
-    const tier = clamp(Math.floor((p.health / p.maxHealth) * 4.999), 0, 4);
-    let faceKey = this.faceOverride || (p.dead ? 'face_dead' : `face_h${tier}_${this.faceLook}`);
-    if (!game.art.vm[faceKey]) faceKey = `face_h${tier}_1`;
-    const face = game.art.vm[faceKey];
-    if (face) {
-      const fs = (barH - 8 * s) / face.h;
-      blitFrame(buf, W, H, face, W / 2 - (face.w * fs) / 2, y + 4 * s, { scale: fs });
-    }
+    // Brick's face, dead centre, Doom style.
+    const facePanel = this.drawFace(buf, W, H, s, game);
 
     // Health, left.
     const hx = 14 * s;
@@ -472,9 +656,9 @@ export class Hud {
       sx += 13 * s;
     }
 
-    // Score + level, top strip of the bar.
-    T.draw(buf, W, H, W / 2, y + 12 * s, commas(p.score), {
-      size: Math.round(12 * s), color: BONE, align: 'center', track: 1.6,
+    // Score + level. The score sits beside the face window, not under it.
+    T.draw(buf, W, H, W / 2 - facePanel - 8 * s, y + 35 * s, commas(p.score), {
+      size: Math.round(12 * s), color: BONE, align: 'right', track: 1.6,
     });
     T.draw(buf, W, H, 14 * s, 12 * s, `${game.levelIndex + 1}/${game.totalLevels}  ${game.level.name}`, {
       size: Math.round(8 * s), color: AMBER_DIM, track: 2.4,
@@ -552,9 +736,13 @@ export class Hud {
     if (f) {
       fillRectBuf(buf, W, H, x - 3 * s, y - 3 * s, size + 6 * s, size + 6 * s, INK, 0.82 * a);
       // Lift the portrait off the scene behind it; Ilsa's CRT is dark by design.
-      blitFrame(buf, W, H, f, x, y, { scale: size / f.w, alpha: a, lum: 1.22 });
+      blitSmooth(buf, W, H, f, x, y, size, size, a, m.speaker === 'ilsa' ? 1.2 : 1.1);
+      const rs = this.radioSmoke;
+      rs.on = !!f.ember;
+      if (rs.on) { rs.ex = f.ember[0]; rs.ey = f.ember[1]; }
+      drawSmoke(buf, W, H, rs, x, y, size / f.w, a, y);
       // Bezel: two corner brackets and a live status lamp.
-      for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+      for (const [dx, dy] of CORNERS) {
         const cx = x - 3 * s + dx * (size + 6 * s), cy = y - 3 * s + dy * (size + 6 * s);
         fillRectBuf(buf, W, H, cx - (dx ? 9 * s : 0), cy - (dy ? 1.5 * s : 0), 9 * s, 1.5 * s, col, 0.85 * a);
         fillRectBuf(buf, W, H, cx - (dx ? 1.5 * s : 0), cy - (dy ? 9 * s : 0), 1.5 * s, 9 * s, col, 0.85 * a);
