@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
-const PORT = 8147;
+const PORT = Number(process.env.TOOL_PORT || 8147);
 let fails = 0;
 const check = (name, ok, detail = '') => {
   if (!ok) fails++;

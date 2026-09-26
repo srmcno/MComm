@@ -7,7 +7,7 @@ import path from 'node:path';
 
 const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
 const OUT = '/tmp/claude-0/-home-user-MComm/1d9ae501-9927-5c9d-832d-0ee312d588ac/scratchpad';
-const PORT = 8157;
+const PORT = Number(process.env.TOOL_PORT || 8157);
 const server = spawn('python3', ['-m', 'http.server', String(PORT), '--bind', '127.0.0.1'],
   { cwd: path.join(ROOT, 'dist'), stdio: 'ignore' });
 process.on('exit', () => { try { server.kill('SIGKILL'); } catch {} });

@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 
 const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
-const PORT = Number(process.env.CAMPAIGN_PORT || 8149);
+const PORT = Number(process.env.CAMPAIGN_PORT || process.env.TOOL_PORT || 8149);
 // Accept a name or an index; `Number('clerical') | 0` silently meant CLERICAL.
 const DIFF_NAMES = ['clerical', 'warden', 'last shift', 'lastshift'];
 const raw = process.argv[2];

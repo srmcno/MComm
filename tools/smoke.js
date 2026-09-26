@@ -11,7 +11,7 @@ const OUT = process.argv[2] && !process.argv[2].startsWith('--')
   ? process.argv[2]
   : '/tmp/claude-0/-home-user-MComm/1d9ae501-9927-5c9d-832d-0ee312d588ac/scratchpad/shots';
 const CHROME = chromePath();
-const PORT = 8137;
+const PORT = Number(process.env.TOOL_PORT || 8137);
 
 fs.mkdirSync(OUT, { recursive: true });
 
