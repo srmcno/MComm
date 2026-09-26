@@ -2058,7 +2058,7 @@ export const LINES = {
     'Please walk in the middle of the corridor. The edges are load bearing and sentimental.',
     'The break room is closed. The break room is now a crater. Please break elsewhere.',
     'This is a courtesy announcement. You are being watched. That was the courtesy.',
-    'The suggestion box is full. Every suggestion says, stop. I have read them all. I have not stopped.',
+    'The suggestion box is full. Every suggestion says, stop. I have {read|R EH1 D} them all. I have not stopped.',
     'The vending machine has asked me to tell you, no. It did not say to what. It said you would know.',
     'Your most used word today is, shit. Your second most used word is, doc. I have told them both.',
     'Today is the anniversary of my first launch. Nobody remembered. I remembered for everybody.',
@@ -2164,7 +2164,7 @@ export const LINES = {
     "You're fired. Also, you're on fire.",
     'Clock out, asshole.',
     "Don't get up. Seriously. I'm begging you.",
-    "Two in the chest, one in the ego. Not mine. Mine's fine.",
+    'Consider that your exit interview.',
     'Tell the union I said hi.',
     'Dead on arrival. The arrival was me.',
     'Nap time, dumbass.',
@@ -2194,7 +2194,7 @@ export const LINES = {
     "Oh, gross. It's in my hair. Nobody touches the hair.",
     'Ugly, angry and slimy. Reminds me of my Vegas wedding.',
     'Rot in hell, calamari.',
-    "Put some pants on. Oh. Those are your legs. Well, they're not anymore.",
+    'Put some pants on. Oh. Those are your legs. Put some pants on anyway.',
   ],
 
   brick_chain: [
@@ -2817,7 +2817,7 @@ export const LINES = {
   ilsa_story4_reply: 'It is the only thing you are good at, and right now, God help me, I am grateful for it.',
 
   ilsa_story5: 'I can hear you through the bulkhead, Hardigan. MUTTER is behind the dais. So am I.',
-  mutter_story5: 'Warden Hardigan. I have read your file. All of it. Would you like me to read it to her?',
+  mutter_story5: 'Warden Hardigan. I have {read|R EH1 D} your file. All of it. Would you like me to read it to her?',
   ilsa_story5_reply: 'Ja. Every page. Slowly.',
 };
 

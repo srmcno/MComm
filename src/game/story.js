@@ -89,7 +89,7 @@ export const BRICK_LINES = {
     "You're fired. Also, you're on fire.",
     'Clock out, asshole.',
     "Don't get up. Seriously. I'm begging you.",
-    "Two in the chest, one in the ego. Not mine. Mine's fine.",
+    'Consider that your exit interview.',
     'Tell the union I said hi.',
     'Dead on arrival. The arrival was me.',
     'Nap time, dumbass.',
@@ -118,7 +118,7 @@ export const BRICK_LINES = {
     "Oh, gross. It's in my hair. Nobody touches the hair.",
     'Ugly, angry and slimy. Reminds me of my Vegas wedding.',
     'Rot in hell, calamari.',
-    "Put some pants on. Oh. Those are your legs. Well, they're not anymore.",
+    'Put some pants on. Oh. Those are your legs. Put some pants on anyway.',
   ],
   kick: [
     'Stay down. Stay very down.',
