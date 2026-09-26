@@ -175,6 +175,7 @@ export class Gore {
     this.free = [];
     for (let i = 0; i < MAX_PARTS + MAX_GIBS + MAX_CASINGS; i++) this.free.push(blankChunk());
     this.parts = [];
+    this._trailBudget = 8;
     this.gibs = [];
     this.casings = [];
     this.fountains = [];
@@ -873,7 +874,11 @@ export class Gore {
 
   update(dt) {
     const game = this.game;
-    for (const k in this.sndT) this.sndT[k] -= dt;
+    const T = this.sndT;
+    T.land -= dt; T.spurt -= dt; T.tink -= dt; T.bump -= dt;
+    // Blood trails share a budget per frame, so sixty limbs in the air at once
+    // cost what a handful would.
+    this._trailBudget = 8;
     for (let i = 0; i < this.fountains.length; i++) {
       const f = this.fountains[i];
       if (!f.active) continue;
@@ -893,6 +898,118 @@ export class Gore {
     this._stepList(this.gibs, dt);
     this._stepList(this.casings, dt);
     if (game.player) this._scuff(game.player);
+    // A thrown body is a bowling ball, and the staff are the pins.
+    const en = game.enemies;
+    for (let i = 0; i < en.length; i++) {
+      const e = en[i];
+      if (!e.alive && e.launched) this._bowl(e, dt);
+    }
+  }
+
+  _bowl(e, dt) {
+    const game = this.game;
+    e._bowlT = (e._bowlT || 0) - dt;
+    if (e._bowlT > 0) return;
+    const sp = Math.hypot(e.kvx, e.kvy);
+    if (sp < 5) return;
+    const en = game.enemies;
+    for (let i = 0; i < en.length; i++) {
+      const o = en[i];
+      if (!o.alive || o === e || o.id === e._pinId || o.def.boss || o.def.miniboss) continue;
+      const dx = o.x - e.x, dy = o.y - e.y;
+      const r = e.radius + o.radius;
+      if (dx * dx + dy * dy > r * r) continue;
+      if (e.z > o.z + o.height) continue;
+      e._bowlT = 0.25;
+      const ux = e.kvx / sp, uy = e.kvy / sp;
+      const killed = o.hurt(8 + sp * 1.5, game, e.x, e.y);
+      // Pass most of the momentum on; the pin goes flying, the ball slows.
+      o.shove(ux + dx * 0.5, uy + dy * 0.5, sp * 0.75, 1.5);
+      if (killed) this.launch(o, ux, uy, sp * 0.6, 2.5);
+      e.kvx *= 0.55; e.kvy *= 0.55;
+      game.sound.sfx('body_slam', { pan: game.panAt(o.x, o.y), vol: this.volAt(o.x, o.y, 0.9), rate: 1.1 });
+      game.particles.blood(o.x, o.y, o.z + o.height * 0.5, 10, ux, uy);
+      game.hud.hitMark(killed);
+      e._pins = (e._pins || 0) + 1;
+      e._pinId = o.id;
+      const pts = killed ? 250 : 100;
+      game.player.score += pts;
+      game.hud.popup(`${e._pins > 1 ? 'SPARE' : 'STRIKE'}  +${pts}`, {
+        size: 15, life: 1.3, color: rgba(255, 220, 80, 255), y: -52,
+      });
+      return;
+    }
+  }
+
+  /**
+   * An explosion shoves everything loose in its radius: parts, gibs and brass
+   * lying on the floor get thrown again, which is most of the fun of a second
+   * pipe bomb.
+   */
+  impulse(x, y, z, r, str) {
+    const rng = this.rng;
+    for (let pass = 0; pass < 3; pass++) {
+      const list = pass === 0 ? this.parts : pass === 1 ? this.gibs : this.casings;
+      for (let i = 0; i < list.length; i++) {
+        const c = list[i];
+        if (c.fade) continue;
+        const dx = c.x - x, dy = c.y - y;
+        const d = Math.hypot(dx, dy);
+        if (d > r) continue;
+        const k = (1 - d / r) * str * (pass === 2 ? 0.6 : 1);
+        if (k < 0.4) continue;
+        const L = d || 1;
+        c.vx += (d > 0.05 ? dx / L : rng() - 0.5) * k;
+        c.vy += (d > 0.05 ? dy / L : rng() - 0.5) * k;
+        c.vz += k * 0.7 + 1;
+        c.z = Math.max(c.z, c.rad + 0.02);
+        c.settled = false; c.stuck = 0;
+        c.spin = this.screenSpin(c.vx, c.vy) * randRange(rng, 8, 18);
+        c.trail = Math.max(c.trail, 0.3);
+      }
+    }
+  }
+
+  /**
+   * A hitscan round passing over loose parts. The first one within a hair of
+   * the line (and short of whatever the round stopped in) jumps. Returns it.
+   */
+  shootThrough(ox, oy, oz, dx, dy, dz, maxT, force) {
+    let best = null, bestT = maxT;
+    for (let pass = 0; pass < 3; pass++) {
+      const list = pass === 0 ? this.parts : pass === 1 ? this.gibs : this.casings;
+      for (let i = 0; i < list.length; i++) {
+        const c = list[i];
+        const rx = c.x - ox, ry = c.y - oy, rz = c.z - oz;
+        const t = rx * dx + ry * dy + rz * dz;
+        if (t <= 0.2 || t >= bestT) continue;
+        const px = rx - dx * t, py = ry - dy * t, pz = rz - dz * t;
+        const rr = c.rad + 0.07;
+        if (px * px + py * py + pz * pz > rr * rr) continue;
+        bestT = t; best = c;
+      }
+    }
+    if (!best) return null;
+    const c = best;
+    const rng = this.rng;
+    const k = force * (c.type === T_CASING ? 1.4 : c.head ? 0.8 : 0.6);
+    c.vx += dx * k + (rng() - 0.5) * 1.5;
+    c.vy += dy * k + (rng() - 0.5) * 1.5;
+    c.vz += randRange(rng, 2.2, 3.6);
+    c.z = Math.max(c.z, c.rad + 0.02);
+    c.settled = false; c.stuck = 0;
+    c.spin = this.screenSpin(c.vx, c.vy) * randRange(rng, 10, 20);
+    const game = this.game;
+    if (c.type === T_CASING) {
+      this._tink(c, 4);
+    } else {
+      game.particles.blood(c.x, c.y, c.z, 4, dx, dy);
+      if (this.sndT.land <= 0) {
+        this.sndT.land = 0.05;
+        game.sound.sfx(c.head ? 'bone_bounce' : 'meat_thud', { pan: game.panAt(c.x, c.y), vol: this.volAt(c.x, c.y, 0.6), rate: 1.2 });
+      }
+    }
+    return c;
   }
 
   _stepList(list, dt) {
@@ -938,12 +1055,12 @@ export class Gore {
     // Blood trail while it flies.
     if (c.type !== T_CASING && c.trail > 0 && !c.settled && (Math.abs(c.vx) + Math.abs(c.vy) + Math.abs(c.vz)) > 1.5) {
       c.trailT -= dt;
-      if (c.trailT <= 0) {
+      if (c.trailT <= 0 && this._trailBudget-- > 0) {
         c.trailT = 0.035;
         c.trail -= 0.035;
         const rng = this.rng;
         this.game.particles.emit(c.x, c.y, c.z, (rng() - 0.5) * 0.6, (rng() - 0.5) * 0.6, (rng() - 0.5) * 0.4,
-          randRange(rng, 0.4, 0.8), randRange(rng, 0.026, 0.05), randRange(rng, 150, 205) | 0, 14, 22,
+          randRange(rng, 0.3, 0.6), randRange(rng, 0.026, 0.05), randRange(rng, 150, 205) | 0, 14, 22,
           1.2, 7, false, true, 0.6, 0);
       }
     }

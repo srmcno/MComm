@@ -1568,6 +1568,9 @@ export class Game {
     // Instant trace with a visible tracer: nails are fast enough to be hitscan.
     const hit = this.traceHit(m.x, m.y, m.z, dx / L, dy / L, dz / L, spec.range);
     this.particles.trailPuff(m.x + a.x, m.y + a.y, m.z + a.z, [255, 214, 140], 0.05, 0.07);
+    // Loose parts on the floor are targets too; shoot a head and it hops.
+    const hitT = Math.hypot(hit.x - m.x, hit.y - m.y, hit.z - m.z) || spec.range;
+    this.gore.shootThrough(m.x, m.y, m.z, dx / L, dy / L, dz / L, hitT, 4.5);
     if (hit.enemy) {
       const e = hit.enemy;
       const killed = e.hurt(spec.damage, this, p.x, p.y);
@@ -1652,6 +1655,7 @@ export class Game {
     this.particles.smoke(x, y, z, 10, radius * 0.3);
     if (z < 1) this.addDecal(x, y, 'scorch');
     this.shake = Math.max(this.shake, 2.4);
+    this.gore.impulse(x, y, z, radius, (gore.knock || 12) * 0.8);
     for (const e of this.enemies) {
       const d = dist(x, y, e.x, e.y);
       if (d >= radius) continue;
@@ -1790,6 +1794,7 @@ export class Game {
     if (b.z < 2.4) {
       const gd = spec ? (spec.groundDamage || 24) : 24;
       const gore = (spec && spec.gore) || EXPLOSION_GORE;
+      this.gore.impulse(b.x, b.y, b.z, b.maxR, (gore.knock || 6) * 0.7);
       for (const e of this.enemies) {
         const d = dist(b.x, b.y, e.x, e.y);
         if (d >= b.maxR) continue;
