@@ -121,6 +121,24 @@ export class Enemy {
     this.kvx = 0; this.kvy = 0;      // knockback velocity
     this.airborne = 0;
     this.launched = false;
+    // What has come off, as the sprite generator's mask (1 head, 2/4 right and
+    // left arm, 8/16 right and left leg), and what that does to getting about.
+    this.maim = 0;
+    this.limbDmg = new Float32Array(5);
+    this.mobility = 1;
+    this.hop = false;
+    this.crawl = false;
+    this.armless = false;
+    this.hopPh = 0;
+    this.zOff = 0;
+    // A body that has lost its head and not yet been told.
+    this.headlessT = 0;
+    this.zigT = 0;
+    // Ragdoll: a dead body's vertical speed and how far it has turned over.
+    this.vz = 0;
+    this.roll = 0;
+    this.rollV = 0;
+    this.gibbed = false;
   }
 
   /** Shove this thing. A hard enough shove into a wall is fatal by itself. */
@@ -143,6 +161,13 @@ export class Enemy {
     const k = this.kind === 'boss' ? 'mutter' : this.kind;
     if (this.kind === 'maw') return mawFrame(this, camX, camY);
     if (this.state === ST.DEAD) return `${k}_dead`;
+    if (this.state === ST.DYING && this.headlessT > 0) {
+      // Still running. It has not got the memo.
+      const a = wrapAngle(this.ang - Math.atan2(camY - this.y, camX - this.x));
+      let d = Math.round(a / (Math.PI / 2));
+      d = ((d % 4) + 4) % 4;
+      return `${k}_walk${d}_${this.animFrame % 4}`;
+    }
     if (this.state === ST.DYING) {
       const n = this.kind === 'boss' ? 6 : 4;
       return `${k}_die${clamp(this.deathFrame | 0, 0, n - 1)}`;
@@ -213,23 +238,33 @@ export class Enemy {
     if (this.animT > 1 / d.walkFps) { this.animT = 0; this.animFrame++; }
 
     // Knockback runs whatever the state, so a corpse still slides.
+    const floorZ = this.alive ? d.z : (d.flying ? 0 : d.z);
+    const flying = !this.alive && this.z > floorZ + 0.03;
     if (this.kvx || this.kvy) {
-      const before = { x: this.x, y: this.y };
+      const bx = this.x, by = this.y;
       lv.move(this, this.kvx * dt, this.kvy * dt, this.def.radius);
-      const moved = Math.hypot(this.x - before.x, this.y - before.y);
-      const want = Math.hypot(this.kvx, this.kvy) * dt;
+      const moved = Math.hypot(this.x - bx, this.y - by);
+      const speed = Math.hypot(this.kvx, this.kvy);
+      const want = speed * dt;
       if (this.launched && want > 0.02 && moved < want * 0.45) {
         // Hit a wall while travelling. That is a wall's problem now.
         this.launched = false;
-        game.onEnemySlammed(this, Math.hypot(this.kvx, this.kvy));
-        this.kvx *= -0.18; this.kvy *= -0.18;
+        const sx = this.kvx / (speed || 1), sy = this.kvy / (speed || 1);
+        game.onEnemySlammed(this, speed, sx, sy);
+        // A corpse comes off the wall; a live body mostly stops dead.
+        const rest = this.alive ? -0.18 : -0.34;
+        this.kvx *= rest; this.kvy *= rest;
+        if (!this.alive) this.rollV = -this.rollV * 0.6;
       }
-      const drag = Math.exp(-6.5 * dt);
+      // Air barely slows a thrown body; the floor does, and it slides.
+      const drag = Math.exp(-(flying ? 0.6 : this.alive ? 6.5 : 3.8) * dt);
       this.kvx *= drag; this.kvy *= drag;
       if (Math.abs(this.kvx) < 0.05 && Math.abs(this.kvy) < 0.05) {
         this.kvx = 0; this.kvy = 0; this.launched = false;
       }
     }
+    if (!this.alive && (this.vz !== 0 || this.z > floorZ + 0.002)) this._fall(dt, game, floorZ);
+    this._pose(dt, game);
     if (this.airborne > 0) {
       this.airborne -= dt * 4.5;
       if (this.airborne < 0) this.airborne = 0;
@@ -237,8 +272,11 @@ export class Enemy {
 
     if (this.state === ST.DEAD) return;
     if (this.state === ST.DYING) {
+      if (this.headlessT > 0) { this._headless(dt, game); return; }
       const n = this.kind === 'boss' ? 6 : 4;
       this.deathFrame += dt * d.deathFps;
+      // In the air it is still falling over; the floor finishes the job.
+      if (this.z > floorZ + 0.05 && this.deathFrame > 1.9) this.deathFrame = 1.9;
       if (this.deathFrame >= n) { this.state = ST.DEAD; this.deathFrame = n - 1; }
       return;
     }
@@ -288,14 +326,17 @@ export class Enemy {
       if (this.stateT > 0.22) {
         this.state = ST.CHASE;
         this.stateT = 0;
-        this.cooldown = d.cooldown * randRange(this.rng, 0.85, 1.25);
+        this.cooldown = d.cooldown * randRange(this.rng, 0.85, 1.25) *
+          ((this.maim & 6) && !this.armless && d.attack !== 'bless' ? 1.25 : 1);
       }
       return;
     }
 
     // CHASE
     if (p.dead) { this.state = ST.IDLE; return; }
-    const canAct = sees && this.cooldown <= 0 && toP <= d.range;
+    // No hands, no gun: the armless close in and use their heads.
+    const range = this.armless ? 1.35 : d.range;
+    const canAct = sees && this.cooldown <= 0 && toP <= range;
     if (canAct || (d.attack === 'bless' && this.cooldown <= 0 && game.sky.warheads.length)) {
       this.state = ST.WINDUP;
       this.stateT = 0;
@@ -307,7 +348,7 @@ export class Enemy {
     if (d.speed <= 0) return;
 
     // Keep a preferred standoff distance rather than piling onto the player.
-    const want = d.attack === 'melee' ? d.range * 0.72 : d.range * 0.62;
+    const want = (d.attack === 'melee' || this.armless) ? range * 0.72 : range * 0.62;
     let mx = 0, my = 0;
     const tx = this.lastSeen ? this.lastSeen.x : p.x;
     const ty = this.lastSeen ? this.lastSeen.y : p.y;
@@ -317,7 +358,7 @@ export class Enemy {
     mx += (dx / L) * approach;
     my += (dy / L) * approach;
 
-    if (d.strafes || (sees && toP < d.range * 1.3)) {
+    if (d.strafes || this.armless || (sees && toP < range * 1.3)) {
       this.strafeT -= dt;
       if (this.strafeT <= 0) { this.strafeT = randRange(this.rng, 0.7, 1.9); this.strafeDir *= -1; }
       mx += (-dy / L) * this.strafeDir * 0.55;
@@ -338,7 +379,7 @@ export class Enemy {
 
     const ml = Math.hypot(mx, my);
     if (ml > 0.001) {
-      const sp = d.speed * dt;
+      const sp = d.speed * this.mobility * dt;
       const stepX = (mx / ml) * sp, stepY = (my / ml) * sp;
       const before = this.x;
       lv.move(this, stepX, stepY, this.radius);
@@ -356,6 +397,75 @@ export class Enemy {
     }
   }
 
+  /** A dead body in the air: gravity, a bounce, and a turn or two on the way. */
+  _fall(dt, game, floorZ) {
+    this.vz -= 15 * dt;
+    this.z += this.vz * dt;
+    this.roll += this.rollV * dt;
+    // Under a roof, a thrown body finds the ceiling before it finds the floor.
+    const lv = game.level;
+    const top = this.z + this.height * 0.55;
+    if (this.vz > 0 && top > 1 && lv.inBounds(this.x, this.y) && !lv.sky[lv.idx(this.x, this.y)]) {
+      this.z = 1 - this.height * 0.55;
+      if (this.vz > 3) game.sound.sfx('meat_thud', { pan: game.panOf(this), vol: 0.6, rate: 0.8 });
+      this.vz = -this.vz * 0.25;
+    }
+    if (this.z <= floorZ) {
+      this.z = floorZ;
+      const vi = -this.vz;
+      if (vi > 2.6) {
+        this.vz = vi * 0.28;
+        this.rollV *= 0.45;
+        game.onCorpseLanded(this, vi);
+      } else {
+        this.vz = 0; this.rollV = 0; this.roll = 0;
+        if (vi > 1) game.onCorpseLanded(this, vi);
+      }
+    }
+  }
+
+  /** Where the sprite sits: a hop for the one-legged, the floor for the legless. */
+  _pose(dt, game) {
+    let off = 0;
+    const moving = this.alive || this.headlessT > 0;
+    if (this.crawl) {
+      const rig = game.gore && game.gore.rigOf(this.kind);
+      const drop = rig ? rig.hip * this.height : 0;
+      const k = this.alive ? 1 : this.state === ST.DYING ? clamp(1 - this.deathFrame / 3, 0, 1) : 0;
+      if (moving) this.hopPh += dt * 7;
+      off = -drop * k + (this.alive ? Math.abs(Math.sin(this.hopPh)) * 0.025 : 0);
+    } else if (this.hop && moving) {
+      this.hopPh += dt * (this.headlessT > 0 ? 13 : 9.5);
+      off = Math.abs(Math.sin(this.hopPh)) * 0.14 * this.height;
+    }
+    this.zOff = off;
+  }
+
+  /** Headless and running: a panicked zigzag into whatever is nearest. */
+  _headless(dt, game) {
+    const lv = game.level;
+    this.headlessT -= dt;
+    this.zigT -= dt;
+    this.animT += dt * 0.6;    // the legs go faster than they need to
+    if (this.zigT <= 0) {
+      this.zigT = randRange(this.rng, 0.16, 0.42);
+      this.ang = wrapAngle(this.ang + (this.rng() < 0.5 ? -1 : 1) * randRange(this.rng, 0.5, 1.7));
+    }
+    const sp = Math.max(2.3, this.def.speed * 1.2) * (this.hop ? 0.55 : 1) * dt;
+    const bx = this.x, by = this.y;
+    lv.move(this, Math.cos(this.ang) * sp, Math.sin(this.ang) * sp, this.radius);
+    if (Math.hypot(this.x - bx, this.y - by) < sp * 0.4) {
+      this.ang = wrapAngle(this.ang + Math.PI + randRange(this.rng, -0.8, 0.8));
+      this.zigT = randRange(this.rng, 0.3, 0.6);
+      game.onHeadlessBump(this);
+    }
+    if (this.headlessT <= 0) {
+      this.headlessT = 0;
+      this.deathFrame = 0;
+      game.onHeadlessCollapse(this);
+    }
+  }
+
   turnToward(tx, ty, dt, rate) {
     const want = Math.atan2(ty - this.y, tx - this.x);
     this.ang = wrapAngle(this.ang + wrapAngle(want - this.ang) * clamp(rate * dt, 0, 1));
@@ -365,6 +475,15 @@ export class Enemy {
     const d = this.def;
     const p = game.player;
     const dmgScale = (game.diff && game.diff.enemyDamage) || 1;
+    if (this.armless) {
+      // Both arms gone and still clocked in. It headbutts.
+      if (sees && toP <= 1.6) {
+        p.hurt(Math.max(7, d.damage * 0.6) * dmgScale * randRange(this.rng, 0.8, 1.2), game, this.kind + ':headbutt');
+        game.onPlayerHurt(this, 'melee');
+      }
+      game.sound.sfx('kick_hit', { pan: game.panOf(this), rate: 0.8 });
+      return;
+    }
     switch (d.attack) {
       case 'melee':
         if (sees && toP <= d.range * 1.2) {
@@ -394,8 +513,9 @@ export class Enemy {
         // Throws itself at you. Connecting is not guaranteed, which is the point.
         if (sees) {
           const a = Math.atan2(p.y - this.y, p.x - this.x);
-          this.kvx += Math.cos(a) * (d.lungeSpeed || 10);
-          this.kvy += Math.sin(a) * (d.lungeSpeed || 10);
+          // A three-legged lunge is a short one.
+          this.kvx += Math.cos(a) * (d.lungeSpeed || 10) * this.mobility;
+          this.kvy += Math.sin(a) * (d.lungeSpeed || 10) * this.mobility;
           this.lungeDamage = d.damage * dmgScale;
           this.lungeT = 0.42;
         }

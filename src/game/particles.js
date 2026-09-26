@@ -60,6 +60,26 @@ export class Particles {
     return this._blank();
   }
 
+  /**
+   * spawn() without the options object: the gore systems emit hundreds of
+   * these a second and there is no reason for each to leave garbage behind.
+   */
+  emit(x, y, z, vx, vy, vz, life, size, r, g, b, drag, grav, additive, hard, fadePow, bounce) {
+    const p = this._take();
+    p.x = x; p.y = y; p.z = z;
+    p.vx = vx; p.vy = vy; p.vz = vz;
+    p.maxLife = p.life = life;
+    p.size = size;
+    p.r = r; p.g = g; p.b = b;
+    p.drag = drag; p.grav = grav;
+    p.additive = additive; p.hard = hard;
+    p.fadePow = fadePow || 1;
+    p.grow = 0;
+    p.bounce = bounce || 0;
+    this.live.push(p);
+    return p;
+  }
+
   spawn(o) {
     const p = this._take();
     p.x = o.x; p.y = o.y; p.z = o.z;
@@ -102,7 +122,7 @@ export class Particles {
       this.spawn({
         x, y, z: z + randRange(rng, -0.12, 0.22),
         vx: Math.cos(a) * s + dirX * 1.6, vy: Math.sin(a) * s + dirY * 1.6, vz: randRange(rng, 0.6, 3.2),
-        life: randRange(rng, 0.45, 1.05), size: randRange(rng, 0.045, 0.11),
+        life: randRange(rng, 0.45, 1.05), size: randRange(rng, 0.03, 0.08),
         r: randRange(rng, 120, 190) | 0, g: 16, b: 22,
         drag: 1.1, grav: 8.5, additive: false, hard: true, fadePow: 0.6,
       });
@@ -217,17 +237,31 @@ export class Particles {
   // --------------------------------------------------------------- update
 
   update(dt, level) {
-    for (let i = this.live.length - 1; i >= 0; i--) {
-      const p = this.live[i];
+    // Compact in place: a splice per expired particle was O(n) each, and a
+    // gore-heavy frame expires hundreds of them. Order is kept, so _take()
+    // still recycles the oldest first.
+    const live = this.live;
+    let w = 0;
+    for (let i = 0; i < live.length; i++) {
+      const p = live[i];
       p.life -= dt;
-      if (p.life <= 0) { this.live.splice(i, 1); this.pool.push(p); continue; }
+      if (p.life <= 0) { this.pool.push(p); continue; }
+      live[w++] = p;
       const d = Math.exp(-p.drag * dt);
       p.vx *= d; p.vy *= d; p.vz *= d;
       p.vz -= p.grav * dt;
       const nx = p.x + p.vx * dt, ny = p.y + p.vy * dt;
       if (level && p.z < 1.4 && level.blocked(nx, ny)) {
-        // Cheap wall response: kill lateral motion so debris doesn't tunnel.
-        p.vx *= -0.24; p.vy *= -0.24;
+        if (p.hard && !p.additive && p.grav > 1) {
+          // Blood that reaches a wall stays on it for a while and runs.
+          p.vx = 0; p.vy = 0; p.vz = 0;
+          p.grav = 0.18; p.drag = 4;
+          p.life = Math.max(p.life, 1.2 + (p.size * 30) % 1.6);
+          p.maxLife = Math.max(p.maxLife, p.life);
+        } else {
+          // Cheap wall response: kill lateral motion so debris doesn't tunnel.
+          p.vx *= -0.24; p.vy *= -0.24;
+        }
       } else { p.x = nx; p.y = ny; }
       p.z += p.vz * dt;
       if (p.z < 0.02) {
@@ -237,6 +271,7 @@ export class Particles {
       }
       if (p.grow) p.size += p.grow * dt;
     }
+    live.length = w;
     for (let i = this.effects.length - 1; i >= 0; i--) {
       const e = this.effects[i];
       e.t += dt;
@@ -250,20 +285,24 @@ export class Particles {
 
   /** Push renderable billboards for everything alive. */
   collect(out, frames) {
+    // Sprite records are recycled frame to frame; the raycaster only reads
+    // them and scribbles its projection scratch onto them.
+    const recs = this._recs || (this._recs = []);
     for (let i = 0; i < this.live.length; i++) {
       const p = this.live[i];
       const k = clamp(p.life / p.maxLife, 0, 1);
       const a = Math.pow(k, p.fadePow);
-      out.push({
-        x: p.x, y: p.y, z: p.z,
-        frame: p.hard ? (p.size < 0.06 ? this.dotTiny : this.dotHard) : this.dotSoft,
-        h: p.size, wScale: 1,
-        tint: rgba(p.r, p.g, p.b, 255),
-        alpha: a, additive: p.additive, emissive: p.additive, noFog: p.additive,
-        // A speck of blood a hand's width from the lens should not be the size
-        // of a door. Cap what any one particle may cover.
-        maxFrac: p.additive ? 0.16 : 0.09,
-      });
+      let s = recs[i];
+      if (!s) { s = {}; recs[i] = s; }
+      s.x = p.x; s.y = p.y; s.z = p.z;
+      s.frame = p.hard ? (p.size < 0.06 ? this.dotTiny : this.dotHard) : this.dotSoft;
+      s.h = p.size; s.wScale = 1;
+      s.tint = rgba(p.r, p.g, p.b, 255);
+      s.alpha = a; s.additive = p.additive; s.emissive = p.additive; s.noFog = p.additive;
+      // A speck of blood a hand's width from the lens should not be the size
+      // of a door. Cap what any one particle may cover.
+      s.maxFrac = p.additive ? 0.16 : 0.045;
+      out.push(s);
     }
     for (let i = 0; i < this.effects.length; i++) {
       const e = this.effects[i];
