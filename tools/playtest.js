@@ -1637,6 +1637,25 @@ check('sixty severed parts cost little frame time, and the pile is capped',
   s.capped <= 80 && s.settled >= 50 && !s.nan,
   `frame ${s.base}ms bare, ${s.flying}ms with 60 flying, ${s.resting}ms at rest; ${s.capped} kept of 120`);
 
+// ------ 58. thrown into a wall: it hurts, it bleeds on the wall, it comes off
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  const a = G.arena();
+  // Stand it a body's width off the end wall and throw it at the wall.
+  const e = await G.spawn('wrencher', a.run - 0.5, 0);
+  e.state = 5; e.stateT = -99;
+  const before = e.hp;
+  const wallX = Math.floor(g.player.x) + a.run + 1;
+  g.particles.clear();
+  e.shove(1, 0, 40);
+  G.step(0.1);
+  const pinned = g.particles.live.filter((q) => q.vx === 0 && q.vy === 0 && Math.abs(q.x - wallX) < 0.1 && q.z > 0.1).length;
+  const bounced = e.kvx < 0 || e.x < wallX - e.radius - 0.02;
+  return { hurt: before - e.hp, pinned, bounced };
+});
+check('a body thrown into the end wall is hurt by it and leaves blood up the wall',
+  s.hurt > 0 && s.pinned >= 10, `hurt ${s.hurt}, ${s.pinned} drops on the wall`);
+
 // ------------------------------------------------------------- report
 console.log('');
 if (errors.length) {

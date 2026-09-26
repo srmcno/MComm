@@ -1331,7 +1331,7 @@ export class Game {
     // Then the dead, who slide.
     let corpse = null, cBest = Infinity;
     for (const e of this.enemies) {
-      if (e.alive || e.def.boss || e.def.miniboss || e.gibbed) continue;
+      if (e.alive || e.def.boss || e.def.miniboss) continue;
       const dx = e.x - p.x, dy = e.y - p.y;
       const d = Math.hypot(dx, dy);
       if (d > BOOT.range + e.radius) continue;
@@ -2093,12 +2093,18 @@ export class Game {
     const i = lv.idx(x, y);
     if (i < 0 || i >= lv.decal.length || lv.wall[i]) return;
     const names = this.art.decalNames;
-    let pool;
-    if (kind === 'gore') pool = names.filter((n) => n.startsWith('gore_pool'));
-    else if (kind === 'scorch') pool = names.filter((n) => n === 'scorch');
-    else if (kind === 'acid') pool = names.filter((n) => n.startsWith('acid'));
-    else pool = names.filter((n) => n.startsWith('blood'));
-    if (!pool.length) pool = names;
+    // Every landing chunk stains the floor now, so sort the atlas into pools
+    // once instead of filtering it per splash.
+    const pools = this._decalPools || (this._decalPools = {});
+    let pool = pools[kind];
+    if (!pool) {
+      if (kind === 'gore') pool = names.filter((n) => n.startsWith('gore_pool'));
+      else if (kind === 'scorch') pool = names.filter((n) => n === 'scorch');
+      else if (kind === 'acid') pool = names.filter((n) => n.startsWith('acid'));
+      else pool = names.filter((n) => n.startsWith('blood'));
+      if (!pool.length) pool = names;
+      pools[kind] = pool;
+    }
     const pick = pool[(this.rng() * pool.length) | 0];
     const idx = this.art.decalIndex.get(pick);
     if (idx === undefined) return;

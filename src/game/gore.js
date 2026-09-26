@@ -349,7 +349,8 @@ export class Gore {
       this.stats.heads++;
       game.sound.sfx('head_pop', { pan, vol, rate: randRange(rng, 0.92, 1.12) });
       // A little pink mist where the head was, for the frame it takes to read.
-      P.effect({
+      // An explosion brings its own cloud; two would read as a balloon.
+      if (!(opts && opts.noRun)) P.effect({
         x: J.x, y: J.y, z: J.z + 0.08,
         keys: ['gib_burst0', 'gib_burst1', 'gib_burst2', 'gib_burst3'],
         fps: 24, size: e.height * 0.8, additive: false, alpha: 0.8,
