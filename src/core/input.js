@@ -77,6 +77,13 @@ export class Input {
     this.locked = false;
     /** A pointer-lock request a gesture-strict browser has not granted yet. */
     this._wantLock = false;
+    /**
+     * Set once a lock asked for inside a real click or keypress is refused
+     * anyway: a sandboxed frame (a Claude artifact, an embed) that will never
+     * grant it. From then on the game steers by cursor and stops asking.
+     */
+    this.lockBlocked = false;
+    this._gestureAsk = false;
     this.sensitivity = 1.0;
     this.invertY = false;
 
@@ -111,7 +118,7 @@ export class Input {
       if (a && !this.down.has(a)) { this.down.add(a); this.pressed.add(a); }
       // We are inside a user gesture here, which is the only place Safari
       // will hand over the mouse. Redeem anything the frame loop asked for.
-      if (this._wantLock) this._tryLock();
+      if (this._wantLock) { this._gestureAsk = true; this._tryLock(); }
     });
     addEventListener('keyup', (e) => {
       this.rawDown.delete(e.code);
@@ -129,7 +136,7 @@ export class Input {
       if (e.button === 0) { this.down.add('fire'); this.pressed.add('fire'); }
       if (e.button === 2) { this.down.add('altfire'); this.pressed.add('altfire'); }
       if (e.button === 1) { this.down.add('kick'); this.pressed.add('kick'); }
-      if (this._wantLock) this._tryLock();
+      if (this._wantLock) { this._gestureAsk = true; this._tryLock(); }
     });
     addEventListener('mouseup', (e) => {
       this.mouseButtons &= ~(1 << e.button);
@@ -156,7 +163,14 @@ export class Input {
       if (this.locked) e.preventDefault();
     }, { passive: false });
 
+    // A refusal of a request made inside a real gesture is the frame itself
+    // saying no, not a timing problem. Stop asking.
+    document.addEventListener('pointerlockerror', () => {
+      if (this._gestureAsk) { this.lockBlocked = true; this._wantLock = false; }
+      this._gestureAsk = false;
+    });
     document.addEventListener('pointerlockchange', () => {
+      this._gestureAsk = false;
       this.locked = document.pointerLockElement === this.canvas;
       if (this.locked) this._wantLock = false;
       else this.onUnlock && this.onUnlock();
@@ -170,7 +184,9 @@ export class Input {
       this.onPadConnected && this.onPadConnected(this.padName, this.padKind);
     });
     addEventListener('gamepaddisconnected', (e) => {
-      if (e.gamepad.index === this.padIndex) { this.padIndex = -1; this.pad = null; this._releasePad(); }
+      if (e.gamepad.index === this.padIndex) {
+        this.padIndex = -1; this.pad = null; this._axisRest = null; this._releasePad();
+      }
     });
   }
 
@@ -178,7 +194,9 @@ export class Input {
 
   /** Poll the pad and fold it into the logical action sets. Call once per frame. */
   update(dt) {
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    if (this.padDisabled) return;
+    let pads = [];
+    try { pads = (navigator.getGamepads && navigator.getGamepads()) || []; } catch { pads = []; }
     let gp = this.padIndex >= 0 ? pads[this.padIndex] : null;
     if (!gp) {
       for (const p of pads) {
@@ -204,12 +222,39 @@ export class Input {
     const val = (i) => (bt[i] ? (typeof bt[i].value === 'number' ? bt[i].value : (bt[i].pressed ? 1 : 0)) : 0);
     const held = (i) => (bt[i] ? (bt[i].pressed || val(i) > TRIGGER_ON) : false);
 
-    this.padMoveX = curve(ax[0] || 0, STICK_DEAD);
-    this.padMoveY = curve(ax[1] || 0, STICK_DEAD);
-    this.padLookX = curve(ax[2] || 0, STICK_DEAD);
-    this.padLookY = curve(ax[3] || 0, STICK_DEAD);
-    this.padFire = val(7);
-    this.padFine = val(6);
+    // A pad the browser could not map to the standard layout reports its axes
+    // in whatever order the driver likes, and its triggers are usually axes
+    // that REST at -1. Read blindly as sticks, that is a camera spinning and a
+    // menu scrolling on their own the moment the pad is plugged in. So for a
+    // non-standard pad: learn each axis's resting value once, treat the ones
+    // that rest at an extreme as triggers, and take the sticks from the rest.
+    let mx = ax[0] || 0, my = ax[1] || 0, lx = ax[2] || 0, ly = ax[3] || 0;
+    let fire = val(7), fine = val(6);
+    if (gp.mapping !== 'standard') {
+      if (!this._axisRest || this._axisRestFor !== gp.index) {
+        this._axisRest = Array.from(ax, (v) => v || 0);
+        this._axisRestFor = gp.index;
+      }
+      const sticks = [], triggers = [];
+      for (let i = 0; i < ax.length; i++) {
+        if (Math.abs(this._axisRest[i] || 0) > 0.5) triggers.push(i); else sticks.push(i);
+      }
+      const at = (k) => (sticks[k] !== undefined ? ax[sticks[k]] || 0 : 0);
+      mx = at(0); my = at(1); lx = at(2); ly = at(3);
+      // A trigger resting at -1 travels 2 to reach +1: normalise by that.
+      const pull = (i) => {
+        const rest = this._axisRest[i];
+        return clamp(Math.abs((ax[i] || 0) - rest) / (1 + Math.abs(rest)), 0, 1);
+      };
+      if (triggers.length >= 2) { fine = Math.max(fine, pull(triggers[0])); fire = Math.max(fire, pull(triggers[1])); }
+      else if (triggers.length === 1) fire = Math.max(fire, pull(triggers[0]));
+    }
+    this.padMoveX = curve(mx, STICK_DEAD);
+    this.padMoveY = curve(my, STICK_DEAD);
+    this.padLookX = curve(lx, STICK_DEAD);
+    this.padLookY = curve(ly, STICK_DEAD);
+    this.padFire = fire;
+    this.padFine = fine;
 
     // Any meaningful pad input takes over the on-screen prompts.
     const busy = Math.abs(this.padMoveX) + Math.abs(this.padMoveY) +
@@ -295,14 +340,15 @@ export class Input {
    * keypress or click (see `_bind`) redeems it. Chrome locks on the spot.
    */
   requestLock() {
-    if (this.locked) return;
+    if (this.locked || this.lockBlocked) return;
     this._wantLock = true;
     this._tryLock();
   }
 
   /** The guarded request itself. Never throws, whatever the browser thinks. */
   _tryLock() {
-    if (this.locked || !this.canvas.requestPointerLock) return;
+    if (this.locked || this.lockBlocked) return;
+    if (!this.canvas.requestPointerLock) { this.lockBlocked = true; this._wantLock = false; return; }
     try {
       const p = this.canvas.requestPointerLock({ unadjustedMovement: true });
       if (p && p.catch) p.catch(() => { try { this.canvas.requestPointerLock(); } catch { /* ignore */ } });

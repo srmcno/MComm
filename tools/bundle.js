@@ -6,6 +6,9 @@ import path from 'node:path';
 
 const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
 const OUT = path.join(ROOT, 'dist');
+// The boot shell ships as its own <script>, ahead of the game, so a game script
+// that fails to parse still has something left alive to report it.
+const shell = fs.readFileSync(path.join(ROOT, 'src/boot-shell.js'), 'utf8');
 fs.mkdirSync(OUT, { recursive: true });
 
 const result = await build({
@@ -61,49 +64,12 @@ const html = `<title>NUKEHAUS</title>
 <div id="overlay"></div>
 <div id="fatal"><h1>NUKEHAUS HAS FAILED TO BOOT</h1><div id="fatal-body"></div></div>
 <div id="glitch"></div>
+<script>${shell}</script>
 <script>
-(function () {
-  var text = function (err) { return (err && (err.stack || err.message)) || String(err); };
-  var fatal = function (err) {
-    document.getElementById('fatal-body').textContent = text(err);
-    document.getElementById('fatal').style.display = 'block';
-    console.error(err);
-  };
-  // Once the game is up it stays up. A stray runtime error gets a corner note,
-  // not a full-screen sign claiming it never booted.
-  var glitches = 0, glitchTimer = 0;
-  var glitch = function (err) {
-    console.error(err);
-    var el = document.getElementById('glitch');
-    el.textContent = 'HAIRLINE FRACTURE (' + (++glitches) + ') - ' + String(text(err)).split('\\n')[0];
-    el.style.display = 'block';
-    clearTimeout(glitchTimer);
-    glitchTimer = setTimeout(function () { el.style.display = 'none'; }, 6000);
-  };
-  var report = function (err) {
-    (window.NUKEHAUS && window.NUKEHAUS.booted ? glitch : fatal)(err);
-  };
-  window.addEventListener('error', function (e) { report(e.error || e.message); });
-  window.addEventListener('unhandledrejection', function (e) { report(e.reason); });
-  window.__NUKEHAUS_FATAL__ = fatal;
-
-  // A stalled boot is otherwise invisible: no error, no rejection, just the
-  // loading screen forever. Name the stage it reached instead.
-  var watchdog = setTimeout(function () {
-    if (window.NUKEHAUS && window.NUKEHAUS.booted) return;
-    var at = window.NUKEHAUS_BOOT;
-    fatal('Loading stalled' + (at ? ' at "' + at.stage + '" (' + at.at + 'ms in).'
-                                 : ' before the first stage.') +
-      '\\n\\nThis usually means the browser suspended the page mid-load.' +
-      '\\nBring this tab to the front and reload.');
-  }, 45000);
-  var stopWatchdog = function () { clearTimeout(watchdog); };
-
-  try {
-${js.split('\n').map((l) => '    ' + l).join('\n')}
-    NUKEHAUS_MAIN.boot().then(stopWatchdog).catch(function (e) { stopWatchdog(); fatal(e); });
-  } catch (e) { stopWatchdog(); fatal(e); }
-})();
+try {
+${js.split('\n').map((l) => '  ' + l).join('\n')}
+  NUKEHAUS_MAIN.boot().catch(function (e) { window.NUKEHAUS_SHELL.fatal(e); });
+} catch (e) { window.NUKEHAUS_SHELL.fatal(e); }
 </script>
 `;
 

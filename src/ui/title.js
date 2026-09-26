@@ -138,7 +138,7 @@ export class TitleScreen {
     this.drawLogo(buf, W, H, s, game);
 
     switch (this.page) {
-      case 'menu': this.drawMenu(buf, W, H, s, game); break;
+      case 'menu': this.drawHero(buf, W, H, s, game); this.drawMenu(buf, W, H, s, game); break;
       case 'difficulty': this.drawDifficulty(buf, W, H, s, game); break;
       case 'howto': this.drawHowTo(buf, W, H, s, game); break;
       case 'options': this.drawOptions(buf, W, H, s, game); break;
@@ -173,20 +173,31 @@ export class TitleScreen {
     const fovScale = 1.15;
     const cloudA = ((this.t * 2.4) % SW) | 0;
     const cloudB = ((this.t * 5.1) % SW) | 0;
+    // Which dome column each screen column samples depends only on x, so work
+    // it out once per frame rather than once per pixel: this loop covers the
+    // whole screen and was most of the title's frame time.
+    if (!this._colU || this._colU.length !== W) {
+      this._colU = new Int32Array(W); this._colA = new Int32Array(W); this._colB = new Int32Array(W);
+    }
+    const colU = this._colU, colA = this._colA, colB = this._colB;
+    for (let x = 0; x < W; x++) {
+      const az = this.az + ((x / W) - 0.5) * 2.4;
+      let u = az / TAU; u -= Math.floor(u);
+      const su = Math.min(SW - 1, (u * SW) | 0);
+      colU[x] = su; colA[x] = (su + cloudA) % SW; colB[x] = (su + cloudB) % SW;
+    }
+    const base = dome.base, cloud = dome.cloud;
     for (let y = 0; y < H; y++) {
       const elev = ((horizon - y) / H) * fovScale + 0.02;
       let v = (elev - eMin) / eSpan;
       v = v < 0 ? 0 : v > 1 ? 1 : v;
       const row = ((v * (SH - 1)) | 0) * SW;
       for (let x = 0; x < W; x++) {
-        const az = this.az + ((x / W) - 0.5) * 2.4;
-        let u = az / TAU; u -= Math.floor(u);
-        const su = (u * SW) | 0;
-        let px = dome.base[row + su];
-        const k1 = dome.cloud[row + ((su + cloudA) % SW)];
+        let px = base[row + colU[x]];
+        const k1 = cloud[row + colA[x]];
         const a1 = k1 >>> 24;
         if (a1) px = mix(px, k1 | (255 << 24), (a1 / 255) * 0.9);
-        const k2 = dome.cloud[row + ((su + cloudB) % SW)];
+        const k2 = cloud[row + colB[x]];
         const a2 = k2 >>> 24;
         if (a2) px = mix(px, k2 | (255 << 24), (a2 / 255) * 0.45);
         buf[y * W + x] = px;
@@ -245,7 +256,7 @@ export class TitleScreen {
     }
     fillRectBuf(buf, W, H, 0, base - 1, W, 2, rgba(64, 54, 48, 255), 0.6);
     // Antenna mast with a slow red beacon.
-    const mx = Math.round(W * 0.845);
+    const mx = Math.round(W * 0.585);
     fillRectBuf(buf, W, H, mx, base - 108 * s, 2 * s, 108 * s, rgba(14, 12, 16, 255), 1);
     for (let i = 1; i < 5; i++) {
       const y = base - 108 * s + i * 22 * s;
@@ -256,117 +267,253 @@ export class TitleScreen {
     addRectBuf(buf, W, H, mx - 4 * s, base - 115 * s, 10 * s, 10 * s, rgba(255, 40, 30, 255), beacon * 0.14);
   }
 
-  drawLogo(buf, W, H, s, game) {
-    const T = game.text;
-    const cy = H * 0.29;
-    const size = Math.round(H * 0.19);
-    const e = this.enterT;
-    const ease = 1 - Math.pow(1 - e, 3);
-    const y = lerp(cy - 40 * s, cy, ease);
-    const a = ease;
-
-    // Heavy extruded shadow so the word has mass.
-    for (let d = 7; d >= 1; d--) {
-      T.draw(buf, W, H, W / 2 + d * 0.8 * s, y + d * 1.1 * s, 'NUKEHAUS', {
-        size, display: true, track: Math.round(2 * s), align: 'center',
-        color: rgba(6, 4, 8, 255), alpha: a * (0.13 + d * 0.03), shadow: false, crisp: 0.4,
-      });
-    }
-    // Body: a hot metal ramp painted by stacking passes with clipping bands.
-    const r = T.raster('NUKEHAUS', { size, display: true, track: Math.round(2 * s), weight: 700, crisp: 0.4 });
-    const ox = Math.round(W / 2 - (r.w - 4) / 2 - 2);
-    const oy = Math.round(y - r.base);
+  /**
+   * Stamp a text raster's alpha mask into the framebuffer, colouring each
+   * pixel with colAt(rx, ry). Returning 0 from colAt skips that pixel.
+   */
+  stamp(buf, W, H, r, ox, oy, colAt, alpha) {
+    ox = Math.round(ox); oy = Math.round(oy);
     for (let ry = 0; ry < r.h; ry++) {
-      const t = ry / r.h;
-      // Sodium-lamp gradient: white top, amber middle, rust bottom, with a
-      // scanline shimmer rolling through it.
-      const shimmer = 0.5 + 0.5 * Math.sin((ry * 0.35) - this.t * 3.4);
-      let col;
-      if (t < 0.4) col = mix(rgba(255, 252, 240, 255), rgba(255, 206, 96, 255), t / 0.4);
-      else if (t < 0.62) col = mix(rgba(255, 206, 96, 255), rgba(226, 128, 36, 255), (t - 0.4) / 0.22);
-      else col = mix(rgba(226, 128, 36, 255), rgba(122, 40, 20, 255), (t - 0.62) / 0.38);
-      col = mix(col, rgba(255, 255, 230, 255), shimmer * 0.10);
-      const dst = (oy + ry) * W + ox;
-      const src = ry * r.w;
-      if (oy + ry < 0 || oy + ry >= H) continue;
+      const py = oy + ry;
+      if (py < 0 || py >= H) continue;
+      const src = ry * r.w, dst = py * W;
       for (let rx = 0; rx < r.w; rx++) {
         const sa = r.data[src + rx] >>> 24;
         if (!sa) continue;
         const px = ox + rx;
         if (px < 0 || px >= W) continue;
-        const al = (sa / 255) * a * this.flicker;
-        const o = dst + rx;
-        const d0 = buf[o];
-        const cr = col & 255, cg = (col >>> 8) & 255, cb = (col >>> 16) & 255;
+        const col = colAt(rx, ry);
+        if (!col) continue;
+        const al = (sa / 255) * alpha;
+        const o = dst + px, d0 = buf[o];
         let dr = d0 & 255, dg = (d0 >>> 8) & 255, db = (d0 >>> 16) & 255;
-        dr += (cr - dr) * al; dg += (cg - dg) * al; db += (cb - db) * al;
+        dr += ((col & 255) - dr) * al; dg += (((col >>> 8) & 255) - dg) * al; db += (((col >>> 16) & 255) - db) * al;
         buf[o] = (255 << 24 | (db | 0) << 16 | (dg | 0) << 8 | (dr | 0)) >>> 0;
       }
     }
-    // Chromatic ghost, sold as a failing CRT.
-    T.draw(buf, W, H, W / 2 - 1.6 * s, y, 'NUKEHAUS', {
-      size, display: true, track: Math.round(2 * s), align: 'center',
-      color: rgba(255, 60, 40, 255), alpha: a * 0.11, shadow: false, crisp: 0.4,
-    });
+  }
 
-    // Hazard rule under the word.
-    const rw = (r.w - 4);
-    const ry0 = y + size * 0.16;
+  /**
+   * The static part of the logo — a deep extrusion graded from hot rust at
+   * the face to black at the back, and a hard ink outline — composed once per
+   * size into its own frame, so the title does not redo nineteen full-word
+   * passes every frame.
+   */
+  logoBase(r, s) {
+    const key = r.w + 'x' + r.h;
+    if (this._logoBase && this._logoBase.key === key) return this._logoBase;
+    const depth = Math.max(3, Math.round(9 * s));
+    const ow = Math.max(1, Math.round(1.7 * s));
+    const pad = ow + 1;
+    const w = r.w + depth + pad * 2, h = r.h + depth + pad * 2;
+    const data = new Uint32Array(w * h);
+    const put = (dx, dy, col) => {
+      for (let ry = 0; ry < r.h; ry++) {
+        const src = ry * r.w, dst = (ry + dy) * w + dx;
+        for (let rx = 0; rx < r.w; rx++) {
+          const sa = r.data[src + rx] >>> 24;
+          if (sa < 60) continue;
+          data[dst + rx] = ((col & 0xffffff) | (255 << 24)) >>> 0;
+        }
+      }
+    };
+    for (let d = depth; d >= 1; d--) {
+      const k = d / depth;
+      put(pad + Math.round(d * 0.72), pad + d, mix(rgba(168, 58, 18, 255), rgba(12, 6, 10, 255), Math.pow(k, 0.8)));
+    }
+    for (let dy = -ow; dy <= ow; dy++) for (let dx = -ow; dx <= ow; dx++) {
+      if (dx * dx + dy * dy > ow * ow + 1) continue;
+      put(pad + dx, pad + dy, rgba(10, 6, 10, 255));
+    }
+    this._logoBase = { key, w, h, data, pad };
+    return this._logoBase;
+  }
+
+  /**
+   * Nuclear glow and a radiation trefoil behind the word. Baked once per size
+   * into an additive frame: computing it per pixel per frame cost more than
+   * the whole rest of the title.
+   */
+  glowFrame(rx, ry) {
+    const key = (rx | 0) + 'x' + (ry | 0);
+    if (this._glow && this._glow.key === key) return this._glow;
+    const R = ry * 1.3;
+    const w = Math.ceil(rx * 2.8), h = Math.ceil(R * 2.3);
+    const cx = w / 2, cy = h / 2;
+    const data = new Uint32Array(w * h);
+    for (let y = 0; y < h; y++) {
+      const ny = (y - cy) / ry;
+      for (let x = 0; x < w; x++) {
+        const nx = (x - cx) / rx;
+        const q = nx * nx + ny * ny;
+        let add = q < 1.96 ? Math.pow(1 - q / 1.96, 2) * 0.42 : 0;
+        const dx = x - cx, dy = y - cy;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < R) {
+          let ang = Math.atan2(dy, dx) + Math.PI / 2;
+          ang = ((ang % (TAU / 3)) + TAU / 3) % (TAU / 3);
+          const blade = d > R * 0.24 && d < R * 0.96 && ang > TAU / 12 && ang < TAU / 12 + Math.PI / 3;
+          const hub = d < R * 0.15;
+          if (blade || hub) add += 0.16 * (1 - d / R) + 0.05;
+        }
+        if (add <= 0.004) continue;
+        data[y * w + x] = rgba(255, 128, 36, Math.min(255, add * 255));
+      }
+    }
+    this._glow = { key, w, h, data };
+    return this._glow;
+  }
+
+  drawGlow(buf, W, H, s, cx, cy, rx, ry, a) {
+    const f = this.glowFrame(rx, ry);
+    const pulse = 0.82 + 0.18 * Math.sin(this.t * 1.7) + (this.flashT || 0) * 0.7;
+    blitFrame(buf, W, H, f, cx - f.w / 2, cy - f.h / 2, { additive: true, alpha: a * pulse });
+  }
+
+  drawLogo(buf, W, H, s, game) {
+    const T = game.text;
+    const size = Math.round(H * 0.2);
+    const cy = H * 0.245;
+    const e = this.enterT;
+    // Slams down, overshoots a hair, settles.
+    const ease = e < 1 ? 1 - Math.pow(1 - e, 3) * Math.cos(e * 5.2) : 1;
+    const y = lerp(cy - 46 * s, cy, ease);
+    const a = clamp(e * 1.6, 0, 1);
+    const r = T.raster('NUKEHAUS', { size, display: true, track: Math.round(2 * s), weight: 700, crisp: 0.4 });
+    const ox = Math.round(W / 2 - (r.w - 4) / 2 - 2);
+    const oy = Math.round(y - r.base);
+
+    this.drawGlow(buf, W, H, s, W / 2, oy + r.h * 0.52, r.w * 0.6, r.h * 0.95, a);
+
+    const base = this.logoBase(r, s);
+    blitFrame(buf, W, H, base, ox - base.pad, oy - base.pad, { alpha: a });
+
+    // Chrome body: bright sky over a hard dark horizon over a hot reflection,
+    // with a specular band sweeping across every few seconds.
+    const sweep = ((this.t * 0.32) % 2.2) - 0.4;
+    const body = [];
+    for (let ry = 0; ry < r.h; ry++) {
+      const t = ry / r.h;
+      let col;
+      if (t < 0.5) col = mix(rgba(255, 253, 242, 255), rgba(255, 196, 80, 255), Math.pow(t / 0.5, 1.5));
+      else if (t < 0.545) col = rgba(110, 30, 12, 255);
+      else col = mix(rgba(190, 58, 16, 255), rgba(255, 178, 64, 255), (t - 0.545) / 0.455);
+      body.push(col);
+    }
+    const WHITE = rgba(255, 255, 255, 255);
+    this.stamp(buf, W, H, r, ox, oy, (rx, ry) => {
+      const band = rx / r.w - sweep - (1 - ry / r.h) * 0.22;
+      const spec = 1 - Math.abs(band) * 16;
+      return spec > 0 ? mix(body[ry], WHITE, spec * 0.8) : body[ry];
+    }, a * this.flicker);
+    // Bevel: a hairline of light along every top edge.
+    this.stamp(buf, W, H, r, ox, oy, (rx, ry) =>
+      (ry > 0 && (r.data[(ry - 1) * r.w + rx] >>> 24) < 50) ? WHITE : 0, a * 0.9);
+
+    // Hazard rule, then the tagline on its own dark band so it reads.
+    const rw = r.w - 4;
+    const ry0 = y + size * 0.2;
     for (let x = 0; x < rw; x++) {
       const px = W / 2 - rw / 2 + x;
       const band = (Math.floor((x + this.t * 14) / (7 * s)) % 2) === 0;
-      fillRectBuf(buf, W, H, px, ry0, 1, 3 * s, band ? AMBER : rgba(24, 20, 18, 255), a * 0.9);
+      fillRectBuf(buf, W, H, px, ry0, 1, 3 * s, band ? AMBER : rgba(24, 20, 18, 255), a * 0.95);
     }
-    T.draw(buf, W, H, W / 2, ry0 + 18 * s, 'SIX CITIES.  ONE DOCTOR.  ONE BOOT.', {
-      size: Math.round(12 * s), color: BONE, align: 'center', track: Math.round(9 * s),
-      alpha: a * 0.92, glow: 0.35, glowColor: AMBER,
+    fillRectBuf(buf, W, H, W / 2 - rw * 0.46, ry0 + 7 * s, rw * 0.92, 17 * s, INK, a * 0.62);
+    T.draw(buf, W, H, W / 2, ry0 + 19 * s, 'SIX CITIES.   ONE DOCTOR.   ONE BOOT.', {
+      size: Math.round(12 * s), color: HOT, align: 'center', track: Math.round(4.5 * s),
+      alpha: a, glow: 0.55, glowColor: rgba(255, 120, 40, 255),
     });
-    T.draw(buf, W, H, W / 2, ry0 + 32 * s,
-      'WARDEN B. HARDIGAN  ·  BUNKER SIEBEN  ·  DO NOT RESUSCITATE', {
-      size: Math.round(7 * s), color: DIM, align: 'center', track: Math.round(2.4 * s), alpha: a * 0.7,
+    T.draw(buf, W, H, W / 2, ry0 + 35 * s, 'A BUNKER SIEBEN PRODUCTION  ·  RATED M FOR MUTANT', {
+      size: Math.round(7 * s), color: DIM, align: 'center', track: Math.round(2.6 * s), alpha: a * 0.8,
+    });
+  }
+
+  /**
+   * Brick on the box art, where a hero belongs: a personnel photo with a
+   * bezel, a nameplate, and the odd bad frame of static between expressions.
+   */
+  drawHero(buf, W, H, s, game) {
+    const vm = game.art && game.art.vm;
+    if (!vm) return;
+    const size = Math.round(H * 0.38);
+    const x = Math.round(W - size - 28 * s), y = Math.round(H - size - 44 * s);
+    if (x < W * 0.52) return;               // too narrow a window to share with the menu
+    const cycle = this.t / 3.4;
+    const pose = Math.floor(cycle) % 4;
+    const swap = cycle - Math.floor(cycle) < 0.035;
+    const f = swap ? vm[`portrait_static${Math.floor(this.t * 20) % 3}`] : vm[`portrait_brick_${pose}`];
+    const a = clamp(this.enterT * 1.4 - 0.2, 0, 1);
+    if (a <= 0) return;
+    fillRectBuf(buf, W, H, x + 5 * s, y + 5 * s, size + 6 * s, size + 30 * s, rgba(0, 0, 0, 255), 0.5 * a);
+    fillRectBuf(buf, W, H, x - 3 * s, y - 3 * s, size + 6 * s, size + 30 * s, INK, 0.92 * a);
+    if (f) blitFrame(buf, W, H, f, x, y, { scale: size / f.w, alpha: a, lum: 1.18 });
+    // Hot rim light down the left edge, as if the sky were burning.
+    for (let i = 0; i < 5 * s; i++) {
+      addRectBuf(buf, W, H, x + i, y, 1, size, rgba(255, 110, 40, 255), 0.16 * (1 - i / (5 * s)) * a);
+    }
+    const bez = (cx, cy, dx, dy) => {
+      fillRectBuf(buf, W, H, cx - (dx ? 12 * s : 0), cy - (dy ? 2 * s : 0), 12 * s, 2 * s, AMBER, 0.9 * a);
+      fillRectBuf(buf, W, H, cx - (dx ? 2 * s : 0), cy - (dy ? 12 * s : 0), 2 * s, 12 * s, AMBER, 0.9 * a);
+    };
+    bez(x - 3 * s, y - 3 * s, 0, 0); bez(x + size + 3 * s, y - 3 * s, 1, 0);
+    bez(x - 3 * s, y + size + 27 * s, 0, 1); bez(x + size + 3 * s, y + size + 27 * s, 1, 1);
+    const T = game.text;
+    T.draw(buf, W, H, x + size / 2, y + size + 12 * s, 'WARDEN B. HARDIGAN', {
+      size: Math.round(9 * s), color: HOT, align: 'center', track: Math.round(2.4 * s), alpha: a,
+    });
+    T.draw(buf, W, H, x + size / 2, y + size + 22 * s, 'STILL THINKS IT IS 1996', {
+      size: Math.round(6.5 * s), color: DIM, align: 'center', track: Math.round(2 * s), alpha: a * 0.85,
     });
   }
 
   drawMenu(buf, W, H, s, game) {
     const T = game.text;
-    const y0 = H * 0.58;
-    // One plate under the whole block, so the items read as a menu and not as
-    // four captions floating over the skyline.
-    const plateTop = y0 - 16 * s, plateH = MENU.length * 22 * s + 10 * s;
-    fillRectBuf(buf, W, H, W / 2 - 170 * s, plateTop, 340 * s, plateH, INK, 0.42);
-    fillRectBuf(buf, W, H, W / 2 - 170 * s, plateTop, 340 * s, 1, AMBER, 0.22);
-    fillRectBuf(buf, W, H, W / 2 - 170 * s, plateTop + plateH - 1, 340 * s, 1, AMBER, 0.22);
-    MENU.forEach((m, i) => {
-      const on = i === this.sel;
-      const y = y0 + i * 22 * s;
-      if (on) {
-        const pulse = 0.55 + 0.45 * Math.sin(this.t * 5.2);
-        fillRectBuf(buf, W, H, W / 2 - 150 * s, y - 11 * s, 300 * s, 19 * s, rgba(30, 22, 16, 255), 0.55);
-        fillRectBuf(buf, W, H, W / 2 - 150 * s, y - 11 * s, 2 * s, 19 * s, AMBER, pulse);
-        fillRectBuf(buf, W, H, W / 2 + 148 * s, y - 11 * s, 2 * s, 19 * s, AMBER, pulse);
-      }
-      T.draw(buf, W, H, W / 2, y + 3 * s, m.label, {
-        size: Math.round(12 * s), color: on ? HOT : DIM, align: 'center',
-        track: Math.round(4 * s), glow: on ? 0.8 : 0, glowColor: AMBER,
-      });
-    });
+    const itemH = 19 * s;
     const sc = getScores();
     const best = Math.max(...sc.best);
+    const x0 = Math.round(26 * s);
+    const plateW = Math.round(232 * s);
+    const plateH = Math.round(MENU.length * itemH + 30 * s + (best > 0 ? 14 * s : 0));
+    const plateY = Math.round(H - plateH - 30 * s);
+    // A solid command plate with a drop shadow: nothing behind it bleeds through.
+    fillRectBuf(buf, W, H, x0 + 5 * s, plateY + 5 * s, plateW, plateH, rgba(0, 0, 0, 255), 0.5);
+    fillRectBuf(buf, W, H, x0, plateY, plateW, plateH, INK, 0.9);
+    fillRectBuf(buf, W, H, x0, plateY, plateW, 1.5 * s, AMBER, 0.85);
+    fillRectBuf(buf, W, H, x0, plateY, 3 * s, plateH, RUST, 0.95);
+    fillRectBuf(buf, W, H, x0, plateY + plateH - 1, plateW, 1, AMBER, 0.3);
+    T.draw(buf, W, H, x0 + 16 * s, plateY + 13 * s, 'SHIFT CONTROL', {
+      size: Math.round(7 * s), color: DIM, track: Math.round(3 * s),
+    });
+    MENU.forEach((m, i) => {
+      const on = i === this.sel;
+      const y = plateY + 30 * s + i * itemH;
+      if (on) {
+        const pulse = 0.6 + 0.4 * Math.sin(this.t * 6);
+        fillRectBuf(buf, W, H, x0 + 3 * s, y - 12 * s, plateW - 3 * s, itemH - 1 * s, rgba(112, 30, 14, 255), 0.85);
+        fillRectBuf(buf, W, H, x0 + 3 * s, y - 12 * s, 3 * s, itemH - 1 * s, rgba(255, 200, 80, 255), pulse);
+        T.draw(buf, W, H, x0 + 13 * s, y + 1 * s, '>', { size: Math.round(11 * s), color: AMBER, alpha: pulse });
+      }
+      T.draw(buf, W, H, x0 + 26 * s, y + 1 * s, m.label, {
+        size: Math.round(11 * s), color: on ? HOT : BONE, alpha: on ? 1 : 0.62,
+        track: Math.round(2.6 * s), glow: on ? 0.7 : 0, glowColor: AMBER,
+      });
+    });
     if (best > 0) {
-      T.draw(buf, W, H, W / 2, y0 + MENU.length * 22 * s + 16 * s,
-        `BEST SHIFT  ${best.toLocaleString()}` +
-        (sc.cleared.some(Boolean) ? '   ·   BUNKER CLEARED' : `   ·   REACHED LEVEL ${sc.deepest}`), {
-        size: Math.round(8 * s), color: AMBER, align: 'center',
-        track: Math.round(3 * s), alpha: 0.75,
+      T.draw(buf, W, H, x0 + 16 * s, plateY + plateH - 9 * s,
+        `BEST SHIFT  ${best.toLocaleString()}` + (sc.cleared.some(Boolean) ? '  ·  CLEARED' : `  ·  FLOOR ${sc.deepest}`), {
+        size: Math.round(7 * s), color: AMBER, track: Math.round(2 * s), alpha: 0.8,
       });
     }
   }
 
   drawPanel(buf, W, H, s, title, game) {
     const x = W * 0.16, y = H * 0.44, w = W * 0.68, h = H * 0.46;
-    fillRectBuf(buf, W, H, x, y, w, h, INK, 0.82);
-    fillRectBuf(buf, W, H, x, y, w, 1.5 * s, AMBER, 0.8);
-    fillRectBuf(buf, W, H, x, y + h - 1.5 * s, w, 1.5 * s, AMBER, 0.4);
+    // Solid, like the command plate: the skyline must not show through the text.
+    fillRectBuf(buf, W, H, x + 5 * s, y + 5 * s, w, h, rgba(0, 0, 0, 255), 0.5);
+    fillRectBuf(buf, W, H, x, y, w, h, INK, 0.95);
+    fillRectBuf(buf, W, H, x, y, w, 1.5 * s, AMBER, 0.85);
+    fillRectBuf(buf, W, H, x, y, 3 * s, h, RUST, 0.95);
+    fillRectBuf(buf, W, H, x, y + h - 1, w, 1, AMBER, 0.3);
     game.text.draw(buf, W, H, x + 14 * s, y + 16 * s, title, {
       size: Math.round(11 * s), color: AMBER, track: Math.round(4 * s),
     });

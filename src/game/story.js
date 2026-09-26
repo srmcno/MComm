@@ -142,6 +142,16 @@ export const BRICK_LINES = {
     "I've unplugged better than you.",
     "Big talk from a wall.",
   ],
+  stomp: [
+    "Curb service.",
+    "Stomped. Like my first marriage.",
+    "Size eleven, steel toe, all yours, pal.",
+  ],
+  streak: [
+    "Hail to the warden, baby!",
+    "Damn, I'm good. Damn, I'm handsome. Damn.",
+    "Somebody get this man a cold beer and a warm dame.",
+  ],
   victory: [
     "Doc. Told you.",
     "Brick Hardigan: still undefeated.",
@@ -171,6 +181,23 @@ export const DISTRACTED = [
   ["Hey, do you think Lurlene ever got my letters?",
     "You proposed to a woman you had never met, in writing.",
     "And I stand by it."],
+  ["Doc, you sound like a real looker. Brunette? I'm getting brunette.",
+    "I sound like a woman sealed in a reactor who can hear you breathing. Shoot the sky."],
+  ["When this is over, how about you and me hit the hot tub.",
+    "The only hot tub in this building is the reactor. Get in, if you like."],
+  ["Doc, you ever date a man with this many confirmed kills?",
+    "I have never dated a man with this few confirmed brain cells."],
+  ["A guy saves six cities, a gal's gotta be a little grateful, right?",
+    "I will be grateful when you save one. Current tally: zero.",
+    "Zero so far. I'm a closer, doc. Big finish."],
+  ["Back at the academy they called me the Hardigan Hurricane.",
+    "I have your academy file. They called you, and I quote, that one."],
+  ["Doc, is it hot in here, or is that just you?",
+    "It is the radiation. It is always the radiation. Please stop asking."],
+  ["I don't need a woman to save me, doc. But I'd let one try.",
+    "Noted. I will pass that on if I ever meet one who wants the job."],
+  ["Hey toots, what are you wearing?",
+    "A lead apron and a doctorate. Say toots again and I open the blast doors on you."],
 ];
 
 /** MUTTER's reaction to the mutants, delivered like a weather report. */
@@ -186,6 +213,9 @@ export const MUTTER_BRICK_FILE = [
   "Warden Hardigan has been formally disciplined nine times. Six were for the same thing.",
   "Warden Hardigan's emergency contact is himself. He wrote it in twice.",
   "Warden Hardigan lists his hobbies as women, ordnance, and, quote, being right.",
+  "Warden Hardigan has asked the vending machine on level two to dinner four times. It declined.",
+  "Warden Hardigan has described himself as a lady killer on eleven separate forms.",
+  "Medical file: Warden Hardigan lists his blood type as, quote, bad ass. The lab disagrees.",
 ];
 
 /**
@@ -254,7 +284,7 @@ export class Radio {
       this.cancelVoice();
     }
     if (this.queue.length > 2) this.queue.shift();
-    this.queue.push({ speaker, key, text, priority: pr, args: opts.args, delay: opts.delay || 0 });
+    this.queue.push({ speaker, key, text, priority: pr, args: opts.args, delay: opts.delay || 0, exact: !!opts.exact });
     return true;
   }
 
@@ -276,9 +306,12 @@ export class Radio {
   distract() {
     const set = DISTRACTED[this.distractIdx % DISTRACTED.length];
     this.distractIdx++;
-    this.say('brick', 'brick_distracted', set[0], { priority: -1 });
-    this.say('ilsa', 'ilsa_distracted_reply', set[1], { priority: -1, delay: 0.35 });
-    if (set[2]) this.say('brick', 'brick_distracted', set[2], { priority: -1, delay: 0.35 });
+    // Voiced exactly as written. These used to be voiced as random picks from
+    // each speaker's pool, so the caption and the joke were a matched pair but
+    // what you HEARD was Brick asking one thing and Ilsa answering another.
+    this.say('brick', 'brick_distracted', set[0], { priority: -1, exact: true });
+    this.say('ilsa', 'ilsa_distracted_reply', set[1], { priority: -1, delay: 0.35, exact: true });
+    if (set[2]) this.say('brick', 'brick_distracted', set[2], { priority: -1, delay: 0.35, exact: true });
   }
 
   update(dt) {
@@ -297,7 +330,7 @@ export class Radio {
     const g = this.game;
     const sp = SPEAKERS[m.speaker] || SPEAKERS.mutter;
     if (m.speaker === 'ilsa') g.sound.sfx('radio_open', { vol: 0.5 });
-    const dur = g.speakAs(sp.voice, m.key, m.text, m.args);
+    const dur = g.speakAs(sp.voice, m.exact ? null : m.key, m.text, m.args);
     // Show the line the announcer actually chose, not the fallback we queued.
     const said = (g.lastSpoken && g.lastSpoken.text) || m.text;
     this.current = {

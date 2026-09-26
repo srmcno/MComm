@@ -1271,6 +1271,130 @@ check('switching away pauses a run in progress, and leaves the title alone',
        : `stalled at "${where}"`);
 }
 
+// ------------- 44. a GPU that compiles the shaders but draws black is caught
+// at boot, and the game takes the 2D path instead of showing a dead screen.
+// Safe Mode takes it deliberately, with audio and controller polling off.
+{
+  const probe = async (url, init) => {
+    const pg = await browser.newPage({ viewport: { width: 800, height: 500 } });
+    if (init) await pg.addInitScript(init);
+    await pg.goto(`http://127.0.0.1:${PORT}/${url}`);
+    await pg.waitForFunction(() => window.NUKEHAUS && window.NUKEHAUS.booted, null, { timeout: 40000, polling: 250 });
+    const out = await pg.evaluate(() => ({ ...window.NUKEHAUS_RENDER,
+      sound: !!(NUKEHAUS.game.sound && NUKEHAUS.game.sound.raw), pad: !!NUKEHAUS.input.padDisabled }));
+    await pg.close();
+    return out;
+  };
+  const black = await probe('index.html', () => {
+    const orig = WebGL2RenderingContext.prototype.readPixels;
+    WebGL2RenderingContext.prototype.readPixels = function (x, y, w, h, f, t, px) { orig.call(this, x, y, w, h, f, t, px); px.fill(0); };
+  });
+  const safe = await probe('index.html?safe');
+  const normal = await page.evaluate(() => window.NUKEHAUS_RENDER);
+  check('a GPU that draws black falls back to 2D; Safe Mode strips GPU, audio and pads',
+    normal.mode === 'webgl2' && black.mode === '2d' && safe.mode === '2d' && safe.safe && !safe.sound && safe.pad,
+    `normal ${normal.mode}, black GPU -> ${black.mode} (${black.why}), safe -> ${safe.mode}`);
+}
+
+// ------------ 45. a pad the browser could not map does not drive itself
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game, inp = window.NUKEHAUS.input;
+  const pad = { id: 'Wireless Controller', index: 3, connected: true, mapping: '',
+    axes: [0, 0, -1, 0, 0, -1], buttons: Array.from({ length: 11 }, () => ({ pressed: false, value: 0 })) };
+  const realGet = navigator.getGamepads;
+  navigator.getGamepads = () => [null, null, null, pad];
+  inp.padIndex = -1; inp._axisRest = null;
+  g.newGame(1); g.loadLevel(0); g.setState('play');
+  const a0 = g.player.ang, x0 = g.player.x, y0 = g.player.y;
+  for (let i = 0; i < 90; i++) { inp.update(1 / 60); g.update(1 / 60, inp); }
+  const drift = Math.abs(g.player.ang - a0) + Math.hypot(g.player.x - x0, g.player.y - y0);
+  pad.axes[5] = 1; inp.update(1 / 60); const fire = inp.padFire;
+  pad.axes[5] = -1; inp.update(1 / 60);
+  navigator.getGamepads = realGet; inp.padIndex = -1; inp.pad = null; inp._axisRest = null; inp._releasePad();
+  return { drift: +drift.toFixed(4), fire };
+});
+check('a non-standard pad with triggers resting at -1 neither spins nor walks by itself',
+  s.drift < 0.001 && s.fire === 1, `drift ${s.drift}, full trigger reads ${s.fire}`);
+
+// ----------------------- 46. the Boot ends a weakened enemy; kills feed ego
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.newGame(1); g.loadLevel(1); g.setState('play'); g._god = false;
+  const e = g.enemies.find((x) => x.alive && !x.def.boss && !x.def.miniboss);
+  window.T.standNear(e.x, e.y, 1.2, 1.9);
+  g.player.ang = Math.atan2(e.y - g.player.y, e.x - g.player.x);
+  g.player.kickCooldown = 0;
+  e.hp = Math.max(1, Math.floor(e.maxHp * 0.25));
+  g.player.health = 40;
+  const before = g.player.score;
+  g.tryKick();
+  const out = { dead: !e.alive || e.state >= 6, health: g.player.health, gained: g.player.score - before };
+  g._god = true;
+  return out;
+});
+check('a weakened enemy gets curb-stomped by the Boot, and the kill tops up health',
+  s.dead && s.health > 40 && s.gained >= 400, `dead ${s.dead}, health 40 -> ${s.health}, +${s.gained}`);
+
+// ------------- 48. a scripted exchange is spoken as written, as a pair
+// Each line used to be voiced as a random pick from the speaker's pool, so the
+// caption read as a joke and the audio was Brick asking one thing and Ilsa
+// answering another.
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game;
+  g.newGame(1); g.loadLevel(0); g.setState('play');
+  const heard = [];
+  const real = g.vox;
+  g.vox = { say: (t) => { heard.push(t); return 1.2; }, sayLine: () => { heard.push('<random pick>'); return 1.2; },
+    cancel() {}, setVolume() {}, busy: false, lastLine: null };
+  g.radio.reset();
+  g.radio.distractIdx = 0;
+  const { DISTRACTED } = await import('./src/game/story.js');
+  g.radio.distract();
+  for (let i = 0; i < 60 * 12 && heard.length < DISTRACTED[0].length; i++) g.radio.update(1 / 60);
+  g.vox = real;
+  return { heard, want: DISTRACTED[0] };
+});
+check('a scripted exchange is voiced exactly as written, in order',
+  JSON.stringify(s.heard) === JSON.stringify(s.want),
+  s.heard.map((t) => '"' + String(t).slice(0, 22) + '..."').join(' / '));
+
+// --------- 49. a line that queues behind another voice keeps its own caption
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  const real = g.vox;
+  // A synth busy with MUTTER: new requests queue, and lastLine still reports
+  // the utterance that is playing, not the one just asked for.
+  let req = '';
+  g.vox = { lastLine: 'Welcome back, warden. Nothing has happened.', get lastRequested() { return req; },
+    sayLine: (key) => { req = g.voxLines[key][0]; return 2; }, say: (t) => { req = t; return 2; },
+    cancel() {}, setVolume() {}, busy: true };
+  g.speakAs('brick', 'brick_kill', '');
+  const caption = g.lastSpoken.text;
+  g.vox = real;
+  return { caption, want: g.voxLines.brick_kill[0] };
+});
+check("a queued line is captioned with its own words, not the voice it waited behind",
+  s.caption === s.want, `"${s.caption.slice(0, 40)}"`);
+
+// ------------------ 47. the failure screen carries what is needed to fix it
+{
+  const pg = await browser.newPage({ viewport: { width: 800, height: 500 } });
+  await pg.addInitScript(() => {
+    const orig = document.getElementById.bind(document);
+    document.getElementById = (id) => { if (id === 'screen') throw new Error('synthetic boot failure'); return orig(id); };
+  });
+  await pg.goto(`http://127.0.0.1:${PORT}/index.html`);
+  await pg.waitForFunction(() => document.getElementById('fatal').style.display === 'block', null, { timeout: 20000, polling: 200 });
+  const f = await pg.evaluate(() => ({
+    body: document.getElementById('fatal-body').textContent,
+    buttons: [...document.querySelectorAll('#fatal button')].map((b) => b.textContent) }));
+  await pg.close();
+  check('the boot failure screen names the error, the browser and the GPU, and offers Safe Mode',
+    /synthetic boot failure/.test(f.body) && /browser  :/.test(f.body) && /gpu      :/.test(f.body) &&
+    f.buttons.includes('TRY SAFE MODE') && f.buttons.includes('COPY DETAILS'),
+    f.buttons.join(' / '));
+}
+
 // ------------------------------------------------------------- report
 console.log('');
 if (errors.length) {

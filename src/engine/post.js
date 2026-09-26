@@ -160,12 +160,22 @@ class Target {
     this.fbo = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.tex, 0);
+    // A half-float target the driver cannot render to draws nothing and raises
+    // nothing. Say so here, where the probe can hear it.
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) throw new Error('bloom target incomplete: 0x' + status.toString(16));
   }
   dispose() { this.gl.deleteTexture(this.tex); this.gl.deleteFramebuffer(this.fbo); }
 }
 
 export class Post {
-  constructor(canvas) {
+  /**
+   * @param {HTMLCanvasElement} canvas
+   * @param {{basic?: boolean, trusted?: boolean}} [opts]
+   *   basic   — never touch WebGL; plain 2D blit (Safe Mode).
+   *   trusted — skip the probe; used by the probe itself.
+   */
+  constructor(canvas, opts = {}) {
     this.canvas = canvas;
     this.enabled = true;
     this.settings = {
@@ -178,10 +188,27 @@ export class Post {
     // it is given for life, so binding the real one to webgl2 and only THEN
     // discovering a missing capability is fatal: getContext('2d') afterwards
     // returns null and the 2D fallback has nothing to draw into.
-    if (Post.webgl2Viable()) {
-      try { this._initGL(); } catch (e) { console.warn('WebGL post unavailable:', e.message); this.gl = null; }
+    this.mode = '2d';
+    this.why = opts.basic ? 'safe mode' : '';
+    if (!opts.basic && (opts.trusted || Post.webgl2Viable())) {
+      try { this._initGL(); this.mode = 'webgl2'; }
+      catch (e) { console.warn('WebGL post unavailable:', e.message); this.gl = null; this.why = e.message; }
+    } else if (!opts.basic) {
+      this.why = Post.lastProbeFailure || 'webgl2 probe failed';
     }
     if (!this.gl) this._init2D();
+
+    // The GPU can take the context away (driver reset, memory pressure, a
+    // laptop switching graphics). Keep the game running and rebuild when it
+    // comes back, rather than drawing into a dead context forever.
+    this._lost = false;
+    if (this.gl && canvas.addEventListener) {
+      canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this._lost = true; });
+      canvas.addEventListener('webglcontextrestored', () => {
+        try { this._buildGL(this.gl); this._lost = false; }
+        catch (err) { console.warn('WebGL restore failed:', err.message); }
+      });
+    }
   }
 
   /**
@@ -190,22 +217,52 @@ export class Post {
    * to a context we cannot use.
    */
   static webgl2Viable() {
-    let gl = null;
+    // Compiling the shaders is not the same as drawing the picture. A GPU can
+    // accept every program and still hand back black: an unrenderable
+    // half-float target, a broken flip, a driver that samples zero. So the
+    // probe runs the real pipeline on a throwaway canvas and reads the result:
+    // a black frame must come out dark and a bright one must come out bright.
+    // Anything else, and the game uses the 2D path from the first frame.
+    let probe = null;
+    Post.lastProbeFailure = '';
     try {
-      const probe = document.createElement('canvas');
-      probe.width = 2; probe.height = 2;
-      gl = probe.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false });
-      if (!gl) return false;
-      if (!gl.getExtension('EXT_color_buffer_half_float') && !gl.getExtension('EXT_color_buffer_float')) return false;
-      program(gl, FRAG_BRIGHT);
-      program(gl, FRAG_BLUR);
-      program(gl, FRAG_COMPOSITE);
+      const c = document.createElement('canvas');
+      c.width = 64; c.height = 40;
+      probe = new Post(c, { trusted: true });
+      if (!probe.gl) { Post.lastProbeFailure = probe.why || 'no webgl2'; return false; }
+      const gl = probe.gl;
+      const w = 32, h = 20;
+      const frame = new Uint32Array(w * h);
+      const read = () => {
+        const px = new Uint8Array(4);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.readPixels(32, 20, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        return (px[0] + px[1] + px[2]) / 3;
+      };
+      frame.fill(0xff000000);
+      probe.present(frame, w, h, 0);
+      const dark = read();
+      frame.fill(0xffb4b4b4);
+      probe.present(frame, w, h, 0);
+      const bright = read();
+      const err = gl.getError();
+      if (err !== gl.NO_ERROR && err !== gl.CONTEXT_LOST_WEBGL) {
+        Post.lastProbeFailure = 'gl error 0x' + err.toString(16); return false;
+      }
+      if (!(bright > 70 && dark < 50 && bright - dark > 60)) {
+        Post.lastProbeFailure = `pipeline output wrong (black in ${dark | 0}, grey in ${bright | 0})`;
+        return false;
+      }
       return true;
     } catch (e) {
-      console.warn('WebGL post probe failed:', e && e.message);
+      Post.lastProbeFailure = (e && e.message) || String(e);
+      console.warn('WebGL post probe failed:', Post.lastProbeFailure);
       return false;
     } finally {
-      if (gl) { const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext(); }
+      if (probe && probe.gl) {
+        const lose = probe.gl.getExtension('WEBGL_lose_context');
+        if (lose) lose.loseContext();
+      }
     }
   }
 
@@ -219,7 +276,10 @@ export class Post {
     this.gl = gl;
     this.hasFloat = !!gl.getExtension('EXT_color_buffer_half_float') || !!gl.getExtension('EXT_color_buffer_float');
     if (!this.hasFloat) throw new Error('no float render targets');
+    this._buildGL(gl);
+  }
 
+  _buildGL(gl) {
     this.quad = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
@@ -279,6 +339,7 @@ export class Post {
 
   /** @param {Uint32Array} frame  internal-resolution framebuffer */
   present(frame, w, h, time) {
+    if (this._lost) return;
     if (this.gl) this._presentGL(frame, w, h, time);
     else this._present2D(frame, w, h);
   }

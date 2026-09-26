@@ -49,49 +49,9 @@
   <div id="overlay"></div>
   <div id="fatal"><h1>NUKEHAUS HAS FAILED TO BOOT</h1><div id="fatal-body"></div></div>
   <div id="glitch"></div>
+<script src="src/boot-shell.js"></script>
 <script type="module">
-  const text = (err) => (err && (err.stack || err.message)) || String(err);
-
-  const fatal = (err) => {
-    document.getElementById('fatal-body').textContent = text(err);
-    document.getElementById('fatal').style.display = 'block';
-    console.error(err);
-  };
-
-  // Once the game is up it stays up. A stray runtime error gets a corner note
-  // and a console trace, not a full-screen sign saying the game never booted —
-  // that sign was a lie the moment the title screen had already drawn.
-  let glitches = 0;
-  const glitch = (err) => {
-    console.error(err);
-    const el = document.getElementById('glitch');
-    el.textContent = `HAIRLINE FRACTURE (${++glitches}) — ${String(text(err)).split('\n')[0]}`;
-    el.style.display = 'block';
-    clearTimeout(glitch.t);
-    glitch.t = setTimeout(() => { el.style.display = 'none'; }, 6000);
-  };
-
-  const report = (err) => (window.NUKEHAUS && window.NUKEHAUS.booted ? glitch : fatal)(err);
-  window.addEventListener('error', (e) => report(e.error || e.message));
-  window.addEventListener('unhandledrejection', (e) => report(e.reason));
-  window.__NUKEHAUS_FATAL__ = fatal;
-
-  // A stalled boot used to be invisible: no error to catch, no rejection to
-  // report, just the loading screen forever. If the game has not come up well
-  // after the slowest plausible load, say so and name the stage it reached.
-  const watchdog = setTimeout(() => {
-    if (window.NUKEHAUS && window.NUKEHAUS.booted) return;
-    const at = window.NUKEHAUS_BOOT;
-    fatal('Loading stalled' + (at ? ` at "${at.stage}" (${at.at}ms in).` : ' before the first stage.') +
-      '\n\nThis usually means the browser suspended the page mid-load.' +
-      '\nBring this tab to the front and reload.');
-  }, 45000);
-  const stopWatchdog = () => clearTimeout(watchdog);
-
-  import('./src/main.js').then((m) => m.boot()).then(stopWatchdog).catch((e) => {
-    stopWatchdog();
-    fatal(e);
-  });
+  import('./src/main.js').then((m) => m.boot()).catch((e) => window.NUKEHAUS_SHELL.fatal(e));
 </script>
 </body>
 </html>

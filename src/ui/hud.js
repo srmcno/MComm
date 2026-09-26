@@ -160,7 +160,15 @@ export class Hud {
     // player has not necessarily moved it yet — for them this is the only
     // instruction that matters, so it gets said loudly.
     const pending = !game.input.locked && game.input._wantLock;
-    if (!game.input.locked && (pending || game.input.mouseMoved)) {
+    if (!game.input.locked && game.input.lockBlocked) {
+      // Somewhere that will never give us the mouse: say how it works instead.
+      if (game.input.mouseMoved) {
+        this.text.draw(buf, W, H, W / 2, H * 0.735, 'CURSOR STEERING  ·  AIM OFF-CENTRE TO TURN', {
+          size: Math.round(7 * s), color: rgba(150, 200, 220, 255), align: 'center',
+          track: Math.round(2.4 * s), alpha: 0.4,
+        });
+      }
+    } else if (!game.input.locked && (pending || game.input.mouseMoved)) {
       this.text.draw(buf, W, H, W / 2, H * 0.735,
         pending ? 'CLICK TO TAKE THE MOUSE' : 'CLICK TO CAPTURE THE MOUSE', {
           size: Math.round((pending ? 11 : 8) * s),
