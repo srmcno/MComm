@@ -103,9 +103,10 @@ export function rotFrame(f, ang) {
 function rotate(f, a) {
   // Square canvas big enough for the diagonal, so nothing is cropped.
   const D = Math.ceil(Math.hypot(f.w, f.h)) | 1;
-  const out = makeFrame(D, D);
+  const tmp = new Uint32Array(D * D);
   const c = Math.cos(a), s = Math.sin(a);
   const hw = f.w / 2, hh = f.h / 2, hD = D / 2;
+  let ex = 0, ey = 0;
   for (let y = 0; y < D; y++) {
     const dy = y + 0.5 - hD;
     for (let x = 0; x < D; x++) {
@@ -113,8 +114,21 @@ function rotate(f, a) {
       // Inverse map: where in the source did this output pixel come from.
       const sx = Math.floor(c * dx + s * dy + hw), sy = Math.floor(-s * dx + c * dy + hh);
       if (sx < 0 || sy < 0 || sx >= f.w || sy >= f.h) continue;
-      out.data[y * D + x] = f.data[sy * f.w + sx];
+      const v = f.data[sy * f.w + sx];
+      if (!(v >>> 24)) continue;
+      tmp[y * D + x] = v;
+      const ax = Math.abs(dx) + 0.5, ay = Math.abs(dy) + 0.5;
+      if (ax > ex) ex = ax;
+      if (ay > ey) ey = ay;
     }
+  }
+  // Trim to the opaque extent, symmetrically so the centre stays the centre:
+  // every transparent column the renderer does not have to walk is free.
+  const w = Math.max(1, Math.min(D, 2 * Math.ceil(ex))), h = Math.max(1, Math.min(D, 2 * Math.ceil(ey)));
+  const ox = ((D - w) / 2) | 0, oy = ((D - h) / 2) | 0;
+  const out = makeFrame(w, h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) out.data[y * w + x] = tmp[(y + oy) * D + x + ox];
   }
   return out;
 }

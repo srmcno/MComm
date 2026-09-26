@@ -318,6 +318,25 @@ info = await page.evaluate(() => {
 console.log('sixty', info);
 await shot('11-sixty-parts');
 
+// 12. Bowling: a thrown body into the one behind it.
+info = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game, S = window.S;
+  S.arena(1);
+  const a = S.spawn('wrencher', 2.4, -0.7, Math.PI);
+  const b = S.spawn('sparker', 4.2, -0.9, Math.PI);
+  const c = S.spawn('priest', 4.9, -0.5, Math.PI);
+  b.hp = b.maxHp = 300; c.hp = c.maxHp = 300;
+  a.hp = 1; a.hurt(10, g, g.player.x, g.player.y);
+  g.gore.launch(a, 1, 0, 18, 3.5);
+  S.aimAt(a.x + 1.5, a.y, 0.5);
+  S.step(0.17); S.clearHud();
+  return { pins: a._pins || 0, roll: +a.roll.toFixed(2), z: +a.z.toFixed(2) };
+});
+console.log('bowl', info);
+await shot('12-bowling');
+await page.evaluate(() => { window.S.step(0.25); });
+await shot('13-bowling-after');
+
 console.log('\nshots in', OUT);
 await browser.close();
 server.kill('SIGKILL');
