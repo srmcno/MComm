@@ -649,7 +649,7 @@ function rig(plat, behaviour = {}, opts = {}) {
   check('speech.js never touches speechSynthesis at module top level', topLevel.length === 0, topLevel.join(' | '));
   check('speech.js uses no Math.random', !/Math\.random/.test(src));
   const raw = fs.readFileSync(new URL('../src/audio/speech.js', import.meta.url), 'utf8');
-  check('no long dashes in speech.js', !/—/.test(raw));
+  check('no long dashes in speech.js', !raw.includes(String.fromCharCode(0x2014)));
 }
 
 console.log('\nspeech-check - Web Speech casting, text, timing and fallback\n');
