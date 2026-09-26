@@ -239,12 +239,24 @@ export class Raycaster {
       const stepV = TEX / spanH;
       let vpos = (drawStart - yHead) * stepV;
 
+      // Contact shadow: light does not reach into the crease where a wall meets
+      // the floor, or the ceiling. Darkening those bands is what gives a flat
+      // raycast wall its weight. A parapet's top is an exposed edge, not a
+      // crease, and a glowing screen casts no shadow on itself.
+      const ao = em < 0.999;
+      const aoTop = ao && wallH >= 0.999;
+      const invTex = 1 / TEX;
+
       for (let y = drawStart; y <= drawEnd; y++) {
         let ty = vpos | 0;
         if (ty < 0) ty = 0; else if (ty >= TEX) ty = TEX - 1;
+        const v = vpos * invTex;
         vpos += stepV;
+        let k = 1;
+        if (ao && v > 0.84) k = 1 - (v - 0.84) * 3.1;          // down to ~0.5 at the floor
+        else if (aoTop && v < 0.07) k = 1 - (0.07 - v) * 4.3;  // down to ~0.7 at the ceiling
         const t = atlas[texBase + ty * TEX + tx];
-        const r = (t & 255) * lr, g = ((t >>> 8) & 255) * lg, b = ((t >>> 16) & 255) * lb;
+        const r = (t & 255) * lr * k, g = ((t >>> 8) & 255) * lg * k, b = ((t >>> 16) & 255) * lb * k;
         buf[y * this.w + c] =
           (255 << 24 |
            (((b * keep + fb * fog) | 0) > 255 ? 255 << 16 : ((b * keep + fb * fog) | 0) << 16) |

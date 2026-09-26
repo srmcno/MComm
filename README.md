@@ -25,6 +25,14 @@ announcer is a formant synthesiser.
 **<https://srmcno.github.io/MComm/>** — the single-file build, published from
 `main` on every push. Click once to wake the audio, then take the mouse.
 
+## If it will not start
+
+Add `?safe` to the address (<https://srmcno.github.io/MComm/?safe>). Safe Mode
+skips the GPU effects chain, audio and controller polling, so it runs anywhere
+a canvas does. If the game ever fails to boot, the error screen offers Safe
+Mode and a **Copy details** button with the browser, GPU and the stage loading
+reached; `NUKEHAUS_DIAG()` in the console prints the same thing.
+
 ## Run it locally
 
 Any modern browser. It needs to be served over HTTP (it uses ES modules), not

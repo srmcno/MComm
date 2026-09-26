@@ -464,14 +464,16 @@ export class Game {
   speakAs(voice, key, fallbackText, args) {
     const lines = this.voxLines;
     let text = fallbackText || '';
-    const entry = lines[key];
+    // A null key means "say exactly this": scripted exchanges, where a random
+    // pick from the pool would break the joke.
+    const entry = key ? lines[key] : null;
     if (entry) text = Array.isArray(entry) ? entry[(this.rng() * entry.length) | 0] : entry;
     if (args) for (const a of args) text = text.replace('%s', a);
     this.sound.duck(0.45, 1.8);
     let dur = 0;
-    try { dur = this.vox.sayLine(key, { voice, args }) || 0; } catch { dur = 0; }
+    if (key) { try { dur = this.vox.sayLine(key, { voice, args }) || 0; } catch { dur = 0; } }
     // The announcer chose a variant; caption that one, not another roll.
-    let spoken = dur ? (this.vox.lastLine || text) : text;
+    let spoken = dur ? (this.vox.lastRequested || this.vox.lastLine || text) : text;
     if (!dur && text) { try { dur = this.vox.say(text, { voice }) || 0; } catch { dur = 0; } }
     if (args && spoken) for (const a of args) spoken = spoken.replace('%s', a);
     const caption = String(spoken || '').replace(/\{[^}]*\}/g, (m) => m.slice(1, -1).replace(/[0-9]/g, '').toLowerCase());
@@ -498,7 +500,7 @@ export class Game {
     }
     this.sound.duck(0.4, 1.6);
     const dur = this.vox.sayLine ? this.vox.sayLine(key, opts) : 0;
-    let spoken = dur ? (this.vox.lastLine || text) : text;
+    let spoken = dur ? (this.vox.lastRequested || this.vox.lastLine || text) : text;
     if (!dur && text) this.vox.say(text, opts);
     if (opts.args && spoken) for (const a of opts.args) spoken = String(spoken).replace('%s', a);
     const caption = String(spoken || '').replace(/\{[^}]*\}/g, (m) => m.slice(1, -1).replace(/[0-9]/g, '').toLowerCase());
@@ -942,15 +944,22 @@ export class Game {
     const p = this.player;
     p.streak += n;
     p.streakTimer = 4.2;
-    if (p.streak === 3 || p.streak === 6 || p.streak === 10 || p.streak === 16) {
+    const NAMES = { 3: 'HAT TRICK', 6: 'MELTDOWN', 10: 'HAZMAT HERO', 16: 'HAIL TO THE WARDEN' };
+    if (NAMES[p.streak]) {
       const bonus = p.streak * 150;
       p.score += bonus;
       this.sound.sfx('combo_up', { rate: 1 + Math.min(0.6, p.streak * 0.05) });
-      this.hud.popup(`${p.streak} IN A ROW  +${bonus}`, {
-        size: 14, life: 1.6, color: rgba(255, 208, 72, 255),
+      const big = p.streak >= 10;
+      this.hud.popup(NAMES[p.streak], {
+        size: big ? 22 : 17, life: 1.9, color: big ? rgba(255, 110, 50, 255) : rgba(255, 208, 72, 255), y: -40,
       });
+      this.hud.popup(`${p.streak} IN A ROW  +${bonus}`, {
+        size: 10, life: 1.9, color: rgba(255, 236, 190, 255), y: -12,
+      });
+      if (big) { this.shake = Math.max(this.shake, 2.2); this.post.flash = Math.max(this.post.flash, 0.18); }
       if (p.streak >= 6) this.hud.setFace('face_grin', 2.0);
-      if (p.streak >= 10) this.brick('brick_chain', BRICK_LINES.chain);
+      if (p.streak === 10) this.brick('brick_chain', BRICK_LINES.chain);
+      else if (p.streak === 6 || p.streak === 16) this.brick('brick_streak', BRICK_LINES.streak);
     }
   }
 
@@ -1254,9 +1263,27 @@ export class Game {
     }
 
     if (best) {
-      const lethal = best.hp <= BOOT.damage;
+      // The Boot finishes what the gun started. Anything short of a boss that
+      // is down to its last third does not get knocked back, it gets ended —
+      // which is the whole reason to walk up to something instead of shooting.
+      const cap = Math.max(best.maxHp || 0, best.hp);
+      const stomp = !best.def.boss && !best.def.miniboss && best.hp <= cap * 0.3;
       best.shove(best.x - p.x, best.y - p.y, BOOT.knockback, BOOT.liftKick);
-      const died = best.hurt(BOOT.damage, this, p.x, p.y);
+      this._bootKill = true;
+      const died = best.hurt(stomp ? best.hp + 999 : BOOT.damage, this, p.x, p.y);
+      this._bootKill = false;
+      if (died && stomp) {
+        this.gib(best);
+        this.addDecal(best.x, best.y, best.def.mutant ? 'gore' : 'blood');
+        this.hitStop = Math.max(this.hitStop, 0.16);
+        this.shake = Math.max(this.shake, 3);
+        this.player.score += 400;
+        this.sound.sfx('punt', { pan: this.panOf(best), rate: 0.8 });
+        this.hud.popup('CURB STOMPED  +400', { size: 16, life: 1.3, color: rgba(255, 120, 60, 255) });
+        if (this.rng() < 0.6) this.brick('brick_stomp', BRICK_LINES.stomp);
+        this.input.rumble(1, 0.8, 220);
+        return;
+      }
       this.sound.sfx(died ? 'punt' : 'kick_hit', { pan: this.panOf(best) });
       this.particles.blood(best.x, best.y, best.z + best.height * 0.55, died ? 14 : 6, ca, sa);
       this.particles.effect({
@@ -1856,6 +1883,19 @@ export class Game {
     this.levelKills++;
     p.score += e.def.score;
     this.bumpStreak();
+    // Ego. Killing things makes Brick feel better about himself, and a man who
+    // feels better about himself has more hit points. It pays for walking into
+    // the fight instead of waiting behind a door for it.
+    const ego = this._bootKill ? 8 : e.def.mutant ? 3 : 2;
+    if (!e.def.boss && p.health > 0 && p.health < p.maxHealth) {
+      const gained = Math.min(ego, p.maxHealth - p.health);
+      p.health += gained;
+      if (gained >= 1) {
+        this.hud.popup(`+${Math.round(gained)} EGO`, {
+          size: 9, life: 0.8, color: rgba(126, 232, 128, 255), y: -64, dy: -12, glow: 0.4,
+        });
+      }
+    }
     this.sound.sfx(e.def.die || (e.def.boss ? 'boss_death' : 'enemy_die'), { pan: this.panOf(e) });
     this.particles.blood(e.x, e.y, e.z + e.height * 0.5, e.def.gib * 3, 0, 0);
     this.addDecal(e.x, e.y, e.def.mutant ? 'gore' : 'blood');

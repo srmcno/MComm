@@ -182,6 +182,26 @@ const DICT = {
   SABBATH: 'S AE1 B AH TH', CANDLEMARK: 'K AE1 N D AH L M AA R K',
   HOLLOW: 'HH AA1 L OW', ERROL: 'EH1 R AH L', DRESSEL: 'D R EH1 S AH L',
   MIRV: 'M ER1 V', WARDEN: 'W AO1 R D AH N', BUNKER: 'B AH1 NG K ER',
+  // the vocabulary of a 1996 action hero
+  SWEETHEART: 'S W IY1 T HH AA R T', STUD: 'S T AH1 D', TUB: 'T AH1 B',
+  LADY: 'L EY1 D IY', LADIES: 'L EY1 D IY Z', GODDAMN: 'G AA1 D D AE M',
+  DUMBASS: 'D AH1 M B AE S', HOTTIE: 'HH AA1 T IY', BROADS: 'B R AO1 D Z',
+  PAPA: 'P AA1 P AH', COLOGNE: 'K AH0 L OW1 N', BRUNETTE: 'B R UW0 N EH1 T',
+  TOOTS: 'T UH1 T S', DAME: 'D EY1 M', MULLET: 'M AH1 L AH T',
+  MUSTANG: 'M AH1 S T AE NG', HANDSOME: 'HH AE1 N S AH M',
+  CALENDAR: 'K AE1 L AH N D ER', FIREFIGHTER: 'F AY1 ER F AY T ER', FINISH: 'F IH1 N IH SH',
+  ACADEMY: 'AH K AE1 D AH M IY', GOTTA: 'G AA1 T AH', MARRIAGE: 'M EH1 R IH JH',
+  APRON: 'EY1 P R AH N', DOCTORATE: 'D AA1 K T ER AH T',
+  HURRICANE: 'HH ER1 AH K EY N', WANTS: 'W AA1 N T S',
+  // contractions: the letter rules drop the apostrophe and say "im", "id"
+  "I'M": 'AY1 M', "I'D": 'AY1 D', "I'VE": 'AY1 V', "I'LL": 'AY1 L',
+  "DON'T": 'D OW1 N T', "CAN'T": 'K AE1 N T', "WON'T": 'W OW1 N T',
+  "DIDN'T": 'D IH1 D AH N T', "ISN'T": 'IH1 Z AH N T', "AIN'T": 'EY1 N T',
+  "WOULDN'T": 'W UH1 D AH N T', "COULDN'T": 'K UH1 D AH N T',
+  "THAT'S": 'DH AE1 T S', "IT'S": 'IH1 T S', "WHAT'S": 'W AH1 T S',
+  "HE'S": 'HH IY1 Z', "SHE'S": 'SH IY1 Z', "THERE'S": 'DH EH1 R Z', "LET'S": 'L EH1 T S',
+  "YOU'RE": 'Y UH1 R', "WE'RE": 'W IH1 R', "THEY'RE": 'DH EH1 R',
+  "YOU'D": 'Y UW1 D', "YOU'LL": 'Y UW1 L', "GAL'S": 'G AE1 L Z', "WIFE'S": 'W AY1 F S',
   // function words (deliberately unstressed and reduced)
   THE: 'DH AH', A: 'AH', AN: 'AE N', OF: 'AH V', TO: 'T UW', AND: 'AH N D',
   IS: 'IH Z', ARE: 'AA R', WAS: 'W AH Z', WERE: 'W ER', BE: 'B IY',
@@ -203,7 +223,7 @@ const DICT = {
   FIVE: 'F AY1 V', SIX: 'S IH1 K S', SEVEN: 'S EH1 V AH N',
   EIGHT: 'EY1 T', NINE: 'N AY1 N', TEN: 'T EH1 N', ELEVEN: 'IH L EH1 V AH N',
   NINETEEN: 'N AY2 N T IY1 N', SEVENTY: 'S EH1 V AH N T IY',
-  ONCE: 'W AH1 N S', ZERO: 'Z IH1 R OW',
+  ONCE: 'W AH1 N S', ZERO: 'Z IY1 R OW',
   // words the letter rules mangle or under-stress
   ARE_: 'AA R',
   AGAIN: 'AH G EH1 N', ALREADY: 'AO L R EH1 D IY', ALWAYS: 'AO1 L W EY Z',
@@ -1258,6 +1278,8 @@ export class Vox {
    * the caption and the voice will disagree.
    */
   get lastLine() { return this._lastText || ''; }
+  /** The text of the most recent say()/sayLine() request, spoken yet or not. */
+  get lastRequested() { return this._reqText || ''; }
 
   /** The voice the most recent utterance used. */
   get lastVoice() { return this._lastVoice || 'mutter'; }
@@ -1320,6 +1342,10 @@ export class Vox {
       if (!str.trim()) return 0;
       const o = opts && typeof opts === 'object' ? opts : {};
       const prio = num(o.priority, 0);
+      // What the caller asked to be said, recorded now. lastLine only changes
+      // when an utterance starts playing, so a line that queues behind another
+      // voice would otherwise be captioned with the other voice's words.
+      this._reqText = str;
 
       this._pump();
 
@@ -1885,12 +1911,21 @@ export const LINES = {
     'Brick Hardigan does not miss. Brick Hardigan adjusts.',
     'Consider yourself decommissioned, pal.',
     'Hell of a thing. Hell of a guy doing it.',
+    'Eat shit and stay dead.',
+    'Go to hell. Take the stairs. The elevator is for staff.',
+    'Rest in pieces, sweetheart.',
+    'Damn, I am good. Somebody call my ex wives.',
+    'That one is going on the tape I show on first dates.',
   ],
 
   brick_kill_mutant: [
     'Whatever you were, buddy, you are considerably less of it now.',
     'Sorry, fella. Somebody had to, and look who was standing here.',
     'That one screamed in a language I did not care for.',
+    'Holy shit. That thing had a face on its face.',
+    'You are uglier than my second wife\'s divorce lawyer, and he had a mullet.',
+    'Rest in pieces, you ugly son of a bitch.',
+    'Nature is a bastard. So am I. Small world.',
   ],
 
   brick_chain: [
@@ -1904,24 +1939,33 @@ export const LINES = {
     'That is going to leave a thing.',
     'Ow. Okay. Brick felt that one in the wallet.',
     'Still standing. Standing badly, but standing.',
+    'Son of a bitch!',
+    'Not the face! The ladies need the face!',
+    'Ow! Damn it, that was a new shirt.',
   ],
 
   brick_low_health: [
     'Brick is running on fumes and spite. Mostly spite.',
     'Doc, if I stop talking, that is bad. That is a bad sign, doc.',
     'I have had worse. I cannot name one, but I have had worse.',
+    'Tell the ladies I died pretty. Pretty, and single.',
+    'Doc, if I die, you get the Mustang. And the debts. Mostly the debts.',
   ],
 
   brick_pickup_weapon: [
     'Oh, hello. You are coming with me.',
     'Now that is a piece of equipment. Look at the size of that.',
     'Somebody left this lying around. Their loss. Really, everybody loses.',
+    'Come to papa.',
+    'Look at the size of that. Size matters, doc. Ask anybody. Do not ask my ex.',
+    'Oh, baby. Where have you been all my life.',
   ],
 
   brick_secret: [
     'Nobody hides a room from Brick Hardigan. Nobody good, anyway.',
     'A secret door. In my bunker. In my house.',
     'And they said the wall thing was a waste of time.',
+    'A secret room. Add a hot tub, a mirror on the ceiling and a bottle of cologne, and I could live here.',
   ],
 
   brick_kick: [
@@ -1951,18 +1995,24 @@ export const LINES = {
     'Roof is open. Sky has got a problem. Brick has got a solution.',
     'Here they come. Good. I was getting bored and that is when I get creative.',
     'Everybody in the sky, you are about to have a very short career.',
+    'Alright, sky. Come get some.',
+    'It is time to save cities and look fantastic, and I am nearly out of cities.',
   ],
 
   brick_wave_clear: [
     'Sky is clean. Somebody get this man a sandwich.',
     'And that, doc, is why they keep me around.',
     'Nothing left up there but weather. Beautiful, beautiful weather.',
+    'Sky is clean. Hail to the warden, baby.',
+    'Damn, I am good. I would date me. I have dated me. It went great.',
   ],
 
   brick_boss_taunt: [
     'Hey! Toaster! You want to go?',
     'You have been talking this whole time. Now you get to listen.',
     'I have killed a lot of things that could not talk back. You are a treat.',
+    'Hey, toaster! Your mother was a pocket calculator!',
+    'I have dated scarier things than you. Two of them live in a city you just blew up.',
   ],
 
   brick_dry: [
@@ -1975,12 +2025,16 @@ export const LINES = {
     'Brick. Hardigan. Signing. Aw, hell.',
     'Doc. Doc, tell them. Tell them I was. Aw.',
     'This is. Not. My best. Work.',
+    'Aw, shit.',
+    'Tell the ladies. Form an orderly line.',
   ],
 
   brick_victory: [
     'Doc. Doc, we did it. I did it. We did it.',
     'Six cities, one bunker, one Hardigan. Somebody put that on a poster.',
     'I would like to say something profound. I have got nothing. I am so tired.',
+    'Hail to the warden, baby.',
+    'Doc, you can thank me with dinner. Or breakfast. I am flexible. I am very flexible, doc.',
   ],
 
   brick_idle: [
@@ -1988,6 +2042,28 @@ export const LINES = {
     'Talking to yourself is fine if the guy is interesting.',
     'Man walks into a bunker. That is it. That is the whole joke. I am the joke.',
     'You know what I could go for right now. A sandwich and a divorce lawyer.',
+    'Nice bunker. Needs a hot tub. And a bar. And some ladies. And a roof that stays on.',
+    'If anybody needs me, I will be over here being incredible.',
+    'Six hours in a nuclear bunker and I still look this good. That is not luck, doc. That is genetics.',
+    'Brick Hardigan. Warden. Lover. Mostly lover. Mostly in theory.',
+  ],
+
+  // Said over a curb stomp. The Boot ended it; Brick would like a word.
+  brick_stomp: [
+    'Curb service.',
+    'Stomped. Like my first marriage.',
+    'That is what we call a hands free experience.',
+    'Size eleven, steel toe, and all yours, pal.',
+    'Brick Hardigan. Also available for weddings.',
+  ],
+
+  // Said at the big named kill streaks.
+  brick_streak: [
+    'Hail to the warden, baby!',
+    'I am on fire! Somebody call a firefighter. A lady firefighter. With a calendar.',
+    'Damn, I am good. Damn, I am handsome. Damn.',
+    'Somebody get this man a cold beer and a warm dame.',
+    'That is how you do it, ladies. Form a line. One line. Behind the rope.',
   ],
 
   /* ══════════════════════════════════════════════════════════════════════
@@ -2096,6 +2172,7 @@ export const LINES = {
     'I have your file. Loretta filed a formal complaint about the teeth thing. It runs to four pages.',
     'Restraining orders do not expire, they lapse. Yours has not. Focus.',
     'Ask me again when there is no longer a countdown. I am not saying yes. I am saying there is a countdown.',
+    'Hardigan, I have a doctorate in nuclear engineering and you are calling me toots. Shoot the sky.',
   ],
 
   ilsa_secret: [
@@ -2153,6 +2230,9 @@ export const LINES = {
     'The Hardigan file lists four hundred and twelve outgoing calls and one incoming. It was a wrong number. He spoke for nine minutes.',
     'Under next of kin, the warden has written, all of them. Under relationship, he has written, it is complicated, six times.',
     'His annual review reads, in full, he tried. It is signed by Doctor Vance.',
+    'The warden has asked the vending machine on level two to dinner four times. It has declined four times. It is the only thing in this building I respect.',
+    'Personnel note. The warden has described himself as a lady killer on eleven separate forms. Human resources would like him to stop writing that.',
+    'Medical file. The warden lists his blood type as, quote, bad ass. The lab disagrees.',
   ],
 
   mutter_ilsa: [

@@ -23,9 +23,15 @@ const MIN_W = 428, MAX_W = 1600;
 export async function boot() {
   const canvas = document.getElementById('screen');
   const overlay = document.getElementById('overlay');
-  const post = new Post(canvas);
+  // Safe Mode (?safe) strips the game to the parts that cannot depend on the
+  // machine: a plain 2D blit instead of the GPU chain, no audio graph, no
+  // controller polling. If the full game will not run somewhere, this should.
+  const safe = /[?&]safe\b/.test(location.search);
+  const post = new Post(canvas, { basic: safe });
+  window.NUKEHAUS_RENDER = { mode: post.mode, why: post.why, safe };
   const text = new Text();
   const input = new Input(canvas);
+  if (safe) input.padDisabled = true;
 
   let cssW = 0, cssH = 0, dpr = 1;
   let iw = 640, ih = 400;
@@ -88,7 +94,9 @@ export async function boot() {
 
   // Audio is optional; the game runs mute if either module fails to construct.
   let sound = null, vox = null, VoxLines = {};
-  try { sound = new Sound(); } catch (e) { console.warn('[audio] synth unavailable', e); }
+  if (!safe) {
+    try { sound = new Sound(); } catch (e) { console.warn('[audio] synth unavailable', e); }
+  }
   try { vox = { ctor: Vox, LINES: VOX_LINES || {} }; VoxLines = VOX_LINES || {}; }
   catch (e) { console.warn('[audio] vox unavailable', e); }
 
@@ -133,6 +141,7 @@ export async function boot() {
       // The announcer picks which variant of a line to speak. Forward it so the
       // subtitle shows the words that were actually said, not a second draw.
       get lastLine() { return v.lastLine; },
+      get lastRequested() { return v.lastRequested; },
       get lastVoice() { return v.lastVoice; },
     };
   }
