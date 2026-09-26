@@ -484,7 +484,13 @@ export class Speech {
     if (sig === this._sig) return;
     this._sig = sig;
     this._voices = list;
-    this.cast = castVoices(list);
+    this._recast();
+  }
+
+  /** Cast from the voice list, without the network voices once one has failed us. */
+  _recast() {
+    const usable = this._netDown ? this._voices.filter((v) => v && v.localService !== false) : this._voices;
+    this.cast = castVoices(usable.length ? usable : this._voices);
   }
 
   /**
@@ -705,10 +711,15 @@ export class Speech {
 
     const now = this._now();
     const a = {
-      priority: prio, role, raw, est, start: now, endAt: now + est,
+      priority: prio, role, raw, est, start: now, endAt: now + est, voice: cast.voice || null,
       hardEnd: now + est * 1.7 + 1.5, started: false, ended: false, dead: false,
       utts: [], layered: false, id: this._serial,
     };
+    // The previous line is over as far as we are concerned, even if the engine
+    // is still finishing it: whatever it reports from here on (an error from
+    // the cancel below, a late end) is not news about the engine's health.
+    if (this._prev && this._prev !== a) this._prev.dead = true;
+    this._prev = a;
     this._active = a;
     this._route = 'natural';
     this._lastText = plainText(raw);
@@ -790,8 +801,18 @@ export class Speech {
   _strike(a) {
     if (a.struck) return;
     a.struck = true;
-    this._strikes++;
-    if (this._strikes >= DEAD_STRIKES) this._dead = true;
+    const v = a.voice;
+    const hasLocal = this._voices.some((x) => x && x.localService !== false);
+    if (v && v.localService === false && !this._netDown && hasLocal) {
+      // A network voice (Edge's Online set, Google's) failing means no
+      // network, not no speech: the local voices still work. Recast onto
+      // them, and do not hold it against the API.
+      this._netDown = true;
+      this._recast();
+    } else {
+      this._strikes++;
+      if (this._strikes >= DEAD_STRIKES) this._dead = true;
+    }
     this._finish(a);
     // Say it anyway, in the other voice, if nothing has taken the floor since
     // and it is still fresh enough to matter.

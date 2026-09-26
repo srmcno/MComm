@@ -79,6 +79,10 @@ function makeSynth(clock, behaviour = {}) {
       const u = s.queue.shift();
       if (!u) { s.speaking = false; return; }
       if (b.noStart) { s.pending = true; return; }
+      if (b.failNetwork && u.voice && u.voice.localService === false) {
+        clock.setTimeout(() => { u.onerror && u.onerror({ error: 'network' }); s._next(); }, 30);
+        return;
+      }
       s.speaking = true; s.pending = false;
       const dur = estimateSeconds(u.text, u.rate) * b.speed;
       clock.setTimeout(() => {
@@ -97,7 +101,7 @@ function makeSynth(clock, behaviour = {}) {
       s.cancels++;
       const q = [s.current, ...s.queue].filter(Boolean);
       s.queue.length = 0; s.current = null; s.speaking = false; s.pending = false;
-      for (const u of q) u.onerror && u.onerror({ error: 'interrupted' });
+      for (const u of q) u.onerror && u.onerror(b.bareErrors ? {} : { error: 'interrupted' });
     },
     pause() { s.paused = true; },
     resume() { s.resumes++; s.paused = false; },
@@ -485,7 +489,7 @@ function rig(plat, behaviour = {}, opts = {}) {
   check('...once they do', r2.sp.engine === 'natural');
 }
 {
-  const r = rig('Windows / Chrome', { noStart: true });
+  const r = rig('macOS / Safari', { noStart: true });
   const d = r.sp.say('Can anybody hear me?', { voice: 'ilsa' });
   r.clock.advance(3);
   check('dead air: the lost line is replayed on the formant synth', d > 0 && r.formant.said.length === 1 && r.sp.engine === 'natural');
@@ -495,6 +499,32 @@ function rig(plat, behaviour = {}, opts = {}) {
   const n = r.synth.spoken.length;
   r.sp.say('Now what.', { voice: 'brick' });
   check('...after which nothing more is sent to it', r.synth.spoken.length === n && r.formant.said.length === 3);
+}
+{
+  // An engine that reports its own cancels as errors with no reason, and runs
+  // slower than the estimate, so every new line has to cancel the tail of the
+  // last one: none of that is evidence the engine is broken.
+  const r = rig('macOS / Safari', { bareErrors: true, speed: 2.2 });
+  for (let i = 0; i < 4; i++) r.sp.say(`Line number ${i + 1} of a slow engine, going long.`, { voice: 'brick' });
+  for (let i = 0; i < 4; i++) r.sp.say(`Another line ${i + 1}, also long.`, { voice: 'ilsa' });
+  r.clock.advance(60);
+  check('cancelling the tail of a slow engine never counts against it', r.sp.engine === 'natural' && r.sp._strikes === 0 &&
+    r.formant.said.length === 0, `${r.sp.engine}, strikes ${r.sp._strikes}, ${r.synth.spoken.length} spoken`);
+}
+{
+  // Offline with Edge: every Online (Natural) voice fails, the local ones work.
+  const r = rig('Windows / Edge', { failNetwork: true });
+  r.sp.say('Is this thing on?', { voice: 'brick' });
+  r.clock.advance(0.3);
+  const recast = r.sp.cast.brick.name;
+  check('a network voice that fails is replaced by a local one, and the line is not lost',
+    /David|Mark/.test(recast) && r.formant.said.length === 1 && r.sp.engine === 'natural', recast);
+  for (const who of ['ilsa', 'mutter']) { r.sp.say('Checking in.', { voice: who }); r.clock.advance(0.3); r.clock.advance(12); }
+  r.sp.say('Still here.', { voice: 'brick' });
+  r.clock.advance(0.5);
+  const last = r.synth.spoken[r.synth.spoken.length - 1];
+  check('...and offline the game stays on natural local voices', r.sp.engine === 'natural' && last.voice && last.voice.localService !== false,
+    last.voice && last.voice.name);
 }
 {
   const r = rig('Windows / Chrome', { throwSpeak: true });
