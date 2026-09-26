@@ -547,8 +547,11 @@ export class Sound {
 
       const ctx = this._ctx, now = this._now();
       const bus = ctx.createGain();
-      bus.gain.setValueAtTime(0.0001, now);
-      bus.gain.linearRampToValueAtTime(def.gain, now + fade);
+      // equal-power fade in, the mirror of _retire's fade out, so a cross-fade
+      // holds its level instead of dipping in the middle
+      bus.gain.setValueAtTime(0, now);
+      try { bus.gain.setValueCurveAtTime(fadeCurve(def.gain, true), now + 0.004, fade); }
+      catch (e) { bus.gain.linearRampToValueAtTime(def.gain, now + fade); }
       bus.connect(this._duck);
 
       // Per-track ambience: a damped feedback delay living inside the music bus,
@@ -593,10 +596,13 @@ export class Sound {
     t.dying = true;
     const p = t.bus.gain;
     try {
-      if (p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(now); else p.cancelScheduledValues(now);
-      p.setValueAtTime(clamp(fin(p.value, t.def.gain), 0.0001, 4), now);
-      p.exponentialRampToValueAtTime(0.0001, now + fade);
-      p.linearRampToValueAtTime(0, now + fade + 0.02);
+      const v0 = clamp(fin(p.value, t.def.gain), 0, 4);
+      // Without cancelAndHold, cancelling from `now` would keep a fade-in curve
+      // that is still running, and the next event inside it throws. Clear all.
+      if (p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(now); else p.cancelScheduledValues(0);
+      p.setValueAtTime(v0, now);
+      try { p.setValueCurveAtTime(fadeCurve(v0, false), now + 0.004, fade); }
+      catch (e) { p.linearRampToValueAtTime(0, now + fade); }
     } catch (e) { /* ignore */ }
     t.endsAt = now + fade + 0.06;
   }
@@ -1000,6 +1006,7 @@ export class Sound {
       const ts = t + (side ? 0.003 + this._r() * 0.007 : 0);
       const lp = ctx.createBiquadFilter();
       lp.type = 'lowpass';
+      kRate(lp.frequency);
       lp.frequency.setValueAtTime(co * (mute ? 2.4 : 1.7), ts);
       lp.frequency.exponentialRampToValueAtTime(co, ts + (mute ? 0.035 : 0.25));
       lp.Q.value = mute ? 1.4 : 0.7;
@@ -1097,8 +1104,8 @@ export class Sound {
   }
 
   /**
-   * Picked bass, locked to the kick: a saw for the growl and a sine for the
-   * floor, through a lowpass that closes like the pick attack fading.
+   * Picked bass, locked to the kick, through a lowpass that closes like the
+   * pick attack fading.
    */
   bassGtr(t0, freq, dur, a = {}) {
     if (!this._ready) return null;
@@ -1112,6 +1119,7 @@ export class Sound {
     const co = clamp(fin(a.cutoff, mute ? 520 : 820), 60, 8000);
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
+    kRate(lp.frequency);
     lp.frequency.setValueAtTime(co * 3.2, t);
     lp.frequency.exponentialRampToValueAtTime(co, t + 0.12);
     lp.Q.value = 1.1;
@@ -1131,10 +1139,12 @@ export class Sound {
     const end = mute
       ? this._env(v.out, t, pk, 0.002, Math.min(len, 0.17))
       : this._ahr(v.out, t, pk, 0.003, Math.max(0.01, len - 0.02), fin(a.rel, 0.05));
+    // two saws a few cents apart: the growl moves, and the floor stays a floor
     for (let i = 0; i < 2; i++) {
       const o = ctx.createOscillator();
-      o.type = i ? 'sine' : 'sawtooth';
+      o.type = 'sawtooth';
       o.frequency.value = f;
+      o.detune.value = i ? 7 : -3;
       o.connect(lp);
       this._n(v, o);
       this._go(v, o, t, end);
@@ -1164,6 +1174,7 @@ export class Sound {
       const F = CHOIR_F[i];
       const b = ctx.createBiquadFilter();
       b.type = 'bandpass';
+      kRate(b.frequency);
       b.frequency.setValueAtTime(F[0], t);
       b.frequency.linearRampToValueAtTime(F[1], t + len * 0.6);
       b.Q.value = F[3];
@@ -1195,6 +1206,27 @@ export class Sound {
     }
     return v;
   }
+}
+
+/** Quarter-sine fade, 0 up to `g` or `g` down to 0: equal power across a cross-fade. */
+function fadeCurve(g, up) {
+  const c = new Float32Array(48);
+  for (let i = 0; i < 48; i++) {
+    const x = (i / 47) * Math.PI * 0.5;
+    c[i] = g * (up ? Math.sin(x) : Math.cos(x));
+  }
+  if (!up) c[47] = 0;          // cos(pi/2) is 6e-17, and silence should be silence
+  return c;
+}
+
+/**
+ * Sweep a filter once per 128-sample block instead of once per sample. A
+ * swept biquad recomputes its coefficients at every step of its automation,
+ * and a guitar's pick sweep lasts 35 ms: nobody hears 3 ms steps inside that,
+ * but the audio thread feels every one of the per-sample versions.
+ */
+function kRate(p) {
+  try { if (p && 'automationRate' in p) p.automationRate = 'k-rate'; } catch (e) { /* older engines */ }
 }
 
 /** Voice-layer pitches are always Hz. Sequencers call mtof() themselves. */
@@ -1262,10 +1294,11 @@ function snare(S, t, T, g) {
   const v = S._v(7, null, 0, 0, 1, KIT(t));
   if (!v) return;
   v.owner = t;
-  S._tone(v, T, 0.11, { type: 'triangle', f: 240, f2: 178, sweep: 0.4, g: g * 0.75, atk: 0.001, dec: 0.1 });
-  S._tone(v, T, 0.06, { type: 'sine', f: 410, f2: 335, sweep: 0.5, g: g * 0.25, atk: 0.001, dec: 0.05 });
-  S._nz(v, T, 0.22, { type: 'highpass', f: 1600, q: 0.7, g: g * 1.1, atk: 0.001, dec: 0.2 });
-  S._nz(v, T, 0.05, { type: 'bandpass', f: 4700, q: 0.9, g: g * 0.85, atk: 0.0005, dec: 0.045 });
+  S._tone(v, T, 0.12, { type: 'triangle', f: 240, f2: 178, sweep: 0.4, g: g * 1.0, atk: 0.001, dec: 0.11 });
+  S._tone(v, T, 0.06, { type: 'sine', f: 410, f2: 335, sweep: 0.5, g: g * 0.35, atk: 0.001, dec: 0.05 });
+  S._nz(v, T, 0.22, { type: 'highpass', f: 1500, q: 0.7, g: g * 1.6, atk: 0.001, dec: 0.2 });
+  S._nz(v, T, 0.06, { type: 'bandpass', f: 2400, q: 0.8, g: g * 0.9, atk: 0.0005, dec: 0.05 });
+  S._nz(v, T, 0.05, { type: 'bandpass', f: 5200, q: 0.9, g: g * 0.9, atk: 0.0005, dec: 0.045 });
 }
 
 /**
@@ -1399,7 +1432,7 @@ function kitCurve() { return KIT_C || (KIT_C = curve(1.25, 1024)); }
 const RIG = {
   drive: 3.4, gtr: 0.21,              // rhythm amp: input drive, output level
   leadDrive: 3.2, lead: 0.16, echo: 0.34,
-  bassDrive: 1.7, bass: 0.15,
+  bassDrive: 1.7, bass: 0.17,
   kitDrive: 1.1, kit: 0.9,
 };
 
@@ -1666,12 +1699,13 @@ const HERO = {
   gated: true,
   loop: bars([
     ...HERO_R.map((r, i) => ({
-      g: tr(HV, r), k: HVK, s: i === 7 ? FILL : BB, h: i % 4 === 0 ? HC8 : H8,
+      g: tr(HV, r), k: HVK, s: i === 7 ? FILL : i === 3 ? '....x.......x.xx' : BB, h: i % 4 === 0 ? HC8 : H8,
       l: HERO_CALL[i], x: i === 0 ? 'B...............' : '',
     })),
     // the solo. It is not a good solo. It is an extremely confident solo.
     ...HERO_R.map((r, i) => ({
-      g: tr('A-A-A-A-A-A-A-A-', r), k: i === 7 ? 'x...x...x...dddd' : K4, s: i === 7 ? '..x...x...x.xxxx' : SKANK,
+      g: tr('A-A-A-A-A-A-A-A-', r), k: i === 7 ? 'x...x...x...dddd' : K4,
+      s: i === 7 ? '..x...x...x.xxxx' : i === 3 ? '..x...x...x.x.xx' : SKANK,
       h: i % 2 === 0 ? RC8 : R8, l: HERO_SOLO[i],
     })),
   ]),
@@ -1882,12 +1916,12 @@ function fx(S, t, B, c, st, T) {
 function band(S, t, B, st, T, gated, thin) {
   const sd = t.stepDur;
   let c = B.k[st];
-  if (c === 'x') kick(S, t, T, 0.9, 1, 0.2);
+  if (c === 'x') kick(S, t, T, 0.82, 1, 0.2);
   else if (c === 'X') kick(S, t, T, 1.05, 0.95, 0.36);
   else if (c === 'd') kick(S, t, T, 0.78, 1.05, 0.12);
   c = B.s[st];
   if (c === 'x' || c === 'X') {
-    if (gated) gatedSnare(S, t, T, c === 'X' ? 0.75 : 0.62); else snare(S, t, T, c === 'X' ? 1 : 0.8);
+    if (gated) gatedSnare(S, t, T, c === 'X' ? 1.05 : 0.9); else snare(S, t, T, c === 'X' ? 1.05 : 0.9);
   } else if (c === 'g') snare(S, t, T, 0.24);
   c = B.h[st];
   if (c === 'x') hat(S, t, T, (st & 3) === 0 ? 0.3 : 0.22, false);
@@ -3019,8 +3053,8 @@ function gatedSnare(S, t, T, g) {
   const v = S._v(7, null, 0, 0, 1, KIT(t));
   if (!v) return;
   v.owner = t;
-  S._tone(v, T, 0.13, { type: 'triangle', f: 210, f2: 146, sweep: 0.5, g: g * 0.5, dec: 0.12 });
-  S._nz(v, T, 0.16, { type: 'highpass', f: 1250, q: 0.8, g: g * 0.9, dec: 0.15 });
+  S._tone(v, T, 0.13, { type: 'triangle', f: 210, f2: 146, sweep: 0.5, g: g * 0.8, dec: 0.12 });
+  S._nz(v, T, 0.16, { type: 'highpass', f: 1250, q: 0.8, g: g * 1.3, dec: 0.15 });
   // the gate: held wide, then slammed shut mid-decay
   S._nz(v, T + 0.01, 0.24, {
     type: 'bandpass', f: 2100, q: 0.6, g: g * 0.55, atk: 0.006, hold: 0.185, rel: 0.012,
