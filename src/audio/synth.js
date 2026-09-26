@@ -1602,6 +1602,7 @@ bakeLo('nuke', 1.95, 1, (d, sr, R) => {
   kNoise(d, sr, R, 0.002, 1.9, { type: 'lp', f0: 6000, f1: 110, sw: 1.2, q: 0.8, atk: 0.004, tau: 0.55, amp: 5.5, col: 2 });
   kNoise(d, sr, R, 0.05, 1.85, { type: 'bp', f0: 900, f1: 200, sw: 1.8, q: 0.8, atk: 0.15, tau: 0.6, amp: 3.5, col: 1, grain: 0.5 });
   kCrackle(d, sr, R, 0.03, 1.8, 700, 0.5, 1.2);
+  kDebris(d, sr, R, 0.5, 1.3, 45, 700, 4200, 0.12, 0.012);
   kSat(d, 2.6);
 });
 
@@ -1617,6 +1618,8 @@ bake('burst', 1.0, 2, (d, sr, R) => {
   kNoise(d, sr, R, 0.001, 0.9, { type: 'lp', f0: 6500, f1: 220, sw: 0.35, q: 0.9, atk: 0.001, tau: 0.13, amp: 6.5, col: 1 });
   kCrackle(d, sr, R, 0.01, 0.5, 2200, 0.5, 2.2);
   kSat(d, 2.1);
+  // the shell casing's fragments coming back down on the deck, after the fact
+  kDebris(d, sr, R, 0.35, 0.6, 22, 1800, 7500, 0.05, 0.005);
 });
 
 // A chain secondary. Thirty can land at once, so it is a single buffer.
