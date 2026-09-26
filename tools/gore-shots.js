@@ -202,11 +202,22 @@ await shot('02-one-leg-hopping');
 info = await page.evaluate(() => {
   const g = window.NUKEHAUS.game, S = window.S;
   S.arena(1);
-  const e = S.spawn('sparker', 3.4, -0.8, Math.PI);
-  S.aimAt(e.x, e.y + 0.4, 0.62);
-  g.gore.sever(e, 1, 1, 0, 6);
-  S.step(0.22); S.clearHud();
-  return { headless: e.headlessT, state: e.state };
+  const e = S.spawn('sparker', 7, -1.2, Math.PI);
+  e.state = 5; e.stateT = -99;
+  // The Widow, fused to the range, aimed at the face.
+  S.arm('pistol');
+  let tries = 0;
+  while (!(e.maim & 1) && tries < 12) {
+    if (!e.alive) { e.alive = true; e.hp = e.maxHp; e.state = 5; }
+    S.aimAt(e.x, e.y, e.z + e.height * 0.86);
+    g.player.fuse = Math.hypot(e.x - g.player.x, e.y - g.player.y);
+    g.player.autoFuse = false; g.player.cooldown = 0;
+    g.tryFire(); tries++;
+    S.step(0.12);
+  }
+  S.step(0.1); S.clearHud();
+  S.aimAt(e.x, e.y + 0.3, 0.6);
+  return { tries, headless: e.headlessT, state: e.state, maim: e.maim };
 });
 console.log('head', info);
 await shot('03-head-pop');

@@ -1650,6 +1650,7 @@ export class Game {
   explodeAt(x, y, z, radius, damage, gore = EXPLOSION_GORE) {
     this.particles.airburst(x, y, z, radius * 0.8, 0);
     this.particles.smoke(x, y, z, 10, radius * 0.3);
+    if (z < 1) this.addDecal(x, y, 'scorch');
     this.shake = Math.max(this.shake, 2.4);
     for (const e of this.enemies) {
       const d = dist(x, y, e.x, e.y);

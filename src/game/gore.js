@@ -160,7 +160,7 @@ function blankChunk() {
     x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, ang: 0, spin: 0, h: 0.2, rad: 0.06,
     age: 0, life: 0, fade: 0, settled: false, stuck: 0, snx: 0, sny: 0, slide: 0,
     trail: 0, trailT: 0, punted: false, px0: 0, py0: 0, landed: false, bounces: 0,
-    rest: 0.3, head: false, hitId: 0, dead: false, dripT: 0,
+    rest: 0.3, head: false, bone: false, hitId: 0, dead: false, dripT: 0,
   };
 }
 
@@ -359,6 +359,14 @@ export class Gore {
     }
     this.fountain(e, bit, bit === HEAD ? 3.2 : randRange(rng, 2.0, 4.0), bit === HEAD ? 1.5 : 1);
     this.updateMobility(e);
+    // A headless sprinter that loses its legs as well has run out of ideas.
+    if (e.headlessT > 0 && e.crawl) { e.headlessT = 0; e.deathFrame = 0; }
+    // A beat of hit-stop when it happens close enough to see.
+    const pd = Math.hypot(J.x - game.player.x, J.y - game.player.y);
+    if (pd < 9) {
+      game.hitStop = Math.max(game.hitStop, bit === HEAD ? 0.06 : 0.035);
+      game.shake = Math.max(game.shake, bit === HEAD ? 0.9 : 0.5);
+    }
     this.splatterIfClose(J.x, J.y, 2.6, 2);
 
     if (bit === HEAD) {
@@ -398,6 +406,8 @@ export class Gore {
       const a = Math.atan2(dy, dx) + randRange(rng, -1.1, 1.1);
       if (this.sever(e, b, Math.cos(a), Math.sin(a), force * randRange(rng, 0.45, 0.9), { noRun: true })) n++;
     }
+    // Five stumps pumping at once is one too many jokes; keep it to a gush.
+    for (const f of this.fountains) if (f.active && f.e === e) f.life = Math.min(f.life, randRange(rng, 0.8, 1.6));
     e.gibbed = true;
     return n;
   }
@@ -473,17 +483,19 @@ export class Gore {
 
     const ratio = force / Math.max(10, e.maxHp);
     let p = spec.sever * clamp(ratio * 2.2, 0.25, 1.5) * (killed ? 1.5 : 1);
-    // A burst right at head height and close in is a headshot, and the Widow
-    // is built to deliver exactly that.
-    const near = Math.hypot(bx - e.x, by - e.y);
-    const headshot = zf >= rig.neck - 0.04 && near < 1.6;
+    // A burst right at the head is a headshot, and the Widow fused to the
+    // range is built to deliver exactly that. Measured to the head itself, so
+    // a burst two cells over it does not count.
+    const near = Math.hypot(bx - e.x, by - e.y, bz - (e.z + rig.head * e.height));
+    const headshot = zf >= rig.neck - 0.04 && near < 1.4;
     let n = 0;
     const max = spec.parts || 1;
     for (let k = 0; k < 5 && n < max; k++) {
       const b = o[k];
       if (e.maim & b) continue;
-      let chance = b === HEAD ? (headshot ? spec.head * (1.15 - near / 3) : spec.head * p * 0.35) : p;
-      if (!killed && b === HEAD) chance *= 0.6;
+      // Losing a head is fatal, so off a hit that was not, it takes a real
+      // headshot. Off a kill it is just another part.
+      let chance = b !== HEAD ? p : headshot ? spec.head * (1.15 - near / 2.8) : killed ? spec.head * p * 0.35 : 0;
       if (rng() < chance) {
         if (this.sever(e, b, dx, dy, 3 + knock * 0.55)) { n++; p *= 0.6; }
       }
@@ -559,7 +571,7 @@ export class Gore {
     c.x = c.y = c.z = c.vx = c.vy = c.vz = 0;
     c.ang = 0; c.spin = 0; c.age = 0; c.life = 0; c.fade = 0; c.settled = false; c.stuck = 0;
     c.trail = 0; c.trailT = 0; c.punted = false; c.landed = false; c.bounces = 0; c.hitId = 0;
-    c.dead = false; c.keys = null; c.base = null; c.head = false; c.dripT = 0; c.slide = 0;
+    c.dead = false; c.keys = null; c.base = null; c.head = false; c.bone = false; c.dripT = 0; c.slide = 0;
     list.push(c);
     return c;
   }
@@ -599,6 +611,8 @@ export class Gore {
     c.spin = this.screenSpin(vx, vy) * randRange(rng, 7, 15);
     c.rest = c.head ? 0.56 : 0.3;
     c.trail = randRange(rng, 0.8, 1.6);
+    // Born inside the body it came off; it must not bounce back and hit it.
+    c.hitId = e.id;
     return c;
   }
 
@@ -610,6 +624,9 @@ export class Gore {
     const c = this._take(this.gibs, MAX_GIBS);
     c.type = T_GIB;
     c.base = base;
+    // Bone shard, jaw and ribs clatter; the rest just lands.
+    c.head = false;
+    c.bone = (idx & 7) === 0 || (idx & 7) === 3 || (idx & 7) === 6;
     c.h = size;
     c.rad = size * 0.3;
     c.x = x; c.y = y; c.z = Math.max(z, c.rad);
@@ -659,7 +676,7 @@ export class Gore {
     c.hitId = 0;
   }
 
-  /** The nearest part, gib or casing inside the Boot's reach, for punting. */
+  /** The nearest part or gib inside the Boot's reach, for punting. Heads first. */
   kickable(px, py, ca, sa, range, arc) {
     let best = null, bestS = 1e9;
     const cosArc = Math.cos(arc);
@@ -762,7 +779,7 @@ export class Gore {
     const p = game.player;
     const d = Math.hypot(J.x - p.x, J.y - p.y);
     if (d < 9 && this.sndT.spurt <= 0) {
-      this.sndT.spurt = 0.14;
+      this.sndT.spurt = 0.2;
       game.sound.sfx('blood_spurt', { pan: game.panAt(J.x, J.y), vol: clamp(str * (1 - d / 10), 0.1, 0.8), rate: randRange(rng, 0.9, 1.15) });
     }
     if (d < 1.7 && rng() < 0.25) game.hud.splatter(1);
@@ -1007,8 +1024,11 @@ export class Gore {
       const pan = game.panAt(c.x, c.y);
       if (c.type === T_CASING) {
         this._tink(c, vi);
-      } else if (c.head && vi > 2.2) {
-        game.sound.sfx('bone_bounce', { pan, vol: this.volAt(c.x, c.y, clamp(vi / 8, 0.15, 1)), rate: randRange(rng, 0.9, 1.15) });
+      } else if ((c.head || c.bone) && vi > 2.2) {
+        game.sound.sfx('bone_bounce', {
+          pan, vol: this.volAt(c.x, c.y, clamp(vi / 8, 0.15, 1) * (c.bone ? 0.45 : 1)),
+          rate: randRange(rng, 0.9, 1.15) * (c.bone ? 1.35 : 1),
+        });
       } else if (!c.landed || vi > 3.5) {
         if (this.sndT.land <= 0) {
           this.sndT.land = 0.045;
