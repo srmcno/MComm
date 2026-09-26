@@ -10,13 +10,15 @@
 // Textures the engine promises to build. Everything referenced here must be in
 // this list - validateAll() enforces it.
 // ---------------------------------------------------------------------------
-export const VALID_TEXTURES = [
+const BASE_TEXTURES = [
   'CONCRETE', 'CONCRETE_CRACKED', 'STEEL_PLATE', 'STEEL_RIVET', 'HAZARD', 'PIPES',
   'VENT', 'TILE', 'TILE_BLOOD', 'RUST', 'SANDBAG', 'SCREENS', 'CIRCUIT', 'SILO_WALL',
   'WARNING', 'DOOR', 'DOOR_JAMB', 'DOOR_RED', 'DOOR_BLUE', 'DOOR_GOLD', 'ELEVATOR',
   'FLESH', 'FLOOR_CONCRETE', 'FLOOR_GRATE', 'FLOOR_TILE', 'FLOOR_DIRT', 'FLOOR_BLOOD',
   'CEIL_CONCRETE', 'CEIL_LAMP', 'CEIL_PIPES', 'CEIL_FLESH', 'FLOOR_DECK',
 ];
+// Filled in below the variant table, which is where the rest are named.
+export const VALID_TEXTURES = BASE_TEXTURES.slice();
 
 // ---------------------------------------------------------------------------
 // The alphabet. Every descriptor has a `type`:
@@ -375,9 +377,9 @@ export const MAPS = [
       'hilarious. Walk the intake corridors, take the splitter out of the ' +
       'decon showers, and be standing on the deck when the roof opens.',
     rows: ROWS_INTAKE,
-    wallTex: {},
-    floorTex: 'FLOOR_CONCRETE',
-    ceilTex: 'CEIL_CONCRETE',
+    wallTex: { '#': 'OFFICE_WALL' },
+    floorTex: 'FLOOR_LINO',
+    ceilTex: 'CEIL_OFFICE',
     deckFloorTex: 'FLOOR_DECK',
     music: 'prowl',
     weapons: ['splitter'],
@@ -404,9 +406,9 @@ export const MAPS = [
       'handler. The priests sing to it. Take the blue valve key off them, ' +
       'because the loft door does not care how politely you ask.',
     rows: ROWS_ORGAN_LOFT,
-    wallTex: { '#': 'STEEL_RIVET' },
-    floorTex: 'FLOOR_TILE',
-    ceilTex: 'CEIL_PIPES',
+    wallTex: { '#': 'STEEL_RIVET', 'p': 'ORGAN_PIPES' },
+    floorTex: 'FLOOR_BOARDS',
+    ceilTex: 'CEIL_BEAMS',
     deckFloorTex: 'FLOOR_DECK',
     music: 'prowl',
     weapons: ['nailer'],
@@ -451,9 +453,10 @@ export const MAPS = [
       'MUTTER keeps its relics here: a red key in the crypt, a gold one on a ' +
       'shrine of screens, and two silos it would rather you did not reach.',
     rows: ROWS_SALT_CATHEDRAL,
-    wallTex: {},
+    wallTex: { '#': 'SALT_WALL' },
+    floorMap: { ',': 'FLOOR_SALT' },
     floorTex: 'FLOOR_CONCRETE',
-    ceilTex: 'CEIL_CONCRETE',
+    ceilTex: 'CEIL_SALT',
     deckFloorTex: 'FLOOR_DECK',
     music: 'prowl',
     weapons: ['halo'],
@@ -510,7 +513,7 @@ export const MAPS = [
       'live tube, so mind where you stand when the roof goes.',
     rows: ROWS_FURNACE,
     wallTex: { '#': 'RUST' },
-    floorTex: 'FLOOR_CONCRETE',
+    floorTex: 'FLOOR_SCORCH',
     ceilTex: 'CEIL_FLESH',
     deckFloorTex: 'FLOOR_DECK',
     music: 'prowl',
@@ -575,9 +578,9 @@ export const MAPS = [
     // sits in the alcove directly behind the dais - i.e. behind where the boss
     // was - so the engine can also just walk the player out.
     rows: ROWS_MUTTER,
-    wallTex: { '#': 'STEEL_PLATE' },
-    floorTex: 'FLOOR_TILE',
-    ceilTex: 'CEIL_CONCRETE',
+    wallTex: { '#': 'STEEL_PLATE', '=': 'SERVER' },
+    floorTex: 'FLOOR_RAISED',
+    ceilTex: 'CEIL_CABLES',
     deckFloorTex: 'FLOOR_DECK',
     music: 'boss',
     weapons: [],
@@ -634,6 +637,548 @@ export const MAPS = [
     },
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Dressing. The ASCII says what a cell IS; this decides what it LOOKS like, so
+// the same '#' down a forty-cell corridor stops being forty identical walls.
+// Everything here is a pure function of (level, x, y): the bunker is dressed
+// the same way on every load and in every tool.
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-family variants: [texture, weight, feature]. The family's own texture
+ * is always a candidate at BASE_WEIGHT (or its override). Features are the
+ * jokes and set pieces (a poster, a sign, a fish tank); they are spaced out so
+ * a punchline is never told twice in the same corridor.
+ */
+export const TEXTURE_VARIANTS = {
+  CONCRETE: [['CONCRETE_STAIN', 2], ['CONCRETE_HOLES', 2], ['CONCRETE_POSTER', 1, 1],
+    ['CONCRETE_GRAFFITI', 1, 1], ['CONCRETE_SIGN', 1, 1], ['CONCRETE_FUSE', 1, 1]],
+  CONCRETE_CRACKED: [['CRACKED_REBAR', 2], ['CRACKED_BLOOD', 1, 1], ['CRACKED_GRAFFITI', 1, 1]],
+  OFFICE_WALL: [['OFFICE_SCUFF', 3], ['OFFICE_VENT', 2], ['OFFICE_BLOOD', 1], ['OFFICE_EMPLOYEE', 1, 1], ['OFFICE_BOARD', 1, 1],
+    ['OFFICE_CLOCK', 1, 1], ['OFFICE_SAFETY', 1, 1], ['OFFICE_EXTING', 1, 1], ['OFFICE_CAT', 1, 1],
+    ['OFFICE_PINUP', 1, 1], ['LOCKERS', 1, 1]],
+  STEEL_PLATE: [['STEEL_DENTS', 2], ['STEEL_CABLES', 2], ['STEEL_SIGN', 1, 1], ['STEEL_PANEL', 1, 1],
+    ['LOCKERS', 1, 1]],
+  STEEL_RIVET: [['RIVET_RUST', 2], ['RIVET_DENTS', 2], ['RIVET_HATCH', 1, 1], ['RIVET_GAUGES', 1, 1], ['RIVET_STENCIL', 1, 1], ['LOCKERS', 1, 1]],
+  HAZARD: [['HAZARD_WORN', 2], ['HAZARD_SIGN', 1, 1]],
+  PIPES: [['PIPES_BARE', 5], ['PIPES_LEAK', 2], ['PIPES_VALVE', 1], ['PIPES_GAUGE', 1, 1]],
+  VENT: [['VENT_FAN', 2], ['VENT_BLOOD', 1], ['VENT_EYES', 1, 1]],
+  TILE: [['TILE_MISSING', 2], ['TILE_HAND', 1], ['TILE_MIRROR', 1, 1], ['TILE_GRAFFITI', 1, 1],
+    ['TILE_SIGN', 1, 1]],
+  TILE_BLOOD: [['TILE_SPLAT', 2], ['TILE_HELP', 1, 1]],
+  RUST: [['RUST_HOLE', 2], ['RUST_PATCH', 2]],
+  SANDBAG: [['SANDBAG_TORN', 2], ['SANDBAG_HELMET', 1, 1]],
+  // A bank of monitors is SUPPOSED to show different things side by side, so
+  // none of these count as features; the no-repeat rule keeps them mixed.
+  SCREENS: [['SCREENS_RADAR', 2], ['SCREENS_DEAD', 2], ['SCREENS_BSOD', 2], ['SCREENS_FISH', 1],
+    ['SCREENS_POPUP', 1], ['SCREENS_TOAST', 1]],
+  CIRCUIT: [['CIRCUIT_B', 3], ['CIRCUIT_BURNT', 1], ['CIRCUIT_TAPE', 1, 1]],
+  SILO_WALL: [['SILO_STAIN', 2], ['SILO_SCORCH', 2], ['SILO_LADDER', 1], ['SILO_13', 1, 1], ['SILO_03', 1, 1]],
+  WARNING: [['WARN_SMOKE', 1, 1], ['WARN_INCIDENT', 1, 1], ['WARN_GLOW', 1, 1]],
+  FLESH: [['FLESH_TUMOR', 2], ['FLESH_EYE', 1, 1], ['FLESH_MOUTH', 1, 1], ['FLESH_FACE', 1, 1]],
+  SALT_WALL: [['SALT_CRYSTAL', 2], ['SALT_CRACKED', 2], ['SALT_BONES', 1, 1], ['SALT_SHRINE', 1, 1]],
+  LOCKERS: [['LOCKERS_OPEN', 1, 1]],
+  SERVER: [['SERVER_LABEL', 1, 1]],
+  ORGAN_PIPES: [['ORGAN_RAMP', 3], ['ORGAN_SING', 1, 1]],
+  // floors
+  FLOOR_CONCRETE: [['FLOOR_CONCRETE_OIL', 2], ['FLOOR_CONCRETE_CRACK', 2], ['FLOOR_CONCRETE_DRAIN', 1],
+    ['FLOOR_CONCRETE_PUDDLE', 1], ['FLOOR_CONCRETE_RUBBLE', 1], ['FLOOR_CONCRETE_OUTLINE', 1, 1],
+    ['FLOOR_CONCRETE_BUTTS', 1, 1]],
+  FLOOR_TILE: [['FLOOR_TILE_MISSING', 2], ['FLOOR_TILE_CRACK', 2], ['FLOOR_TILE_BLOOD', 1],
+    ['FLOOR_TILE_DRAIN', 1]],
+  FLOOR_GRATE: [['FLOOR_GRATE_GLOW', 1]],
+  FLOOR_DIRT: [['FLOOR_DIRT_PUDDLE', 1], ['FLOOR_DIRT_BONES', 1, 1]],
+  FLOOR_DECK: [['FLOOR_DECK_OIL', 1], ['FLOOR_DECK_HATCH', 1, 1]],
+  FLOOR_BLOOD: [['FLOOR_BLOOD_SMEAR', 1]],
+  FLOOR_LINO: [['FLOOR_LINO_MISSING', 2], ['FLOOR_LINO_BLOOD', 1], ['FLOOR_LINO_COFFEE', 1, 1],
+    ['FLOOR_LINO_OUTLINE', 1, 1]],
+  FLOOR_SALT: [['FLOOR_SALT_PUDDLE', 1]],
+  FLOOR_RAISED: [['FLOOR_RAISED_OPEN', 1, 1]],
+  FLOOR_SCORCH: [['FLOOR_SCORCH_GRILLE', 1, 1]],
+  // ceilings
+  CEIL_CONCRETE: [['CEIL_CONCRETE_STAIN', 2], ['CEIL_CONCRETE_VENT', 1], ['CEIL_CONCRETE_CABLES', 1]],
+  CEIL_PIPES: [['CEIL_PIPES_VENT', 1], ['CEIL_PIPES_LEAK', 1]],
+  CEIL_FLESH: [['CEIL_FLESH_TUMOR', 2], ['CEIL_FLESH_EYE', 1, 1]],
+  CEIL_OFFICE: [['CEIL_OFFICE_STAIN', 2], ['CEIL_OFFICE_MISSING', 1]],
+  CEIL_BEAMS: [['CEIL_BEAMS_STAIN', 2], ['CEIL_BEAMS_HOLE', 1, 1]],
+  FLOOR_BOARDS: [['FLOOR_BOARDS_BLOOD', 1], ['FLOOR_BOARDS_HOLE', 1, 1]],
+};
+const BASE_WEIGHT = { SCREENS: 2, PIPES: 3, FLOOR_CONCRETE: 6, FLOOR_TILE: 5, FLOOR_GRATE: 10, FLOOR_DIRT: 5, FLOOR_DECK: 7,
+  FLOOR_LINO: 6, FLOOR_RAISED: 5, CEIL_CONCRETE: 6, CEIL_OFFICE: 6, TILE_BLOOD: 3, WARNING: 2 };
+
+/** Materials that exist only to dress levels (they are not in LEGEND). */
+const EXTRA_MATERIALS = ['OFFICE_WALL', 'SALT_WALL', 'LOCKERS', 'SERVER', 'ORGAN_PIPES', 'FLOOR_LINO',
+  'FLOOR_SALT', 'FLOOR_RAISED', 'FLOOR_SCORCH', 'CEIL_OFFICE', 'CEIL_TUBE', 'CEIL_SALT', 'CEIL_CABLES',
+  'CEIL_LAMP_DEAD', 'RUST_FURNACE', 'CEIL_BEAMS', 'FLOOR_BOARDS', 'CEIL_ROOF', 'CEIL_ROOF_B'];
+
+/**
+ * Set dressing. h is world height (a wall is 1), z lifts it off the floor.
+ *   solid   blocks bodies (propBlock), so it is only placed where it cannot
+ *           cut a route in two
+ *   wall    wants a wall at its back, and is nudged against it
+ *   hang    hangs from the ceiling, so never under open sky
+ *   fixture Brick can use it (toilets, urinals)
+ */
+export const DECOR = {
+  desk: { h: 0.5, solid: true, wall: true },
+  chair: { h: 0.46 },
+  filing: { h: 0.62, solid: true, wall: true },
+  locker: { h: 0.92, solid: true, wall: true },
+  vending: { h: 0.9, solid: true, wall: true, max: 2, apart: 8 },
+  cooler: { h: 0.62, solid: true, wall: true, max: 2, apart: 8 },
+  toilet: { h: 0.44, solid: true, wall: true, fixture: 'toilet' },
+  urinal: { h: 0.46, z: 0.14, solid: true, wall: true, fixture: 'urinal' },
+  skeleton: { h: 0.4, wall: true },
+  sandbags: { h: 0.4, solid: true },
+  crate: { h: 0.48, solid: true },
+  crates: { h: 0.82, solid: true, wall: true },
+  console: { h: 0.62, solid: true, wall: true },
+  plant: { h: 0.62, wall: true },
+  mop: { h: 0.58, wall: true },
+  chains: { h: 0.62, z: 0.38, hang: true },
+  hook: { h: 0.7, z: 0.3, hang: true },
+  corpse: { h: 0.26, max: 5 },
+  corpse2: { h: 0.24, max: 5 },
+  nosecone: { h: 0.92, solid: true, max: 3, apart: 8 },
+  pinball: { h: 0.72, solid: true, wall: true, max: 1 },
+  candles: { h: 0.28, emissive: true, max: 12 },
+  pew: { h: 0.44, solid: true },
+  trash: { h: 0.4, wall: true },
+  cone: { h: 0.3 },
+};
+
+/**
+ * Each floor's own look. tint grades every light on the level; walls, floor
+ * and ceil name the materials; floorsBy lets a room take its floor from the
+ * walls around it (tile walls, tile floor); decor is the scatter pool; props
+ * and features are hand-placed [x, y, name] set pieces.
+ */
+const LOOKS = [
+  { // INTAKE: a government office that forgot to evacuate
+    tint: [0.96, 1.02, 0.98],
+    tubes: 4,
+    floorsBy: { TILE: 'FLOOR_TILE', TILE_BLOOD: 'FLOOR_TILE', RUST: 'FLOOR_CONCRETE', PIPES: 'FLOOR_CONCRETE',
+      CIRCUIT: 'FLOOR_RAISED', SCREENS: 'FLOOR_RAISED', VENT: 'FLOOR_CONCRETE', STEEL_PLATE: 'FLOOR_CONCRETE' },
+    ceilsBy: { PIPES: 'CEIL_PIPES', RUST: 'CEIL_CONCRETE', TILE: 'CEIL_CONCRETE', CIRCUIT: 'CEIL_CABLES',
+      SCREENS: 'CEIL_CABLES', VENT: 'CEIL_PIPES' },
+    density: 0.13,
+    decor: [['desk', 4], ['chair', 4], ['filing', 3], ['locker', 2], ['cooler', 1], ['vending', 1],
+      ['plant', 3], ['mop', 1], ['corpse', 2], ['trash', 2], ['cone', 1], ['console', 1], ['crate', 1]],
+    deck: [['crate', 2], ['sandbags', 2], ['corpse2', 1]],
+    decorBy: {
+      PIPES: [['crate', 2], ['crates', 1], ['corpse', 1], ['sandbags', 1], ['cone', 1]],
+      VENT: [['crate', 2], ['crates', 1], ['corpse', 1], ['cone', 1]],
+      RUST: [['crate', 2], ['crates', 2], ['sandbags', 1], ['skeleton', 1]],
+      STEEL_PLATE: [['locker', 2], ['cooler', 1], ['filing', 1], ['plant', 1], ['vending', 1], ['pinball', 1]],
+    },
+    // the decon showers double as the gents
+    props: [[37, 25, 'urinal'], [37, 27, 'urinal'], [37, 29, 'toilet'], [37, 31, 'toilet'], [32, 31, 'mop']],
+    features: [[38, 26, 'TILE_MIRROR'], [38, 30, 'TILE_GRAFFITI'], [34, 24, 'TILE_SIGN']],
+  },
+  { // THE ORGAN LOFT: sodium light on brass, and the priests' candles
+    tint: [1.1, 0.95, 0.78],
+    floorsBy: { RUST: 'FLOOR_CONCRETE', CIRCUIT: 'FLOOR_RAISED', SCREENS: 'FLOOR_RAISED', VENT: 'FLOOR_GRATE',
+      STEEL_PLATE: 'FLOOR_TILE' },
+    ceilsBy: { CIRCUIT: 'CEIL_CABLES', SCREENS: 'CEIL_CABLES', RUST: 'CEIL_CONCRETE', VENT: 'CEIL_PIPES',
+      STEEL_PLATE: 'CEIL_PIPES' },
+    density: 0.1,
+    decor: [['candles', 3], ['chains', 3], ['skeleton', 2], ['crates', 2], ['crate', 2], ['pew', 2],
+      ['corpse', 2], ['console', 1], ['locker', 1], ['mop', 1], ['trash', 1]],
+    deck: [['crate', 2], ['sandbags', 2], ['nosecone', 1]],
+    props: [],
+    features: [],
+  },
+  { // SALT CATHEDRAL: brine-cold, white, and full of pews nobody sits in
+    tint: [0.86, 0.97, 1.14],
+    floorsBy: { TILE: 'FLOOR_TILE', TILE_BLOOD: 'FLOOR_TILE', SALT_WALL: 'FLOOR_SALT', SCREENS: 'FLOOR_RAISED' },
+    ceilsBy: { SCREENS: 'CEIL_CABLES', TILE: 'CEIL_CONCRETE', TILE_BLOOD: 'CEIL_CONCRETE' },
+    density: 0.08,
+    decor: [['pew', 4], ['candles', 3], ['skeleton', 3], ['chains', 1], ['crate', 1], ['plant', 1],
+      ['corpse', 1], ['nosecone', 1]],
+    deck: [['crate', 2], ['sandbags', 2], ['nosecone', 1]],
+    props: [],
+    features: [],
+  },
+  { // THE FURNACE: red heat, meat hooks and the smell
+    tint: [1.16, 0.88, 0.74],
+    variants: { RUST: [['RUST_FURNACE', 1, 1]] },
+    floorsBy: { PIPES: 'FLOOR_GRATE', VENT: 'FLOOR_GRATE', FLESH: 'FLOOR_CONCRETE' },
+    ceilsBy: { PIPES: 'CEIL_PIPES', VENT: 'CEIL_PIPES', STEEL_PLATE: 'CEIL_CONCRETE' },
+    density: 0.1,
+    decor: [['hook', 4], ['chains', 3], ['skeleton', 2], ['corpse2', 2], ['crates', 2], ['crate', 1],
+      ['sandbags', 1], ['nosecone', 1], ['trash', 1]],
+    deck: [['crate', 2], ['sandbags', 2], ['nosecone', 1]],
+    props: [],
+    features: [],
+  },
+  { // MUTTER: the machine's own rooms, lit the colour of a bruise
+    tint: [1.02, 0.88, 1.12],
+    tubes: 5,
+    floorsBy: {},
+    ceilsBy: {},
+    density: 0.1,
+    decor: [['console', 3], ['chair', 2], ['desk', 1], ['pinball', 1], ['cooler', 1], ['corpse', 2],
+      ['skeleton', 1], ['crate', 1]],
+    deck: [['crate', 2], ['sandbags', 2], ['nosecone', 1]],
+    props: [],
+    features: [],
+  },
+];
+
+/** Integer hash to 0..1. Deterministic and cheap; this runs once per cell. */
+function hash3(x, y, s) {
+  let h = (Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(s | 0, 1274126177)) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/** Weighted pick from [[name, weight, ...], ...] with u in 0..1. */
+function pickWeighted(list, u) {
+  let total = 0;
+  for (const e of list) total += e[1];
+  let r = u * total;
+  for (const e of list) { r -= e[1]; if (r < 0) return e; }
+  return list[list.length - 1];
+}
+
+export function lookOf(index) { return LOOKS[index] || null; }
+
+for (const t of EXTRA_MATERIALS) if (!VALID_TEXTURES.includes(t)) VALID_TEXTURES.push(t);
+for (const list of Object.values(TEXTURE_VARIANTS)) {
+  for (const [t] of list) if (!VALID_TEXTURES.includes(t)) VALID_TEXTURES.push(t);
+}
+for (const look of LOOKS) {
+  for (const list of Object.values(look.variants || {})) {
+    for (const [t] of list) if (!VALID_TEXTURES.includes(t)) VALID_TEXTURES.push(t);
+  }
+}
+
+/**
+ * Dress one parsed level in place. Returns the extras parseLevel hands on:
+ * decor, fixture lights and the light grade.
+ */
+function dressLevel(def, idx, P) {
+  const { w, h, wall, wallTexName, floorTexName, ceilTexName, sky, secret, trigger, exit, doors, ents } = P;
+  const look = def.look || LOOKS[idx] || {};
+  const n = w * h;
+  const seed = 0x51ab + idx * 7919;
+  const inb = (x, y) => x >= 0 && y >= 0 && x < w && y < h;
+  const walkable = (x, y) => inb(x, y) && !wall[y * w + x];
+  const solidWall = (x, y) => !inb(x, y) || (wall[y * w + x] && !isDoorId(wall[y * w + x]));
+  const variantsFor = (fam) => {
+    const extra = look.variants && look.variants[fam];
+    const base = TEXTURE_VARIANTS[fam];
+    if (!base && !extra) return null;
+    return (base || []).concat(extra || []);
+  };
+
+  // Everything a player needs to walk to, or through, is protected from clutter.
+  const guard = new Uint8Array(n);
+  const mark = (x, y, r) => {
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (inb(x + dx, y + dy)) guard[(y + dy) * w + x + dx] = 1;
+  };
+  for (const d of doors) mark(d.x, d.y, 1);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (secret[i]) mark(x, y, 2);
+      if (trigger[i] || exit[i]) mark(x, y, 1);
+    }
+  }
+  const entAt = new Uint8Array(n);
+  for (const e of ents) {
+    const ex = (e.x - 0.5) | 0, ey = (e.y - 0.5) | 0;
+    entAt[ey * w + ex] = 1;
+    if (e.kind.startsWith('key_') || e.kind === 'weapon' || e.kind === 'boss') mark(ex, ey, 1);
+  }
+  if (P.start) mark((P.start.x - 0.5) | 0, (P.start.y - 0.5) | 0, 1);
+
+  // --- 1. rooms take their floor and ceiling from their walls ---------------
+  // Nearest wall material within three cells decides, so a tiled washroom has a
+  // tiled floor without anyone painting it into the ASCII.
+  const nearestWallTex = (x, y) => {
+    for (let r = 1; r <= 3; r++) {
+      let best = null, bestD = 1e9;
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const xx = x + dx, yy = y + dy;
+          if (!inb(xx, yy)) continue;
+          const j = yy * w + xx;
+          if (!wall[j] || isDoorId(wall[j]) || secret[j]) continue;
+          const t = wallTexName[j];
+          if (t === 'DOOR_JAMB' || t === 'ELEVATOR') continue;
+          const d = dx * dx + dy * dy;
+          if (d < bestD) { bestD = d; best = t; }
+        }
+      }
+      if (best) return best;
+    }
+    return null;
+  };
+  // What a room is made of also decides what gets left lying in it.
+  const roomFam = new Array(n).fill(null);
+  {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (wall[i] || sky[i] || exit[i]) continue;
+        const t = nearestWallTex(x, y);
+        if (!t) continue;
+        roomFam[i] = t;
+        const f = look.floorsBy && look.floorsBy[t];
+        if (f && floorTexName[i] === (def.floorTex || DEFAULT_FLOOR)) floorTexName[i] = f;
+        const c = look.ceilsBy && look.ceilsBy[t];
+        if (c && ceilTexName[i] === (def.ceilTex || DEFAULT_CEIL)) ceilTexName[i] = c;
+      }
+    }
+  }
+  const COMMON_ROOMS = {
+    TILE: [['mop', 2], ['trash', 2], ['corpse', 1], ['cone', 2]],
+    TILE_BLOOD: [['skeleton', 2], ['corpse', 1], ['candles', 1], ['mop', 1]],
+    SCREENS: [['console', 3], ['chair', 2], ['desk', 1], ['trash', 1]],
+    CIRCUIT: [['console', 2], ['chair', 1], ['crate', 1]],
+    SERVER: [['console', 2], ['chair', 1], ['crate', 1]],
+  };
+
+  // --- 2. strip lights on a lattice, in rooms, never over a lamp ------------
+  const fixtureLights = [];
+  if (look.tubes) {
+    const sp = look.tubes, ox = (idx * 3) % sp, oy = (idx * 5 + 1) % sp;
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        if ((x + ox) % sp || (y + oy) % sp) continue;
+        if (wall[i] || sky[i] || !ceilTexName[i] || ceilTexName[i] === 'CEIL_LAMP') continue;
+        let open = 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (walkable(x + dx, y + dy)) open++;
+        if (open < 6) continue;
+        // One in five has died, and one of those still flickers in the dark.
+        const u = hash3(x, y, seed + 3);
+        if (u < 0.18) { ceilTexName[i] = 'CEIL_LAMP_DEAD'; continue; }
+        ceilTexName[i] = 'CEIL_TUBE';
+        fixtureLights.push({ x: x + 0.5, y: y + 0.5, r: 0.86, g: 0.96, b: 1.0, intensity: 0.32, radius: 5.2 });
+      }
+    }
+  }
+
+  // --- 3. wall variants --------------------------------------------------------
+  const features = [];
+  const featureOk = (x, y, name, gap) => {
+    for (const f of features) {
+      const d = Math.hypot(f[0] - x, f[1] - y);
+      if (d < gap) return false;
+      if (f[2] === name && d < 14) return false;
+    }
+    return true;
+  };
+  for (const [fx, fy, name] of look.features || []) {
+    if (inb(fx, fy) && wall[fy * w + fx] && !isDoorId(wall[fy * w + fx])) {
+      wallTexName[fy * w + fx] = name;
+      features.push([fx, fy, name]);
+    }
+  }
+  const handPlaced = new Set((look.features || []).map(([fx, fy]) => fy * w + fx));
+  const nearInterest = (x, y) => {
+    for (const d of doors) if (Math.abs(d.x - x) + Math.abs(d.y - y) <= 3) return true;
+    return false;
+  };
+  const choose = (i, x, y, fam, vars, s, gap) => {
+    const list = [[fam, BASE_WEIGHT[fam] || 4]].concat(vars);
+    const boost = nearInterest(x, y) ? 3 : 1;
+    const weighted = list.map((e) => (e[2] ? [e[0], e[1] * boost, 1] : e));
+    let pick = pickWeighted(weighted, hash3(x, y, s));
+    if (pick[2] && !featureOk(x, y, pick[0], gap)) {
+      pick = pickWeighted(list.filter((e) => !e[2]), hash3(x, y, s + 1));
+    }
+    return pick;
+  };
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (!wall[i] || isDoorId(wall[i]) || handPlaced.has(i)) continue;
+      const fam = wallTexName[i];
+      const vars = variantsFor(fam);
+      if (!vars) continue;
+      // Only a face somebody can stand in front of is worth dressing.
+      if (!walkable(x - 1, y) && !walkable(x + 1, y) && !walkable(x, y - 1) && !walkable(x, y + 1)) continue;
+      let pick = choose(i, x, y, fam, vars, seed + 11, 5);
+      // Never the same dressing twice within two cells along a run: A-B-A
+      // reads as a pattern just as surely as A-A does.
+      const left = x > 0 ? wallTexName[i - 1] : '', up = y > 0 ? wallTexName[i - w] : '';
+      const left2 = x > 1 ? wallTexName[i - 2] : '', up2 = y > 1 ? wallTexName[i - 2 * w] : '';
+      const near = (e) => e === left || e === up || e === left2 || e === up2;
+      if (pick[0] !== fam && near(pick[0])) {
+        pick = choose(i, x, y, fam, vars.filter((e) => !near(e[0])), seed + 23, 5);
+      }
+      // And never three plain ones: that is exactly the stretch that reads as
+      // a tiled pattern. Break it with something quiet.
+      // (A monitor bank gets no plain pair at all: two identical screens side
+      // by side is the one thing a control room never shows.)
+      const plainRun = fam === 'SCREENS' ? (left === fam || up === fam)
+        : (left === fam && left2 === fam) || (up === fam && up2 === fam);
+      if (pick[0] === fam && plainRun) {
+        const quiet = vars.filter((e) => !e[2] && !near(e[0]));
+        if (quiet.length) pick = pickWeighted(quiet, hash3(x, y, seed + 29));
+        else {
+          const loud = vars.filter((e) => !near(e[0]) && featureOk(x, y, e[0], 3));
+          if (loud.length) pick = pickWeighted(loud, hash3(x, y, seed + 31));
+        }
+      }
+      wallTexName[i] = pick[0];
+      if (pick[2]) features.push([x, y, pick[0]]);
+    }
+  }
+
+  // --- 4. floor and ceiling variants --------------------------------------------
+  const plane = (names, s, gap) => {
+    const feats = [];
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (wall[i]) continue;
+        const fam = names[i];
+        if (!fam) continue;
+        const vars = variantsFor(fam);
+        if (!vars) continue;
+        const list = [[fam, BASE_WEIGHT[fam] || 4]].concat(vars);
+        let pick = pickWeighted(list, hash3(x, y, s));
+        if (pick[2]) {
+          const tooClose = feats.some((f) => Math.hypot(f[0] - x, f[1] - y) < gap) || entAt[i] || guard[i];
+          if (tooClose) pick = [fam];
+          else feats.push([x, y]);
+        }
+        const left = x > 0 ? names[i - 1] : '', up = y > 0 ? names[i - w] : '';
+        if (pick[0] !== fam && (pick[0] === left || pick[0] === up)) pick = [fam];
+        names[i] = pick[0];
+      }
+    }
+  };
+  plane(floorTexName, seed + 31, 7);
+  plane(ceilTexName, seed + 37, 6);
+
+  // --- 5. props ----------------------------------------------------------------
+  const decor = [];
+  const blockedByDecor = new Uint8Array(n);
+  const passable = (x, y) => walkable(x, y) && !blockedByDecor[y * w + x];
+  // Removing (x,y) from the walkable graph must not split its neighbours: walk
+  // the 8-ring and count separate runs of passable cells that touch an
+  // orthogonal neighbour. One run means everything around it still connects.
+  const ringOffsets = [[0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]];
+  const safeToBlock = (x, y) => {
+    const ring = ringOffsets.map(([dx, dy]) => passable(x + dx, y + dy));
+    // A diagonal only links its two orthogonals if it is itself open.
+    let runs = 0, start = -1;
+    for (let k = 0; k < 8; k++) if (!ring[k]) { start = k; break; }
+    if (start < 0) return true;                            // open floor all round
+    let inRun = false, runHasOrtho = false;
+    for (let s = 1; s <= 8; s++) {
+      const k = (start + s) % 8;
+      if (ring[k]) {
+        if (!inRun) { inRun = true; runHasOrtho = false; }
+        if (k % 2 === 0) runHasOrtho = true;
+      } else if (inRun) {
+        inRun = false;
+        if (runHasOrtho) runs++;
+      }
+    }
+    if (inRun && runHasOrtho) runs++;
+    return runs <= 1;
+  };
+  const place = (x, y, kind, force) => {
+    const spec = DECOR[kind];
+    if (!spec) return false;
+    const i = y * w + x;
+    if (!walkable(x, y) || blockedByDecor[i] || entAt[i]) return false;
+    if (!force && (guard[i] || trigger[i] || exit[i])) return false;
+    if (spec.hang && (sky[i] || !ceilTexName[i])) return false;
+    const sides = [];
+    for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) if (solidWall(x + dx, y + dy)) sides.push([dx, dy]);
+    if (spec.wall && !sides.length) return false;
+    if (spec.solid) {
+      if (!safeToBlock(x, y)) return false;
+      // Never in a one-wide corridor, however safe the topology says it is.
+      if (!force && ((solidWall(x - 1, y) && solidWall(x + 1, y)) || (solidWall(x, y - 1) && solidWall(x, y + 1)))) return false;
+    }
+    let px = x + 0.5, py = y + 0.5;
+    if (spec.wall) {
+      const [dx, dy] = sides[(hash3(x, y, seed + 41) * sides.length) | 0];
+      px += dx * 0.2; py += dy * 0.2;
+    } else if (!spec.solid) {
+      px += (hash3(x, y, seed + 43) - 0.5) * 0.4; py += (hash3(x, y, seed + 47) - 0.5) * 0.4;
+    }
+    if (spec.solid) blockedByDecor[i] = 1;
+    decor.push({
+      kind, key: `prop_${kind}`, x: px, y: py, z: spec.z || 0, h: spec.h,
+      solid: !!spec.solid, emissive: !!spec.emissive, fixture: spec.fixture || null,
+    });
+    entAt[i] = 1;
+    return true;
+  };
+  for (const [px, py, kind] of look.props || []) place(px, py, kind, true);
+  const density = look.density || 0;
+  const count = {};
+  const fits = (x, y, kind) => {
+    const spec = DECOR[kind];
+    if (spec.max && (count[kind] || 0) >= spec.max) return false;
+    if (spec.apart) {
+      for (const d of decor) if (d.kind === kind && Math.hypot(d.x - x - 0.5, d.y - y - 0.5) < spec.apart) return false;
+    }
+    return true;
+  };
+  if (density > 0 && look.decor) {
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        if (wall[i]) continue;
+        const onDeck = !!sky[i];
+        const fam = roomFam[i];
+        const roomPool = !onDeck && fam && ((look.decorBy && look.decorBy[fam]) || COMMON_ROOMS[fam]);
+        const base = onDeck ? look.deck : (roomPool || look.decor);
+        if (!base || !base.length) continue;
+        if (hash3(x, y, seed + 51) > density * (onDeck ? 0.25 : 1)) continue;
+        // Against a wall, anything goes and furniture is favoured; out in the
+        // open only the things that stand on their own.
+        const backed = solidWall(x - 1, y) || solidWall(x + 1, y) || solidWall(x, y - 1) || solidWall(x, y + 1);
+        const pool = base.filter(([k]) => fits(x, y, k) && (backed || !DECOR[k].wall))
+          .map(([k, wt]) => [k, backed && DECOR[k].wall ? wt * 2 : wt]);
+        if (!pool.length) continue;
+        let kind = pickWeighted(pool, hash3(x, y, seed + 53))[0];
+        if (!place(x, y, kind, false)) {
+          // Solid did not fit (a squeeze, a route): try one thing you can walk through.
+          const soft = pool.filter(([k]) => !DECOR[k].solid);
+          if (!soft.length) continue;
+          kind = pickWeighted(soft, hash3(x, y, seed + 59))[0];
+          if (!place(x, y, kind, false)) continue;
+        }
+        count[kind] = (count[kind] || 0) + 1;
+      }
+    }
+  }
+
+  // --- 6. the things on the walls that glow light the room ---------------------
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const t = wallTexName[y * w + x];
+      if (t !== 'RUST_FURNACE' && t !== 'SALT_SHRINE') continue;
+      for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+        if (!walkable(x + dx, y + dy)) continue;
+        const hot = t === 'RUST_FURNACE';
+        fixtureLights.push({
+          x: x + 0.5 + dx * 0.9, y: y + 0.5 + dy * 0.9,
+          r: 1.0, g: hot ? 0.5 : 0.7, b: hot ? 0.2 : 0.35, intensity: hot ? 0.7 : 0.45, radius: hot ? 4.5 : 3.6,
+        });
+        break;
+      }
+    }
+  }
+  for (const d of decor) {
+    if (d.kind === 'candles') fixtureLights.push({ x: d.x, y: d.y, r: 1, g: 0.66, b: 0.3, intensity: 0.4, radius: 3.2 });
+  }
+
+  return { decor, fixtureLights, lightTint: look.tint || null };
+}
 
 // ---------------------------------------------------------------------------
 // Parsing
@@ -722,7 +1267,7 @@ export function parseLevel(index) {
       }
 
       // walkable
-      if (d.floor) floorTexName[i] = d.floor;
+      if (d.floor) floorTexName[i] = (def.floorMap && def.floorMap[ch]) || d.floor;
       if (d.sky) { sky[i] = 1; floorTexName[i] = deckFloor; }
       if (d.trigger) trigger[i] = 1;
       if (d.exit) exit[i] = 1;
@@ -815,6 +1360,10 @@ export function parseLevel(index) {
 
   if (start) start.dir = facing(rows, (start.x - 0.5) | 0, (start.y - 0.5) | 0);
 
+  const dressed = dressLevel(def, idx, {
+    w, h, wall, wallTexName, floorTexName, ceilTexName, sky, secret, trigger, exit, doors, ents, start,
+  });
+
   return {
     index: idx,
     name: def.name,
@@ -828,6 +1377,9 @@ export function parseLevel(index) {
     sky, trigger, exit, secret,
     doors, ents,
     start: start || { x: 1.5, y: 1.5, dir: 0 },
+    decor: dressed.decor,
+    fixtureLights: dressed.fixtureLights,
+    lightTint: dressed.lightTint,
   };
 }
 
@@ -1067,6 +1619,22 @@ export function validateAll() {
       if (e.kind === 'weapon' && !e.weapon) say(`weapon pickup at ${ex},${ey} got no name from weapons[]`);
     }
     if (li === 4 && !bosses.length) say('is the boss level but has no K');
+
+    // 11. set dressing never cuts a route ------------------------------------
+    // Re-flood with every solid prop as a wall: everything the bare map could
+    // reach must still be reachable, prop cells themselves aside.
+    const propAt = new Uint8Array(w * h);
+    for (const d of lv.decor || []) {
+      const dx = d.x | 0, dy = d.y | 0;
+      const i = dy * w + dx;
+      if (lv.wall[i]) say(`${d.kind} prop at ${dx},${dy} sits inside a wall`);
+      if (d.solid) propAt[i] = 1;
+    }
+    const blockedRows = rows.map((r, y) => [...r].map((ch, x) => (propAt[y * w + x] ? '#' : ch)).join(''));
+    const dressedFlood = progressionFlood(blockedRows, sx, sy, false);
+    let cut = 0;
+    for (let i = 0; i < w * h; i++) if (base.seen[i] && !propAt[i] && !dressedFlood.seen[i]) cut++;
+    if (cut) say(`solid props cut off ${cut} reachable cells`);
   });
   return problems;
 }

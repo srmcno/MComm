@@ -124,6 +124,21 @@ export function renderWorld(game, W, H) {
     });
   }
 
+  // Set dressing from the level parser: desks, lockers, the odd colleague. It
+  // never moves, so each piece keeps one billboard for the life of the level.
+  const decor = lv.decor;
+  if (decor) {
+    for (let i = 0; i < decor.length; i++) {
+      const d = decor[i];
+      let spr = d._spr;
+      if (spr === undefined) {
+        const f = art.sprites[d.key];
+        spr = d._spr = f ? { x: d.x, y: d.y, z: d.z || 0, frame: f, h: d.h, emissive: !!d.emissive } : null;
+      }
+      if (spr) S.push(spr);
+    }
+  }
+
   // Warheads and their contrails. The trail is what makes a sky read as busy.
   for (const w of game.sky.warheads) {
     const def = WARHEAD_TYPES[w.type];

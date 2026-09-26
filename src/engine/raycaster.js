@@ -103,6 +103,11 @@ export class Raycaster {
       this.colAng[c] = Math.atan2(ry, rx);
     }
 
+    // The level's own fixtures (strip lights, furnace mouths, candles), then
+    // its colour grade: sodium in the loft, brine-blue in the cathedral. Both
+    // go into the grid once, so neither costs anything per pixel.
+    if (lv.lightTint || (lv.fixtureLights && lv.fixtureLights.length)) light.applyLevel(lv);
+
     // Zero means "nothing has claimed this pixel". Every real write sets alpha
     // 255, so the sky pass can fill the gaps without tracking spans itself.
     buf.fill(0);
@@ -163,7 +168,10 @@ export class Raycaster {
             if ((hy | 0) !== mapY) continue;
             let uu = hy - mapY;
             if (uu < open) continue;           // slid open here, ray passes
-            dist = t; u = uu; side = 0; tex = wallTex[idx]; hit = true; wallH = 1; break;
+            // The art rides with the slab, and reads the right way round from
+            // either side of it.
+            u = uu - open; if (rdx < 0) u = 1 - u;
+            dist = t; side = 0; tex = wallTex[idx]; hit = true; wallH = 1; break;
           } else {                              // plane at y = mapY + 0.5
             const t = (mapY + 0.5 - cam.y) / rdy;
             if (t <= 0) continue;
@@ -171,7 +179,8 @@ export class Raycaster {
             if ((hx | 0) !== mapX) continue;
             let uu = hx - mapX;
             if (uu < open) continue;
-            dist = t; u = uu; side = 1; tex = wallTex[idx]; hit = true; wallH = 1; break;
+            u = uu - open; if (rdy > 0) u = 1 - u;
+            dist = t; side = 1; tex = wallTex[idx]; hit = true; wallH = 1; break;
           }
         }
 
@@ -179,7 +188,10 @@ export class Raycaster {
         if (dist < 1e-4) dist = 1e-4;
         u = side === 0 ? cam.y + dist * rdy : cam.x + dist * rdx;
         u -= Math.floor(u);
-        if ((side === 0 && rdx > 0) || (side === 1 && rdy < 0)) u = 1 - u;
+        // Flip so u always runs left to right as the viewer sees the face. The
+        // old test was the textbook one for a y-up map; on this y-down grid it
+        // mirrored every face, so every stencil in the bunker read backwards.
+        if ((side === 0 && rdx < 0) || (side === 1 && rdy > 0)) u = 1 - u;
         tex = wallTex[idx];
         wallH = height[idx];
         hit = true;
@@ -571,6 +583,7 @@ export class LightGrid {
     const y0 = Math.max(0, (cam.y - radiusCells) | 0), y1 = Math.min(H, ((cam.y + radiusCells) | 0) + 1);
     this.x0 = x0; this.x1 = x1; this.y0 = y0; this.y1 = y1;
     this.ambient = ambient;
+    this._tinted = false;
 
     const stride = W + 1;
     for (let y = y0; y <= y1; y++) {
@@ -597,6 +610,51 @@ export class LightGrid {
         }
       }
     }
+  }
+
+  /**
+   * Add a level's static fixture lights to the built grid, then multiply it
+   * (and the ambient used outside it) by the level's colour grade. Idempotent
+   * per build, so a second render of the same frame does not light twice.
+   */
+  applyLevel(lv) {
+    if (this._tinted || !this.r) return;
+    this._tinted = true;
+    const { W, r, g, b } = this;
+    const stride = W + 1;
+    const fl = lv.fixtureLights;
+    if (fl) {
+      for (let i = 0; i < fl.length; i++) {
+        const L = fl[i];
+        const rad = L.radius;
+        if (L.x + rad < this.x0 || L.x - rad > this.x1 || L.y + rad < this.y0 || L.y - rad > this.y1) continue;
+        const lx0 = Math.max(this.x0, (L.x - rad) | 0), lx1 = Math.min(this.x1, ((L.x + rad) | 0) + 1);
+        const ly0 = Math.max(this.y0, (L.y - rad) | 0), ly1 = Math.min(this.y1, ((L.y + rad) | 0) + 1);
+        const inv = 1 / (rad * rad), ii = L.intensity;
+        for (let y = ly0; y <= ly1; y++) {
+          const dy = y - L.y, dy2 = dy * dy, row = y * stride;
+          for (let x = lx0; x <= lx1; x++) {
+            const dx = x - L.x;
+            let f = 1 - (dx * dx + dy2) * inv;
+            if (f <= 0) continue;
+            f = f * f * ii;
+            r[row + x] += L.r * f; g[row + x] += L.g * f; b[row + x] += L.b * f;
+          }
+        }
+      }
+    }
+    const t = lv.lightTint;
+    if (!t) return;
+    const tr = t[0], tg = t[1], tb = t[2];
+    for (let y = this.y0; y <= this.y1; y++) {
+      const row = y * stride;
+      for (let x = this.x0; x <= this.x1; x++) {
+        r[row + x] *= tr; g[row + x] *= tg; b[row + x] *= tb;
+      }
+    }
+    const a = this._amb || (this._amb = new Float32Array(3));
+    a[0] = this.ambient[0] * tr; a[1] = this.ambient[1] * tg; a[2] = this.ambient[2] * tb;
+    this.ambient = a;
   }
 
   sample(x, y) {
