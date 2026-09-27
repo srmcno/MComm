@@ -571,7 +571,7 @@ export class Bolt {
     this.life -= dt;
     this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
     if (this.life <= 0) { this.alive = false; return; }
-    if (this.z < 0.05 || this.z > 2.4 || !game.level.inBounds(this.x, this.y) || game.level.blockedAt(this.x, this.y, this.z)) {
+    if (this.z < 0.05 || this.z > 2.4 || game.level.blockedShot(this.x, this.y, this.z)) {
       this.alive = false;
       game.onBoltImpact(this, null);
       return;
@@ -627,8 +627,10 @@ export class PipeBomb {
       game.sound.sfx('pipebomb_land', { pan: game.panAt(this.x, this.y), vol: 0.5 });
     } else { this.x = nx; this.y = ny; }
     this.z += this.vz * dt;
-    if (this.z <= 0.08) {
-      this.z = 0.08;
+    // The floor here, or the top of whatever parapet or prop it came down on.
+    const rest = 0.08 + (game.level.restAt ? game.level.restAt(this.x, this.y) : 0);
+    if (this.z <= rest) {
+      this.z = rest;
       if (Math.abs(this.vz) > 1.4) {
         this.vz = -this.vz * 0.28;
         this.vx *= 0.55; this.vy *= 0.55;

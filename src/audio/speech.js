@@ -35,6 +35,11 @@ import { pickLine, pickLineAt, voiceOf, lineStarted } from './vox.js';
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const num = (v, d) => (isNum(v) ? v : d);
+/** Tell a queued line's owner it will never be spoken (it was cut or bumped). */
+function dropped(item) {
+  const f = item && item.opts && item.opts.onDrop;
+  if (typeof f === 'function') { try { f(); } catch { /* a caller's hook must not break the queue */ } }
+}
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 export const VOICE_MODES = Object.freeze(['natural', 'robot', 'off']);
@@ -671,7 +676,7 @@ export class Speech {
       if (this._active) {
         if (prio > this._active.priority) {
           this._stopActive();
-          this._queue = this._queue.filter((q) => q.priority >= prio);
+          this._queue = this._queue.filter((q) => q.priority >= prio || (dropped(q), false));
         } else {
           const est = this._estimate(raw, o);
           const item = { raw, opts: o, priority: prio, est };
@@ -680,7 +685,7 @@ export class Speech {
           for (let i = 1; i < this._queue.length; i++) {
             if (this._queue[i].priority < this._queue[worst].priority) worst = i;
           }
-          if (prio > this._queue[worst].priority) { this._queue[worst] = item; return est; }
+          if (prio > this._queue[worst].priority) { dropped(this._queue[worst]); this._queue[worst] = item; return est; }
           return 0;
         }
       }

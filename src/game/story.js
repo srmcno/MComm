@@ -763,11 +763,23 @@ export class Radio {
       if (c.job && !c.job.fired) {
         // Handed to the voice, which is still finishing somebody else's line:
         // the clock, the portrait and the caption wait until this one starts.
-        // A line the engine threw away never starts; let the next one go.
+        // A line the engine threw away (a warning cut in, or took its place in
+        // the engine's queue) never starts, and nobody heard it, so it goes
+        // back in line to be said whole. A line that went nowhere for another
+        // reason gets one more try, then the next one goes.
         c.wait = (c.wait || 0) + dt;
         const busy = this.voiceBusy();
-        if (c.job.fired) this.onAir(c);
-        else if (!busy || c.wait > 15) { this.current = null; this.cooldown = 0.28; }
+        if (c.job.fired) { this.onAir(c); return; }
+        if (c.job.dropped || !busy || c.wait > 15) {
+          const tries = (c.tries || 0) + 1;
+          this.current = null;
+          this.cooldown = 0.28;
+          if (tries <= (c.job.dropped ? 3 : 1) && c.wait <= 15) {
+            this.queue.unshift({ speaker: c.speaker, key: c.key, text: c.text, priority: c.priority,
+              args: null, delay: 0.4, exact: true, tries });
+            if (this.queue.length > 3) this.queue.length = 3;
+          }
+        }
         return;
       }
       c.t += dt;
@@ -828,7 +840,9 @@ export class Radio {
       speakerDef: sp,
       natural,
       crackleAt: natural ? 0.8 + g.rng() * 1.2 : undefined,
-      job: dur > 0 ? g.lastVoiceJob || null : null,
+      // A line the engine refused outright still carries its job, marked
+      // dropped, so update() can put it back in line rather than caption it.
+      job: dur > 0 || (g.lastVoiceJob && g.lastVoiceJob.dropped) ? g.lastVoiceJob || null : null,
     };
     if (!this.current.job || this.current.job.fired) this.onAir(this.current);
   }

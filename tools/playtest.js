@@ -1398,12 +1398,19 @@ check("a queued line is captioned with its own words, not the voice it waited be
 // ======================================================= gore and physics
 // A stage for these: an indoor run of open floor with a wall at the end, the
 // floor emptied of its own staff, and targets placed by hand.
-await page.evaluate(() => {
+await page.evaluate(async () => {
   const g = window.NUKEHAUS.game;
+  const { makeRng } = await import('./src/core/math.js');
   window.GORE = {
     arena() {
       g.newGame(1); g.loadLevel(1); g.setState('play'); g._god = true;
       g.enemies.length = 0;
+      // Every stage starts from the same dice and a steady hand, so a check
+      // does not pass or fail on what the checks before it happened to roll
+      // (nail spread and sever chances both draw from these).
+      g.rng = makeRng(0xA11CE);
+      if (g.gore) g.gore.rng = makeRng(0x90e5eed);
+      g.radio.reset();
       const lv = g.level;
       let best = null, bestOpen = -1;
       for (let y = 3; y < lv.H - 3; y++) for (let x = 3; x < lv.W - 9; x++) {
@@ -1421,6 +1428,8 @@ await page.evaluate(() => {
       }
       const p = g.player;
       p.x = best.x; p.y = best.y; p.ang = 0; p.pitch = 0; p.vx = 0; p.vy = 0;
+      p.recoilPitch = 0; p.kick = 0; p.kickVel = 0; p.cooldown = 0;
+      p.fireAnim = 0; p.kickAnim = 0; p.throwAnim = 0; p.flashTimer = 0;
       return best;
     },
     async spawn(kind, dx, dy) {

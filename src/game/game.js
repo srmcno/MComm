@@ -202,6 +202,7 @@ export class Game {
     this.difficulty = clamp(difficulty | 0, 0, DIFFICULTY.length - 1);
     this.diff = DIFFICULTY[this.difficulty];
     this.player.reset();
+    this._deathSaid = false;
     this.player.maxHealth = this.diff.health;
     this.player.health = this.diff.health;
     this.sky = new SkyWar(this);
@@ -515,13 +516,13 @@ export class Game {
     let dur = 0;
     if (key) {
       const o = fixed ? { voice, args, pick } : { voice, args };
-      o.priority = job.priority; o.onStart = job.start;
+      o.priority = job.priority; o.onStart = job.start; o.onDrop = job.drop;
       try { dur = this.vox.sayLine(key, o) || 0; } catch { dur = 0; }
     }
     // The announcer chose a variant; caption that one, not another roll.
     let spoken = dur ? (this.vox.lastRequested || this.vox.lastLine || text) : text;
     if (!dur && text) {
-      try { dur = this.vox.say(text, { voice, priority: job.priority, onStart: job.start }) || 0; } catch { dur = 0; }
+      try { dur = this.vox.say(text, { voice, priority: job.priority, onStart: job.start, onDrop: job.drop }) || 0; } catch { dur = 0; }
     }
     if (args && spoken) for (const a of args) spoken = spoken.replace('%s', a);
     const caption = plainText(spoken);
@@ -539,7 +540,12 @@ export class Game {
    * line that is dropped from the queue is never captioned at all.
    */
   voiceJob(voice, depth, priority) {
-    const job = { voice, depth, priority, caption: '', dur: 0, ready: false, fired: false, start: null };
+    const job = { voice, depth, priority, caption: '', dur: 0, ready: false, fired: false, dropped: false,
+      start: null, drop: null };
+    // The engine threw the line out of its queue (something more important
+    // cut in, or took its place): it will never start, so the radio can put
+    // it back in line instead of waiting on it.
+    job.drop = () => { if (!job.fired) job.dropped = true; };
     job.start = (d) => {
       if (job.fired) return;             // a replay on the fallback engine is the same line
       job.fired = true;
@@ -558,9 +564,13 @@ export class Game {
     // An engine that took the line and is not busy is playing it, whatever it
     // reported. Otherwise it is waiting its turn, and start() will say when.
     let busy = false;
-    if (dur > 0) { try { busy = !!this.vox.busy; } catch { busy = false; } }
+    try { busy = !!this.vox.busy; } catch { busy = false; }
     if (job.fired) return;               // asking was enough to start it, and start() captioned it
-    if (!busy) { job.fired = true; this.voiceOn(job); }
+    // Refused outright: the engine is talking and its queue is full of lines
+    // that outrank this one. Nothing will be heard, so nothing is captioned
+    // over the voice that is; a radio line goes back in the radio's queue.
+    if (!(dur > 0) && busy && this.vox.engine !== 'off') { job.dropped = true; return; }
+    if (!(dur > 0) || !busy) { job.fired = true; this.voiceOn(job); }
   }
 
   voiceOn(job) {
@@ -587,7 +597,7 @@ export class Game {
     }
     const prio = Number.isFinite(opts.priority) ? opts.priority : LINE_PRIORITY[key] || 0;
     const job = this.voiceJob(opts.voice || 'mutter', 0.4, prio);
-    const o = { ...opts, priority: prio, onStart: job.start };
+    const o = { ...opts, priority: prio, onStart: job.start, onDrop: job.drop };
     let dur = this.vox.sayLine ? this.vox.sayLine(key, o) : 0;
     let spoken = dur ? (this.vox.lastRequested || this.vox.lastLine || text) : text;
     if (!dur && text) dur = this.vox.say(text, o) || 0;
@@ -1768,9 +1778,9 @@ export class Game {
     let best = { wall: false, enemy: null, item: null, x, y, z };
     for (let t = 0; t < maxDist; t += step) {
       const px = x + dx * t, py = y + dy * t, pz = z + dz * t;
-      // Height-aware, so a round clears a sandbag pile it passes over; the
-      // map edge still stops it, which blockedAt() leaves to flak.
-      if (pz < 0.02 || pz > 1.5 || !this.level.inBounds(px, py) || this.level.blockedAt(px, py, pz)) {
+      // Height-aware, so a round clears a sandbag pile it passes over, but a
+      // full-height wall or a pillar stops it however high it is pitched.
+      if (pz < 0.02 || pz > 1.5 || this.level.blockedShot(px, py, pz)) {
         return { wall: true, enemy: null, item: null, x: px - dx * step, y: py - dy * step, z: pz };
       }
       for (const e of this.enemies) {
@@ -2246,8 +2256,10 @@ export class Game {
       setTimeout(() => { this._hurtSaid = false; }, 26000);
     }
     // Enemies keep swinging at the body until the card comes up; he dies once.
-    const r = this.radio;
-    if (dead && !((r.current && r.current.key === 'brick_death') || r.queue.some((q) => q.key === 'brick_death'))) {
+    // One exchange per death, however many bolts are still in the air: a
+    // check of the queue misses the gap after a short last word has finished.
+    if (dead && !this._deathSaid) {
+      this._deathSaid = true;
       this.sound.sfx('player_die');
       // His last words are the only words: nothing queued earlier (a health
       // nag, a quip) gets to go first, or to play in their place.

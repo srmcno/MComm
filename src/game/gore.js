@@ -619,7 +619,7 @@ export class Gore {
       // A quadruped's head is right there at body height, so a burst that
       // was never going to kill it has to have hit hard for its size too:
       // scaled by how much of what it had left the burst took.
-      if (b === HEAD && quad && !killed) chance *= clamp(force / Math.max(1, e.hp + force), 0.1, 1);
+      if (b === HEAD && quad && !killed) chance *= clamp(force / Math.max(1, e.hp + force), 0.02, 1);
       // Parts come off where the blast is. A burst at the hat should not take
       // the boots, so a part far above or below the burst is rarely the one
       // that goes; a real headshot is already measured to the head itself.
@@ -1226,9 +1226,8 @@ export class Gore {
 
   /** The top of the wall cell under x,y (a parapet's cap), or 0 for open floor. */
   _capAt(lv, x, y) {
-    if (!lv.inBounds(x, y)) return 0;
-    const i = lv.idx(x, y);
-    return lv.wall[i] === 1 ? lv.height[i] : 0;
+    // A parapet's cap or the top of a waist-high prop: somewhere to land.
+    return lv.restAt ? lv.restAt(x, y) : 0;
   }
 
   _wall(c, axis) {

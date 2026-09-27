@@ -259,6 +259,34 @@ export class Level {
     return false;
   }
 
+  /**
+   * Collision for rounds, enemy bolts and blood: the things that never leave
+   * the building. A parapet or a waist-high prop can be cleared from above,
+   * but a full-height wall, a pillar or a door stops them at any height,
+   * because above z 1 indoors is the inside of the ceiling slab, not open air.
+   */
+  blockedShot(x, y, z) {
+    if (x < 0 || y < 0 || x >= this.W || y >= this.H) return true;
+    const i = this.idx(x, y);
+    if (this.propBlock[i] && (this.propH[i] === 0 || z < this.propH[i])) return true;
+    const c = this.wall[i];
+    if (c === CELL_SOLID) return this.height[i] >= 1 || z < this.height[i];
+    if (c === CELL_DOOR) return this.blocked(x, y);
+    return false;
+  }
+
+  /**
+   * The surface something falling lands on at this point: a parapet's cap,
+   * the top of a waist-high prop, or the floor (0). Without it a chunk that
+   * clears a sandbag pile comes down inside it, where nobody can see it.
+   */
+  restAt(x, y) {
+    if (x < 0 || y < 0 || x >= this.W || y >= this.H) return 0;
+    const i = this.idx(x, y);
+    if (this.wall[i] === CELL_SOLID) return this.height[i] < 1 ? this.height[i] : 0;
+    return this.propBlock[i] && this.propH[i] > 0 ? this.propH[i] : 0;
+  }
+
   /** True if the cell blocks line of sight (doors count until nearly open). */
   opaque(x, y) {
     if (x < 0 || y < 0 || x >= this.W || y >= this.H) return true;
