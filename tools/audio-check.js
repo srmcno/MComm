@@ -13,7 +13,7 @@
 //   e  no NaN reaches any AudioParam, start() or stop()
 //   f  every scheduled time is >= currentTime
 
-import { Sound, SFX_NAMES as EXPORTED_NAMES, TRACK_NAMES as EXPORTED_TRACKS } from '../src/audio/synth.js';
+import { Sound, SFX_NAMES as EXPORTED_NAMES, TRACK_NAMES as EXPORTED_TRACKS, POOL_LIMITS } from '../src/audio/synth.js';
 
 /* ------------------------------------------------------------------ stub */
 
@@ -393,8 +393,12 @@ async function main() {
   }
   ok(fired === 500 && gibs === 300 && claws === 200, 'fired the whole magazine',
     `${fired} nailer, ${gibs} gib, ${claws} stalker_attack`);
-  ok(liveNodes() < 200, '(d) live nodes bounded after the run', `${liveNodes()} live, peak ${stressPeak}`);
-  ok(stressPeak < 200, '(d) live nodes bounded throughout the run', `peak ${stressPeak}`);
+  // The ceiling is what the pools promise: the persistent graph, a backline for
+  // each of two cross-fading tracks, and each pool's node budget plus the one
+  // voice that may finish building after its pool reached the budget.
+  const CEIL = 17 + 2 * 32 + POOL_LIMITS.nodes[0] + POOL_LIMITS.nodes[1] + 2 * 48;
+  ok(liveNodes() < CEIL, '(d) live nodes bounded after the run', `${liveNodes()} live, peak ${stressPeak}, ceiling ${CEIL}`);
+  ok(stressPeak < CEIL, '(d) live nodes bounded throughout the run', `peak ${stressPeak}`);
 
   // pathological: an entire magazine inside one frame
   let burstPeak = 0;
@@ -404,7 +408,7 @@ async function main() {
   for (let i = 0; i < 40; i++) S.sfx('airburst');
   for (let i = 0; i < 30; i++) S.sfx('gorger_burst');
   const burst2 = liveNodes();
-  ok(burstPeak < 200 && burst2 < 200, 'voice cap survives a single-frame burst',
+  ok(burstPeak < CEIL && burst2 < CEIL, 'voice cap survives a single-frame burst',
     `500 nailer + 300 gib -> ${burstPeak}, +40 airburst +30 gorger_burst -> ${burst2}`);
   for (let f = 0; f < 600; f++) { ctx.tick(1 / 60); S.update(1 / 60); }
 

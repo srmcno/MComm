@@ -66,15 +66,18 @@ const MOTIF = [77, 75, 74, 69];             // F5  Eb5  D5  A4  — a descending
 /** Inharmonic partial ratios for struck metal. */
 const METAL = [1, 1.414, 1.932, 2.618, 3.142, 4.075];
 
+// Every loop is 16 bars of 4/4 in sixteenths. `space` is the track's own echo:
+// [delay s, feedback, damping Hz], with the delay set to a dotted eighth at the
+// track's tempo so the lead guitar's repeats land on the grid.
 const TRACKS = {
-  title:    { bpm: 78,  spb: 16, bars: 4, gain: 0.86, loop: true,  space: [0.31, 0.62, 2600] },
-  prowl:    { bpm: 104, spb: 16, bars: 8, gain: 1.00, loop: true,  space: [0.17, 0.42, 1500] },
-  siege:    { bpm: 148, spb: 16, bars: 4, gain: 0.90, loop: true,  space: [0.101, 0.34, 3200] },
-  boss:     { bpm: 132, spb: 14, bars: 4, gain: 0.84, loop: true,  space: [0.227, 0.55, 1800] },
-  victory:  { bpm: 120, spb: 16, bars: 7, gain: 1.00, loop: false, tail: 3.2, space: [0.25, 0.5, 4000] },
-  gameover: { bpm: 62,  spb: 16, bars: 4, gain: 0.95, loop: false, tail: 4.5, space: [0.41, 0.66, 2000] },
-  hunt:     { bpm: 96,  spb: 16, bars: 8, gain: 1.00, loop: true,  space: [0.195, 0.5, 1200] },
-  hero:     { bpm: 118, spb: 16, bars: 8, gain: 0.90, loop: true,  space: [0.127, 0.3, 3800] },
+  title:    { bpm: 136, spb: 16, bars: 18, gain: 0.92, loop: true,  space: [0.331, 0.3, 2600] },
+  prowl:    { bpm: 150, spb: 16, bars: 16, gain: 0.92, loop: true,  space: [0.3, 0.26, 2400] },
+  siege:    { bpm: 176, spb: 16, bars: 16, gain: 0.9,  loop: true,  space: [0.256, 0.24, 3000] },
+  boss:     { bpm: 186, spb: 16, bars: 16, gain: 0.9,  loop: true,  space: [0.242, 0.3, 2200] },
+  victory:  { bpm: 150, spb: 16, bars: 8,  gain: 0.95, loop: false, tail: 3.4, space: [0.3, 0.34, 3400] },
+  gameover: { bpm: 84,  spb: 16, bars: 5,  gain: 0.95, loop: false, tail: 5.0, space: [0.536, 0.36, 1800] },
+  hunt:     { bpm: 160, spb: 16, bars: 16, gain: 0.92, loop: true,  space: [0.281, 0.32, 1900] },
+  hero:     { bpm: 168, spb: 16, bars: 16, gain: 0.9,  loop: true,  space: [0.268, 0.26, 3200] },
 };
 
 /** Major pentatonic, for the one track that is allowed to enjoy itself. */
@@ -82,9 +85,11 @@ const PENT = [0, 2, 4, 7, 9];
 
 /* -------------------------------------------------------------------- limits */
 
-const MAXV = [20, 24];          // concurrent voices: [sfx, music]
-const BUDGET = [96, 128];       // hard node ceiling per pool — the anti-leak valve
-const LOOKAHEAD = 0.15;         // sequencer scheduling horizon, seconds
+const MAXV = [26, 44];          // concurrent voices: [sfx, music]
+const BUDGET = [130, 300];      // hard node ceiling per pool: the anti-leak valve
+const LOOKAHEAD = 0.2;          // sequencer scheduling horizon, seconds
+/** The pool limits, read-only, so tests can bound the graph by what it promises. */
+export const POOL_LIMITS = Object.freeze({ voices: MAXV.slice(), nodes: BUDGET.slice() });
 const SEND_LV = [0.16, 0.36, 0.7];
 
 /* =================================================================== Sound */
@@ -542,8 +547,11 @@ export class Sound {
 
       const ctx = this._ctx, now = this._now();
       const bus = ctx.createGain();
-      bus.gain.setValueAtTime(0.0001, now);
-      bus.gain.linearRampToValueAtTime(def.gain, now + fade);
+      // equal-power fade in, the mirror of _retire's fade out, so a cross-fade
+      // holds its level instead of dipping in the middle
+      bus.gain.setValueAtTime(0, now);
+      try { bus.gain.setValueCurveAtTime(fadeCurve(def.gain, true), now + 0.004, fade); }
+      catch (e) { bus.gain.linearRampToValueAtTime(def.gain, now + fade); }
       bus.connect(this._duck);
 
       // Per-track ambience: a damped feedback delay living inside the music bus,
@@ -560,8 +568,11 @@ export class Sound {
       const t = {
         name: track, def, bus, send, nodes: [bus, send, dly, dmp, fbg],
         stepDur: 60 / def.bpm / 4, spb, total: def.loop ? Infinity : spb * def.bars,
-        step: 0, nextTime: now + 0.06, intensity, dying: false, endsAt: 0,
+        step: 0, nextTime: now + 0.06, intensity, dying: false, endsAt: 0, rig: null,
       };
+      // The backline. If a browser cannot build it the instruments fall back
+      // to a shaper each, so the band still plays, just less efficiently.
+      try { t.rig = buildRig(this, t); } catch (e) { t.rig = null; this._err = e; }
       this._tracks.push(t);
     } catch (e) { this._err = e; /* music must never take the game down */ }
   }
@@ -579,14 +590,19 @@ export class Sound {
   }
 
   _retire(t, fade) {
-    if (t.dying) return;
+    const now = this._now();
+    // A stinger that is already ringing out may still be cut shorter, never longer.
+    if (t.dying && now + fade + 0.06 >= t.endsAt) return;
     t.dying = true;
-    const now = this._now(), p = t.bus.gain;
+    const p = t.bus.gain;
     try {
-      if (p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(now); else p.cancelScheduledValues(now);
-      p.setValueAtTime(clamp(fin(p.value, t.def.gain), 0.0001, 4), now);
-      p.exponentialRampToValueAtTime(0.0001, now + fade);
-      p.linearRampToValueAtTime(0, now + fade + 0.02);
+      const v0 = clamp(fin(p.value, t.def.gain), 0, 4);
+      // Without cancelAndHold, cancelling from `now` would keep a fade-in curve
+      // that is still running, and the next event inside it throws. Clear all.
+      if (p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(now); else p.cancelScheduledValues(0);
+      p.setValueAtTime(v0, now);
+      try { p.setValueCurveAtTime(fadeCurve(v0, false), now + 0.004, fade); }
+      catch (e) { p.linearRampToValueAtTime(0, now + fade); }
     } catch (e) { /* ignore */ }
     t.endsAt = now + fade + 0.06;
   }
@@ -638,8 +654,16 @@ export class Sound {
     let guard = 0;
     while (t.nextTime < horizon && guard++ < 64) {
       if (t.step >= t.total) {
-        this._retire(t, 0.8);
-        t.endsAt = Math.max(t.endsAt, t.nextTime + fin(t.def.tail, 2));
+        // A stinger ends by letting its last chord ring: stop writing notes,
+        // hold the bus, and only fade the final moment of the tail.
+        const end = t.nextTime + fin(t.def.tail, 2);
+        t.dying = true;
+        t.endsAt = end + 0.06;
+        try {
+          const p = t.bus.gain;
+          p.setValueAtTime(t.def.gain, Math.max(now, end - 0.7));
+          p.linearRampToValueAtTime(0, end);
+        } catch (e) { /* ignore */ }
         return;
       }
       const fn = STEP[t.name];
@@ -939,6 +963,270 @@ export class Sound {
     this._go(v, o, t, len);
     return v;
   }
+
+  /* ------------------------------------------------------------ the band */
+  // The soundtrack's players. They play clean into the track's backline
+  // (buildRig, below the class), where the drive and the speaker cabinet exist
+  // once per track instead of once per note: a power chord costs one saw per
+  // string and a filter, not a distortion stage. Without a.rig each one brings
+  // a small shaper of its own and plays into a.dest, so they work anywhere.
+
+  /**
+   * Double-tracked rhythm guitar. Two players, hard left and right, a saw per
+   * string, a few cents and a few milliseconds apart: that disagreement is the
+   * width. `a.notes` are semitones over `freq` (default root, fifth, octave).
+   * a.mute palm-mutes (a dark pre-drive lowpass and a short decay), a.slide
+   * dives that many semitones over the back half of the note.
+   */
+  gtr(t0, freq, dur, a = {}) {
+    if (!this._ready) return null;
+    const rig = a.rig || null;
+    const v = this._v(fin(a.pri, 6), a, fin(a.revS, 0), fin(a.revB, 0), fin(a.pool, 1), rig ? rig.gl : a.dest);
+    if (!v) return null;
+    const t = this._t(t0), ctx = this._ctx;
+    const f = Math.max(1, hzOf(freq));
+    const iv = a.notes || POWER;
+    const mute = !!a.mute;
+    const len = Math.max(0.03, fin(dur, 0.2));
+    const pk = fin(a.g, 0.5);
+    const co = clamp(fin(a.cutoff, mute ? 750 : 3200), 80, 12000);
+    const slide = fin(a.slide, 0);
+    let own = null;
+    if (!rig) {
+      // no backline: a shaper of its own, trimmed to the level the rig would give
+      own = ctx.createWaveShaper();
+      own.curve = ampCurve();
+      const trim = ctx.createGain();
+      trim.gain.value = RIG.gtr;
+      own.connect(trim); trim.connect(v.out);
+      this._n(v, own); this._n(v, trim);
+    }
+    for (let side = 0; side < 2; side++) {
+      // the second player is never quite on the beat, which is the point of him
+      const ts = t + (side ? 0.003 + this._r() * 0.007 : 0);
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      kRate(lp.frequency);
+      lp.frequency.setValueAtTime(co * (mute ? 2.4 : 1.7), ts);
+      lp.frequency.exponentialRampToValueAtTime(co, ts + (mute ? 0.035 : 0.25));
+      lp.Q.value = mute ? 1.4 : 0.7;
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      lp.connect(g);
+      g.connect(rig ? (side ? rig.gr : rig.gl) : own);
+      this._n(v, lp); this._n(v, g);
+      const end = mute
+        ? this._env(g, ts, pk, 0.002, Math.min(len, fin(a.dec, 0.15)))
+        : this._ahr(g, ts, pk, 0.003, Math.max(0.01, len - 0.03), fin(a.rel, 0.07));
+      for (let i = 0; i < iv.length; i++) {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        const fi = f * Math.pow(2, fin(iv[i], 0) / 12);
+        o.frequency.setValueAtTime(fi, ts);
+        if (slide) {
+          o.frequency.setValueAtTime(fi, ts + len * 0.4);
+          o.frequency.exponentialRampToValueAtTime(Math.max(1, fi * Math.pow(2, slide / 12)), ts + len);
+        }
+        o.detune.value = (side ? 4 : -4) + (this._r() - 0.5) * 6;
+        o.connect(lp);
+        this._n(v, o);
+        this._go(v, o, ts, end);
+      }
+    }
+    return v;
+  }
+
+  /**
+   * Lead guitar: a saw and a square a few cents apart. a.bend bends up into
+   * the note from that many semitones below, a.fall drops off the end, and the
+   * vibrato arrives late, the way a player's does. a.side (-1, 0, 1) picks the
+   * lead amp's left, centre or right input, so a twin harmony gets a speaker
+   * of its own and the two lines never distort into each other.
+   */
+  lead(t0, freq, dur, a = {}) {
+    if (!this._ready) return null;
+    const rig = a.rig || null;
+    const side = clamp(Math.round(fin(a.side, 0)), -1, 1);
+    const v = this._v(fin(a.pri, 7), a, fin(a.revS, 0), fin(a.revB, 0), fin(a.pool, 1),
+      rig ? rig.lead[side + 1] : a.dest);
+    if (!v) return null;
+    const t = this._t(t0), ctx = this._ctx;
+    const f = Math.max(1, hzOf(freq));
+    const len = Math.max(0.04, fin(dur, 0.3));
+    const bend = fin(a.bend, 0), fall = fin(a.fall, 0);
+    let into = v.out;
+    if (!rig) {
+      const ws = ctx.createWaveShaper();
+      ws.curve = leadCurve();
+      const trim = ctx.createGain();
+      trim.gain.value = RIG.lead;
+      ws.connect(trim); trim.connect(v.out);
+      this._n(v, ws); this._n(v, trim);
+      into = ws;
+    }
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    g.connect(into);
+    this._n(v, g);
+    const end = this._ahr(g, t, fin(a.g, 0.4), 0.004, Math.max(0.01, len - 0.05), fin(a.rel, 0.09));
+    let vib = null;
+    const depth = fin(a.vib, len > 0.3 ? 24 : 0);
+    if (depth > 0) {
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = clamp(fin(a.rate, 5.7), 0.5, 20);
+      vib = ctx.createGain();
+      vib.gain.setValueAtTime(0, t);
+      vib.gain.linearRampToValueAtTime(depth, t + Math.min(0.4, len * 0.6));
+      lfo.connect(vib);
+      this._n(v, lfo); this._n(v, vib);
+      this._go(v, lfo, t, end);
+    }
+    for (let i = 0; i < 2; i++) {
+      const o = ctx.createOscillator();
+      o.type = i ? 'square' : 'sawtooth';
+      if (bend) {
+        o.frequency.setValueAtTime(f * Math.pow(2, -bend / 12), t);
+        o.frequency.exponentialRampToValueAtTime(f, t + fin(a.bendT, 0.09));
+      } else {
+        o.frequency.setValueAtTime(f, t);
+      }
+      if (fall && len > 0.15) {
+        o.frequency.setValueAtTime(f, t + len * 0.62);
+        o.frequency.exponentialRampToValueAtTime(f * Math.pow(2, -fall / 12), t + len + 0.06);
+      }
+      o.detune.value = i ? 6 : -3;
+      if (vib) vib.connect(o.detune);
+      o.connect(g);
+      this._n(v, o);
+      this._go(v, o, t, end);
+    }
+    return v;
+  }
+
+  /**
+   * Picked bass, locked to the kick, through a lowpass that closes like the
+   * pick attack fading.
+   */
+  bassGtr(t0, freq, dur, a = {}) {
+    if (!this._ready) return null;
+    const rig = a.rig || null;
+    const v = this._v(fin(a.pri, 6), a, fin(a.revS, 0), fin(a.revB, 0), fin(a.pool, 1), rig ? rig.bass : a.dest);
+    if (!v) return null;
+    const t = this._t(t0), ctx = this._ctx;
+    const f = Math.max(1, hzOf(freq));
+    const len = Math.max(0.03, fin(dur, 0.2));
+    const mute = !!a.mute;
+    const co = clamp(fin(a.cutoff, mute ? 520 : 820), 60, 8000);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    kRate(lp.frequency);
+    lp.frequency.setValueAtTime(co * 3.2, t);
+    lp.frequency.exponentialRampToValueAtTime(co, t + 0.12);
+    lp.Q.value = 1.1;
+    this._n(v, lp);
+    let tail = lp;
+    if (!rig) {
+      const ws = ctx.createWaveShaper();
+      ws.curve = softCurve();
+      lp.connect(ws);
+      this._n(v, ws);
+      tail = ws;
+    }
+    // the envelope rides the voice's own output gain: one node fewer per note
+    tail.connect(v.out);
+    // without the rig the shaper sits before this envelope, so trim here instead
+    const pk = fin(a.g, 0.5) * clamp(fin(a.vol, 1), 0, 4) * (rig ? 1 : RIG.bass * 2);
+    const end = mute
+      ? this._env(v.out, t, pk, 0.002, Math.min(len, 0.17))
+      : this._ahr(v.out, t, pk, 0.003, Math.max(0.01, len - 0.02), fin(a.rel, 0.05));
+    // two saws a few cents apart: the growl moves, and the floor stays a floor
+    for (let i = 0; i < 2; i++) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = f;
+      o.detune.value = i ? 7 : -3;
+      o.connect(lp);
+      this._n(v, o);
+      this._go(v, o, t, end);
+    }
+    return v;
+  }
+
+  /**
+   * The MUTTER choir: detuned saws sung through three formant peaks that open
+   * from "oh" to "ah" as the chord swells. Sincere, enormous, and slightly
+   * flat, like every choir that ever worked for a villain.
+   */
+  choir(t0, notes, dur, a = {}) {
+    if (!this._ready) return null;
+    const v = this._v(fin(a.pri, 6), a, fin(a.revS, 0), fin(a.revB, 0), fin(a.pool, 1), a.dest);
+    if (!v) return null;
+    const t = this._t(t0), ctx = this._ctx;
+    const len = Math.max(0.1, fin(dur, 1));
+    const n = Math.max(1, notes.length);
+    const sum = ctx.createGain();
+    sum.gain.value = 1 / Math.sqrt(n * 2);
+    const env = ctx.createGain();
+    env.gain.value = 0;
+    env.connect(v.out);
+    this._n(v, sum); this._n(v, env);
+    for (let i = 0; i < CHOIR_F.length; i++) {
+      const F = CHOIR_F[i];
+      const b = ctx.createBiquadFilter();
+      b.type = 'bandpass';
+      kRate(b.frequency);
+      b.frequency.setValueAtTime(F[0], t);
+      b.frequency.linearRampToValueAtTime(F[1], t + len * 0.6);
+      b.Q.value = F[3];
+      const bg = ctx.createGain();
+      bg.gain.value = F[2];
+      sum.connect(b); b.connect(bg); bg.connect(env);
+      this._n(v, b); this._n(v, bg);
+    }
+    const end = this._ahr(env, t, fin(a.g, 0.5), fin(a.atk, 0.12), Math.max(0.01, len - 0.12), fin(a.rel, 0.5));
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 5.1;
+    const vib = ctx.createGain();
+    vib.gain.value = 13;
+    lfo.connect(vib);
+    this._n(v, lfo); this._n(v, vib);
+    this._go(v, lfo, t, end);
+    for (let i = 0; i < notes.length; i++) {
+      const f = hzOf(notes[i]);
+      for (let k = 0; k < 2; k++) {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = f;
+        o.detune.value = (k ? 9 : -9) + (this._r() - 0.5) * 8;
+        vib.connect(o.detune);
+        o.connect(sum);
+        this._n(v, o);
+        this._go(v, o, t, end);
+      }
+    }
+    return v;
+  }
+}
+
+/** Quarter-sine fade, 0 up to `g` or `g` down to 0: equal power across a cross-fade. */
+function fadeCurve(g, up) {
+  const c = new Float32Array(48);
+  for (let i = 0; i < 48; i++) {
+    const x = (i / 47) * Math.PI * 0.5;
+    c[i] = g * (up ? Math.sin(x) : Math.cos(x));
+  }
+  if (!up) c[47] = 0;          // cos(pi/2) is 6e-17, and silence should be silence
+  return c;
+}
+
+/**
+ * Sweep a filter once per 128-sample block instead of once per sample. A
+ * swept biquad recomputes its coefficients at every step of its automation,
+ * and a guitar's pick sweep lasts 35 ms: nobody hears 3 ms steps inside that,
+ * but the audio thread feels every one of the per-sample versions.
+ */
+function kRate(p) {
+  try { if (p && 'automationRate' in p) p.automationRate = 'k-rate'; } catch (e) { /* older engines */ }
 }
 
 /** Voice-layer pitches are always Hz. Sequencers call mtof() themselves. */
@@ -977,29 +1265,40 @@ function shapeCurve(n, fn) {
 }
 
 /* ================================================================== tracks */
-// Note data is written as scale degrees over ROOT so every track shares one
-// harmonic world. mk() routes a voice into the track bus and keeps it away from
-// the SFX convolvers (music gets its own space, inside the music bus).
+// The soundtrack is a band: two rhythm guitars, a lead, a bass and a kit,
+// playing tab (see TAB below) through a backline built once per track. mk()
+// routes a voice into the track and keeps it away from the SFX convolvers
+// (music gets its own space, inside the music bus).
 
-const mk = (t, a) => { a.dest = t.bus; a.pool = 1; a.revS = 0; a.revB = 0; return a; };
+const mk = (t, a) => { a.dest = t.bus; a.rig = t.rig; a.pool = 1; a.revS = 0; a.revB = 0; return a; };
 
-/** Dead-thumping kick used by prowl / siege / boss. */
+/** The drum bus: the kit's soft clipper when the backline exists. */
+const KIT = (t) => (t.rig ? t.rig.kit : t.bus);
+
+/**
+ * Kick: a fast pitch dive for the punch, a sine tail for the weight, and the
+ * beater click, which is what lets a kick read at 180 BPM on a laptop speaker.
+ * Double-kick runs pass a short `len` so sixteenths stay sixteenths.
+ */
 function kick(S, t, T, g, tune, len) {
-  const v = S._v(6, null, 0, 0, 1, t.bus);
+  const v = S._v(7, null, 0, 0, 1, KIT(t));
   if (!v) return;
   v.owner = t;
-  S._tone(v, T, len, { type: 'sine', f: 132 * tune, f2: 41 * tune, sweep: 0.16, g, atk: 0.002, dec: len });
-  S._nz(v, T, 0.03, { type: 'highpass', f: 1400, q: 0.7, g: g * 0.32, dec: 0.028 });
+  S._tone(v, T, len, { type: 'sine', f: 158 * tune, f2: 50 * tune, sweep: 0.034 / len, g, atk: 0.0015, dec: len });
+  S._tone(v, T, 0.04, { type: 'triangle', f: 420 * tune, f2: 110 * tune, sweep: 0.6, g: g * 0.32, atk: 0.001, dec: 0.035 });
+  S._nz(v, T, 0.016, { type: 'bandpass', f: 4300, q: 0.8, g: g * 0.8, atk: 0.0007, dec: 0.014 });
 }
 
-/** Hard snare: tuned body plus a wide noise crack. */
+/** Snare: a tuned shell, the wires, and a crack on top for the backbeat. */
 function snare(S, t, T, g) {
-  const v = S._v(6, null, 0, 0, 1, t.bus);
+  const v = S._v(7, null, 0, 0, 1, KIT(t));
   if (!v) return;
   v.owner = t;
-  S._tone(v, T, 0.13, { type: 'triangle', f: 196, f2: 138, sweep: 0.5, g: g * 0.5, dec: 0.12 });
-  S._nz(v, T, 0.19, { type: 'highpass', f: 1150, q: 0.8, g: g * 0.85, dec: 0.17 });
-  S._nz(v, T, 0.09, { type: 'bandpass', f: 340, q: 1.4, g: g * 0.4, dec: 0.08 });
+  S._tone(v, T, 0.12, { type: 'triangle', f: 240, f2: 178, sweep: 0.4, g: g * 1.0, atk: 0.001, dec: 0.11 });
+  S._tone(v, T, 0.06, { type: 'sine', f: 410, f2: 335, sweep: 0.5, g: g * 0.35, atk: 0.001, dec: 0.05 });
+  S._nz(v, T, 0.22, { type: 'highpass', f: 1500, q: 0.7, g: g * 1.6, atk: 0.001, dec: 0.2 });
+  S._nz(v, T, 0.06, { type: 'bandpass', f: 2400, q: 0.8, g: g * 0.9, atk: 0.0005, dec: 0.05 });
+  S._nz(v, T, 0.05, { type: 'bandpass', f: 5200, q: 0.9, g: g * 0.9, atk: 0.0005, dec: 0.045 });
 }
 
 /**
@@ -1061,311 +1360,611 @@ function gate(S, v, node, curveArr, t, dur) {
 }
 
 function hat(S, t, T, g, open) {
-  const v = S._v(2, null, 0, 0, 1, t.bus);
+  const v = S._v(2, null, 0, 0, 1, KIT(t));
   if (!v) return;
   v.owner = t;
-  S._nz(v, T, open ? 0.26 : 0.045, {
-    type: 'highpass', f: open ? 6200 : 7600, q: 0.7, g, dec: open ? 0.24 : 0.04,
+  S._nz(v, T, open ? 0.3 : 0.045, {
+    type: 'highpass', f: open ? 6800 : 8200, q: 0.8, g, atk: 0.0008, dec: open ? 0.28 : 0.038,
   });
 }
 
+/** Ride: a ping with a little wash; the bell is the same stick on the dome. */
+function ride(S, t, T, g, bell) {
+  const v = S._v(3, null, 0, 0, 1, KIT(t));
+  if (!v) return;
+  v.owner = t;
+  S._nz(v, T, 0.5, { type: 'bandpass', f: 7200, q: 1.1, g: g * 0.7, atk: 0.0008, dec: bell ? 0.55 : 0.4 });
+  S._tone(v, T, 0.5, { type: 'sine', f: 3170, g: g * (bell ? 0.34 : 0.12), atk: 0.001, dec: bell ? 0.5 : 0.22 });
+  if (bell) S._tone(v, T, 0.4, { type: 'sine', f: 4480, g: g * 0.2, atk: 0.001, dec: 0.36 });
+}
+
+/** Crash: a long bright wash and a short clang where the stick hit. */
+function crash(S, t, T, g) {
+  const v = S._v(5, null, 0, 0, 1, KIT(t));
+  if (!v) return;
+  v.owner = t;
+  S._nz(v, T, 1.9, { type: 'highpass', f: 4400, q: 0.6, g: g * 0.75, atk: 0.001, dec: 1.8 });
+  S._nz(v, T, 0.5, { type: 'bandpass', f: 3000, q: 1.2, g: g * 0.5, atk: 0.001, dec: 0.45 });
+  S._nz(v, T, 1.1, { type: 'bandpass', f: 9500, q: 0.9, g: g * 0.35, atk: 0.002, dec: 1.0, rate: 0.7 });
+}
+
+const TOM_F = [205, 150, 98];
+const TOM_PAN = [{ vol: 1, pan: -0.45 }, { vol: 1, pan: 0.05 }, { vol: 1, pan: 0.45 }];
+
+/** Toms, high to floor, spread across the kit the way a drummer sees them. */
+function tom(S, t, T, g, which) {
+  const v = S._v(6, TOM_PAN[which], 0, 0, 1, KIT(t));
+  if (!v) return;
+  v.owner = t;
+  const f = TOM_F[which];
+  S._tone(v, T, 0.42, { type: 'sine', f: f * 1.55, f2: f, sweep: 0.22, g, atk: 0.001, dec: 0.4 });
+  S._tone(v, T, 0.12, { type: 'triangle', f: f * 2.4, f2: f * 1.6, sweep: 0.5, g: g * 0.28, atk: 0.001, dec: 0.1 });
+  S._nz(v, T, 0.03, { type: 'bandpass', f: 1900, q: 1, g: g * 0.4, atk: 0.0006, dec: 0.026 });
+}
+
+/* ------------------------------------------------------------- backline */
+
+let AMP_C = null, LEAD_C = null, SOFT_C = null, KIT_C = null;
+
+/**
+ * Hi-gain amp: tanh with a little bias, so the two halves clip unevenly and
+ * add the even harmonics a valve does. Built once, shared by every shaper.
+ */
+function ampCurve() {
+  if (AMP_C) return AMP_C;
+  const n = 2048, c = new Float32Array(n), k = 7.5, b = 0.14, off = Math.tanh(b);
+  let m = 0;
+  for (let i = 0; i < n; i++) {
+    c[i] = Math.tanh(k * ((i * 2) / (n - 1) - 1) + b) - off;
+    if (Math.abs(c[i]) > m) m = Math.abs(c[i]);
+  }
+  for (let i = 0; i < n; i++) c[i] /= m;
+  return (AMP_C = c);
+}
+/** Lead: symmetric and a little softer, so a held note sings instead of fizzing. */
+function leadCurve() { return LEAD_C || (LEAD_C = curve(4.2, 2048)); }
+/** Bass grit: warm enough to growl through a laptop, not enough to lose the floor. */
+function softCurve() { return SOFT_C || (SOFT_C = curve(1.8, 1024)); }
+/** Kit: a gentle soft clip. Kick and snare get louder without getting taller. */
+function kitCurve() { return KIT_C || (KIT_C = curve(1.25, 1024)); }
+
+/** Levels of the backline. The instruments play clean; this is the band's mix. */
+const RIG = {
+  drive: 3.4, gtr: 0.21,              // rhythm amp: input drive, output level
+  leadDrive: 3.2, lead: 0.16, echo: 0.34,
+  bassDrive: 1.7, bass: 0.17,
+  kitDrive: 1.1, kit: 0.9,
+};
+
+/**
+ * The backline: one set of amps per playing track, built when the track
+ * starts and torn down with it (every node here lives in t.nodes).
+ *
+ *   gl (hard left) ─┐                        Both rhythm players share one
+ *   gr (hard right) ┴> drive, hp, mid hump    stereo amp. Shapers and filters run
+ *      -> SHAPER -> cab: hp, thump, mud cut,  per channel, so the two players
+ *      bite, two lowpasses -> out -> bus      never intermodulate with each other.
+ *   lead [L, C, R] -> drive, hp -> SHAPER -> honk -> lowpass -> out -> bus + echo
+ *   bass -> drive -> SHAPER -> lowpass -> growl -> out -> bus
+ *   kit  -> drive -> SHAPER -> out -> bus
+ *
+ * About thirty nodes a track, against one shaper and a cabinet per note.
+ */
+function buildRig(S, t) {
+  const ctx = S._ctx, nodes = t.nodes;
+  const keep = (n) => { nodes.push(n); return n; };
+  const gain = (v) => { const n = keep(ctx.createGain()); n.gain.value = v; return n; };
+  const filt = (type, f, q, db) => {
+    const n = keep(ctx.createBiquadFilter());
+    n.type = type; n.frequency.value = f; n.Q.value = q;
+    if (db) n.gain.value = db;
+    return n;
+  };
+  const shaper = (c, os) => { const n = keep(ctx.createWaveShaper()); n.curve = c; n.oversample = os; return n; };
+  // without a panner both players land in both channels: mono, but still a band
+  const pan = (p) => {
+    if (!ctx.createStereoPanner) return gain(1);
+    const n = keep(ctx.createStereoPanner()); n.pan.value = p; return n;
+  };
+  const wire = (list) => { for (let i = 1; i < list.length; i++) list[i - 1].connect(list[i]); return list[list.length - 1]; };
+
+  const gl = pan(-1), gr = pan(1), drive = gain(RIG.drive);
+  gl.connect(drive); gr.connect(drive);
+  wire([
+    drive, filt('highpass', 140, 0.7), filt('peaking', 800, 0.8, 6), shaper(ampCurve(), '2x'),
+    filt('highpass', 88, 0.7), filt('peaking', 120, 0.9, 2), filt('peaking', 380, 1.2, -5),
+    filt('peaking', 2100, 0.8, 6), filt('lowpass', 5200, 0.85), filt('lowpass', 7500, 0.6), gain(RIG.gtr),
+  ]).connect(t.bus);
+
+  const lead = [pan(-0.75), pan(0), pan(0.75)];
+  const ldrive = gain(RIG.leadDrive);
+  for (let i = 0; i < 3; i++) lead[i].connect(ldrive);
+  const lout = wire([
+    ldrive, filt('highpass', 260, 0.7), shaper(leadCurve(), '2x'),
+    filt('peaking', 1800, 0.9, 5), filt('lowpass', 5400, 0.7), gain(RIG.lead),
+  ]);
+  lout.connect(t.bus);
+  wire([lout, gain(RIG.echo), t.send]);
+
+  const bass = gain(RIG.bassDrive);
+  wire([bass, shaper(softCurve(), 'none'), filt('lowpass', 2600, 0.7), filt('peaking', 900, 1, 3), gain(RIG.bass)])
+    .connect(t.bus);
+
+  const kit = gain(RIG.kitDrive);
+  wire([kit, shaper(kitCurve(), 'none'), gain(RIG.kit)]).connect(t.bus);
+
+  return { gl, gr, lead, bass, kit };
+}
+
+/* ------------------------------------------------------------------- tab */
+// Every part is written as tab, one character per sixteenth, 16 to the bar.
+//
+// Rhythm guitar (g) and bass (b). Letters count semitones up from low D, the
+// house key (drop D):   a b c d e f g h i j k l m  =  D Eb E F F# G Ab A Bb B C C# D
+//   a-m  palm-muted chug (root and fifth)      A-M  open power chord (root, 5th, 8ve)
+//   N-Z  open single note, same D-to-D run     n-z  single note an octave up
+//   -  tie    /  tie, and dive off the end     .  rest
+// The bass follows the guitar's roots unless a bar gives it its own line.
+//
+// Lead (l, and l2 for a twin harmony on the other speaker): 0-9 then a-z
+// count semitones up from D4, so c = D5 and o = D6. A-Z is the same pitch bent
+// up from a whole step below, * is a pinch-harmonic squeal, - and ~ tie
+// (long notes get vibrato anyway), / ties and falls off the end.
+//
+// Drums: k  x kick, X accent, d double-kick (short, for sixteenth runs)
+//        s  x snare, X accent, g ghost
+//        h  x closed hat, o open hat, r ride, b ride bell, c crash
+//        t  h / m / f high, mid and floor tom, s snare inside a fill
+// Extras (x): B boom, R riser to the next bar, V choir (bar.ch), S stab
+//        (bar.ch), A anvil, T bell toll, Y scream, Z scrape, P pick slide,
+//        K the last hit.
+
+const POWER = [0, 7, 12], FIFTH = [0, 7], ONE = [0];
+const LEAD0 = ROOT + 24;                    // lead tab '0' = D4
+/** Formant peaks for the choir: [from Hz, to Hz, gain, Q], "oh" opening to "ah". */
+const CHOIR_F = [[430, 720, 1, 6], [800, 1100, 0.55, 8], [2600, 2450, 0.2, 9]];
+const REST16 = '................';
+
+/** Rhythm/bass tab -> 16 slots of null or { kind 1 mute | 2 chord | 3 single, n, len, fall }. */
+function tabG(s) {
+  const out = new Array(16).fill(null);
+  if (!s) return out;
+  for (let i = 0; i < 16; i++) {
+    const c = s.charCodeAt(i);
+    let kind = 0, n = 0;
+    if (c >= 97 && c <= 109) { kind = 1; n = c - 97; }
+    else if (c >= 65 && c <= 77) { kind = 2; n = c - 65; }
+    else if (c >= 78 && c <= 90) { kind = 3; n = c - 78; }
+    else if (c >= 110 && c <= 122) { kind = 3; n = c - 98; }
+    else continue;
+    let len = 1, fall = 0;
+    while (i + len < 16 && (s[i + len] === '-' || s[i + len] === '/')) { if (s[i + len] === '/') fall = 1; len++; }
+    out[i] = { kind, n, len, fall };
+  }
+  return out;
+}
+
+/** Lead tab -> 16 slots of null or { n, len, bend, fall, sq }. */
+function tabL(s) {
+  const out = new Array(16).fill(null);
+  if (!s) return out;
+  for (let i = 0; i < 16; i++) {
+    const c = s.charCodeAt(i);
+    let n = -1, bend = 0, sq = 0;
+    if (c >= 48 && c <= 57) n = c - 48;
+    else if (c >= 97 && c <= 122) n = c - 87;
+    else if (c >= 65 && c <= 90) { n = c - 55; bend = 2; }
+    else if (c === 42) { n = 31; sq = 1; }
+    else continue;
+    let len = 1, fall = 0;
+    while (i + len < 16 && '-~/'.indexOf(s[i + len]) >= 0) { if (s[i + len] === '/') fall = 1; len++; }
+    out[i] = { n, len, bend, fall, sq };
+  }
+  return out;
+}
+
+/** Transpose a rhythm tab by `n` semitones, wrapping inside its D-to-D run. */
+function tr(s, n) {
+  let o = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    const base = c >= 97 && c <= 109 ? 97 : c >= 65 && c <= 77 ? 65 : c >= 78 && c <= 90 ? 78 : c >= 110 && c <= 122 ? 110 : 0;
+    if (!base) { o += s[i]; continue; }
+    let x = c - base + n;
+    while (x > 12) x -= 12;
+    while (x < 0) x += 12;
+    o += String.fromCharCode(base + x);
+  }
+  return o;
+}
+
+const row = (s) => (typeof s === 'string' && s.length === 16 ? s : REST16);
+
+/** One bar of the band, parsed once at load so the sequencer only reads it. */
+function bar(o) {
+  return {
+    src: o,
+    k: row(o.k), s: row(o.s), h: row(o.h), t: row(o.t), x: row(o.x),
+    gE: tabG(o.g), bE: o.b ? tabG(o.b) : null, nb: !!o.nb,
+    lE: tabL(o.l), l2E: tabL(o.l2), twin: !!o.l2,
+    chF: (o.ch || []).map((n) => mtof(ROOT + n)),
+    ring: fin(o.ring, 0),
+  };
+}
+const bars = (list) => list.map(bar);
+
+/* ----------------------------------------------------------------- songs */
+// Original material, all of it in D. The house riff language: drop-D chugs,
+// the flat second (Eb) for menace, the flat fifth (Ab) for worse, and the
+// Bb-C-D climb whenever somebody deserves a medal.
+
+const K8 = 'x.x.x.x.x.x.x.x.', K4 = 'x...x...x...x...', KDD = 'dddddddddddddddd';
+const KGAL = 'x.xxx.xxx.xxx.xx';             // locked to a gallop
+const BB = '....x.......x...';               // backbeat
+const SKANK = '..x...x...x...x.';            // thrash polka: snare on every off-eighth
+const H8 = 'x.x.x.x.x.x.x.x.', HC8 = 'c.x.x.x.x.x.x.x.';
+const R8 = 'r.r.r.r.r.r.r.r.', RC8 = 'c.r.r.r.r.r.r.r.';
+const FILL = '....x.......xxxx';
+
+// Choir chords, semitones over low D.
+const CH_DM = [12, 19, 24, 27], CH_EB = [13, 20, 25, 29], CH_BB = [8, 20, 24, 27];
+const CH_A = [19, 23, 26, 31], CH_AB = [18, 22, 25, 30];
+
+/** TITLE, 136. A riff you can hum, a gallop, and a chorus with its fist up. */
+const TT1 = 'N.NQN.NSN.NQTSQP', TT2 = 'N.NQN.NSN.NQK-I-', TT4 = 'N.NQN.NSD-F-G-H-';
+const TITLE = {
+  intro: bars([
+    { g: TT1, nb: 1 },
+    { g: 'N.NQN.NSN.NQ....', nb: 1, h: '........x.x.x.x.', t: '............hhmf', x: '............P...' },
+  ]),
+  loop: bars([
+    { g: TT1, k: K8, s: BB, h: HC8, x: 'B...............' },
+    { g: TT2, k: K8, s: BB, h: H8 },
+    { g: TT1, k: K8, s: BB, h: H8 },
+    { g: TT4, k: 'x.x.x.x.x.x.x.xx', s: '....x.......x.xx', h: 'x.x.x.x.x.x.o...' },
+    { g: 'A-aaA-aaA-aaA-aa', k: KGAL, s: BB, h: RC8, l: 'c---7-a-c---f-e-' },
+    { g: 'I-iiI-iiI-iiI-ii', k: KGAL, s: BB, h: R8, l: 'c-------a---8---' },
+    { g: 'K-kkK-kkK-kkK-kk', k: KGAL, s: BB, h: RC8, l: 'a---c---e-f-h---' },
+    { g: 'H-hhH-hhH---H---', k: 'x.xxx.xxx...x...', s: '....x.......x.xx', h: 'r.r.r.r.c...c...', l: 'j---h---f-e-B---' },
+    { g: TT1, k: K8, s: BB, h: HC8, l: '............*---' },
+    { g: TT2, k: K8, s: BB, h: H8 },
+    { g: TT1, k: KDD, s: BB, h: HC8 },
+    { g: TT4, k: 'dddddddd..x.x.x.', s: '....x...x.x.xxxx', h: 'c...c...........', x: 'R...............' },
+    { g: 'A-aaA-aaA-aaA-aa', k: KGAL, s: BB, h: RC8, l: 'c---7-a-c---f-e-', l2: 'f---a-e-f---j-h-', x: 'B...............' },
+    { g: 'I-iiI-iiI-iiI-ii', k: KGAL, s: BB, h: RC8, l: 'c-------a---8---', l2: 'f-------e---c---' },
+    { g: 'K-kkK-kkK-kkK-kk', k: KGAL, s: BB, h: RC8, l: 'a---c---e-f-h---', l2: 'e---f---h-j-k---' },
+    { g: 'H-hhH-hhH---H---', k: 'x.xxx.xxx...dddd', s: '....x.......xxxx', h: 'c.r.r.r.c...c...', l: 'j---h---f-e-B---', l2: 'n---k---j-i-E---' },
+  ]),
+};
+
+/** PROWL, 150. Corridors: a chugging groove with gaps the gunfire can live in. */
+const PR1 = 'a.aaa.aaa.aaB-a.', PR2 = 'a.aaa.aaa.aaD-C-', PR4 = 'a.aaa.aaG---F-B-';
+const KPR = 'x.xxx.xxx.xxx...';
+const PROWL = {
+  intro: [],
+  loop: bars([
+    { g: PR1, k: KPR, s: BB, h: HC8 },
+    { g: PR2, k: KPR, s: BB, h: H8 },
+    { g: PR1, k: KPR, s: BB, h: H8 },
+    { g: PR4, k: 'x.xxx.xxx...x.x.', s: FILL, h: H8 },
+    { g: 'A-aaA-aaB-bbB-bb', k: KGAL, s: BB, h: RC8, l: 'c-------d-----c-' },
+    { g: 'A-aaA-aaD-ddC-cc', k: KGAL, s: BB, h: R8, l: 'f-------e---d---' },
+    { g: 'A-aaA-aaB-bbB-bb', k: KGAL, s: BB, h: R8, l: 'c-------d---h---' },
+    { g: 'G-ggG-ggF---B---', k: 'x.xxx.xxx...x...', s: BB, h: R8, t: '............hmff', l: 'I---h---f---d---' },
+    { g: PR1, k: KPR, s: BB, h: HC8, l: '............*---' },
+    { g: PR2, k: KPR, s: BB, h: H8 },
+    { g: PR1, k: 'dddddddddddd....', s: BB, h: H8 },
+    { g: PR4, k: 'x.xxx.xxx...x.x.', s: FILL, h: H8, x: 'A...............' },
+    { g: 'a..a..a.a..a.a..', k: 'x..x..x.x..x.x..', s: '........x.......', h: 'c...b...b...b...', x: 'B...............' },
+    { g: 'a..a..a.a..aB-a.', k: 'x..x..x.x..xx...', s: '........x.......', h: 'b...b...b...b...' },
+    { g: 'a..a..a.a..a.a..', k: 'x..x..x.x..x.x..', s: '........x.......', h: 'b...b...b...b...', l: 'c-------------/-' },
+    { g: 'a..a..a.G---F---', k: 'x..x..x.x.......', s: '........x.x.xxxx', h: 'b...b...o.......', x: '........R.......' },
+  ]),
+};
+
+/** HUNT, 160. Something is in here with you: toms, tritones, and then it runs. */
+const HA1 = 'a..a..a.a..a..a.', HAK = 'x..x..x.x..x..x.', HAS = '........x.......', HAH = 'x...x...x...x...';
+const HUNT = {
+  intro: [],
+  loop: bars([
+    { g: HA1, k: HAK, s: HAS, h: HAH, t: '....m.......f..f' },
+    { g: 'a..a..a.a..a..G-', k: HAK, s: HAS, h: HAH, t: '....m.......f...' },
+    { g: HA1, k: HAK, s: HAS, h: HAH, t: '....m.......f..f', x: '..........Y.....' },
+    { g: 'a..a..a.a..aG-F-', k: 'x..x..x.x..x....', s: HAS, h: HAH, t: '............hmff' },
+    { g: 'aaaaaaaaaaaaaaaa', k: KDD, s: BB, h: 'c...x...x...x...', l: 'c-------I-------' },
+    { g: 'bbbbbbbbaaaaaaaa', k: KDD, s: BB, h: HAH, l: 'h-------d-------' },
+    { g: 'aaaaaaaaaaaaaaaa', k: KDD, s: BB, h: 'c...x...x...x...', l: 'c-------I-------' },
+    { g: 'ggggggggffffffff', k: KDD, s: FILL, h: HAH, l: 'l---k---i---h---' },
+    { g: HA1, k: HAK, s: HAS, h: 'c...x...x...x...', t: '....m.......f..f', l: '............*---' },
+    { g: 'a..a..a.a..a..G-', k: HAK, s: HAS, h: HAH, t: '....m.......f...', x: 'Z...............' },
+    { g: HA1, k: HAK, s: HAS, h: HAH, t: '....m.......f..f' },
+    { g: 'a..a..a.a..aG-F-', k: 'x..x..x.x.......', s: HAS, h: HAH, t: '........hhmmffff' },
+    { g: 'A-aaA-aaG-ggG-gg', k: KGAL, s: BB, h: RC8 },
+    { g: 'A-aaA-aaF-ffD-dd', k: KGAL, s: BB, h: R8 },
+    { g: 'A-aaA-aaG-ggG-gg', k: KGAL, s: BB, h: R8, x: '........Y.......' },
+    { g: 'B-------a.a.a.a.', k: 'X.......x.x.x.x.', s: '............xxxx', h: 'c...............', x: 'B...............' },
+  ]),
+};
+
+/** HERO, 168. D D C G D D C A, the only progression he has ever needed. */
+const HERO_R = [0, 0, 10, 5, 0, 0, 10, 7];
+const HV = 'A-aA-aA-A-aA-aA-', HVK = 'x..x..x.x..x..x.';
+const HERO_CALL = ['', '........c-a-c-f-', '', 'h-f-h-j-M-------', '', '........c-e-g-j-', '', 'j-l-o-l-j---*---'];
+const HERO_SOLO = [
+  'c-e-g-j-o---l-j-', 'jlojlojlo-q-o---', 'm-l-j-h-j-m-o---', 'h-j-l-o-q-t-v---',
+  'vsqoslqojlgjegce', 'c-c-e-g-E-------', 'm---o---m---j---', 'j-l-o-q-s-v-*---',
+];
+const HERO = {
+  intro: [],
+  gated: true,
+  loop: bars([
+    ...HERO_R.map((r, i) => ({
+      g: tr(HV, r), k: HVK, s: i === 7 ? FILL : i === 3 ? '....x.......x.xx' : BB, h: i % 4 === 0 ? HC8 : H8,
+      l: HERO_CALL[i], x: i === 0 ? 'B...............' : '',
+    })),
+    // the solo. It is not a good solo. It is an extremely confident solo.
+    ...HERO_R.map((r, i) => ({
+      g: tr('A-A-A-A-A-A-A-A-', r), k: i === 7 ? 'x...x...x...dddd' : K4,
+      s: i === 7 ? '..x...x...x.xxxx' : i === 3 ? '..x...x...x.x.xx' : SKANK,
+      h: i % 2 === 0 ? RC8 : R8, l: HERO_SOLO[i],
+    })),
+  ]),
+};
+
+/** SIEGE, 176. Missile Command at thrash tempo. Intensity picks the bank. */
+const SG1 = 'aaaaaaaaD-D-C-C-', SG2 = 'aaaaaaaaB-B-a.a.', SG4 = 'aaaaaaaaG-G-F-F-';
+const SIEGE_SRC = [
+  { g: SG1, k: K4, s: SKANK, h: 'c...r...r...r...' },
+  { g: SG2, k: K4, s: SKANK, h: 'r...r...r...r...' },
+  { g: SG1, k: K4, s: SKANK, h: 'r...r...r...r...' },
+  { g: SG4, k: K4, s: '..x...x...x.xxxx', h: 'r...r...r...o...' },
+  // the siren: two notes a semitone apart is what an air raid sounds like
+  { g: 'A-------A-a.a.a.', k: K8, s: BB, h: RC8, l: 'c-d-c-d-c-d-c-d-' },
+  { g: 'I-------I-i.i.i.', k: K8, s: BB, h: R8, l: 'f-g-f-g-f-g-f-g-' },
+  { g: 'K-------K-k.k.k.', k: K8, s: BB, h: RC8, l: 'h-i-h-i-h-i-h-i-' },
+  { g: 'G-------H-------', k: K8, s: FILL, h: R8, l: 'i-------J-------' },
+  { g: SG1, k: K4, s: SKANK, h: 'c...r...r...r...', l: '............*---' },
+  { g: SG2, k: K4, s: SKANK, h: 'r...r...r...r...' },
+  { g: SG1, k: K4, s: SKANK, h: 'c...r...r...r...' },
+  { g: SG4, k: K4, s: '..x...x...x.xxxx', h: 'r...r...r...o...' },
+  // incoming: half time, the floor drops out, then everything comes back
+  { g: 'A-------a-a-A---', k: 'X.......x.x.x...', s: '........X.......', h: 'c.......c.......', x: 'B...............' },
+  { g: 'B-------b-b-B---', k: 'X.......x.x.x...', s: '........X.......', h: 'c.......c.......' },
+  { g: 'A-------a-a-A---', k: 'X.......x.x.x...', s: '........X.......', h: 'c.......c.......', x: 'B...............' },
+  { g: 'G-------aaaaaaaa', k: 'X.......dddddddd', s: '........x.x.xxxx', h: 'c...............', x: '........R.......' },
+];
+const SIEGE = {
+  intro: [],
+  loop: bars(SIEGE_SRC),
+  // low: the wave has not started to hurt yet. Backbeat, no lead, no cymbal storm.
+  lo: { intro: [], loop: bars(SIEGE_SRC.map((o) => ({
+    ...o, l: '', s: o.s === SKANK ? BB : o.s, h: o.h === RC8 ? H8 : o.h.replace(/c/g, 'r'),
+    x: o.x && o.x.replace('R', '.'),
+  }))) },
+  // high: double kick under everything that is not the breakdown, a crash every bar
+  hi: { intro: [], loop: bars(SIEGE_SRC.map((o) => ({
+    ...o, k: o.k === K4 || o.k === K8 ? KDD : o.k, h: 'c' + o.h.slice(1),
+  }))) },
+};
+
+/** BOSS, 186. MUTTER: blast, breakdown, groove, and a choir that means it. */
+const BOSS = {
+  intro: [],
+  loop: bars([
+    { g: 'AAAAAAAABBBBBBBB', k: K8, s: '.x.x.x.x.x.x.x.x', h: 'c.......c.......', x: 'V...............', ch: CH_DM },
+    { g: 'AAAAAAAAIIIIIIII', k: K8, s: '.x.x.x.x.x.x.x.x', h: 'c.......c.......', x: 'V...............', ch: CH_BB },
+    { g: 'AAAAAAAABBBBBBBB', k: K8, s: '.x.x.x.x.x.x.x.x', h: 'c.......c.......', x: 'V...............', ch: CH_EB },
+    { g: 'GGGGGGGGHHHHHHHH', k: K8, s: '.x.x.x.x.x.xxxxx', h: 'c.......c.......', x: 'V.......R.......', ch: CH_AB },
+    { g: 'a..a..a...a.a...', k: 'X..x..x...x.x...', s: '........X.......', h: 'c...c...c...c...', x: 'S.......A.......', ch: CH_DM },
+    { g: 'a..a..a...b.b...', k: 'X..x..x...x.x...', s: '........X.......', h: 'c...c...c...c...', x: 'V.......A.......', ch: CH_EB },
+    { g: 'a..a..a...a.a...', k: 'X..x..x...x.x...', s: '........X.......', h: 'c...c...c...c...', x: 'S...S...A...A...', ch: CH_DM },
+    { g: 'a..a..a.G---F---', k: 'X..x..x.x.......', s: '........x.x.....', h: 'c...c...c.......', t: '............hmff', x: 'V...............', ch: CH_AB },
+    { g: 'a.aba.aba.abD-C-', k: KDD, s: BB, h: H8, x: 'B...............' },
+    { g: 'a.aba.aba.abB-a.', k: KDD, s: BB, h: H8 },
+    { g: 'a.aba.aba.abD-C-', k: KDD, s: BB, h: HC8, l: '............*---' },
+    { g: 'a.aba.abG-G-F-F-', k: KDD, s: FILL, h: H8 },
+    { g: 'A-aaA-aaA-aaA-aa', k: KGAL, s: BB, h: RC8, x: 'V...............', ch: CH_DM, l: 'o---------------' },
+    { g: 'B-bbB-bbB-bbB-bb', k: KGAL, s: BB, h: R8, x: 'V...............', ch: CH_EB, l: 'p-------o---n---' },
+    { g: 'I-iiI-iiI-iiI-ii', k: KGAL, s: BB, h: RC8, x: 'V...............', ch: CH_BB, l: 'k-------o-------' },
+    { g: 'H-hhH-hhH---H---', k: 'x.xxx.xxx...dddd', s: FILL, h: 'r.r.r.r.c...c...', x: 'V.......R.......', ch: CH_A, l: 'N---------------' },
+  ]),
+};
+
+/** VICTORY, 150. D, G, D, A, the title's hook in a major key, then the Bb-C-D climb. */
+const VICTORY = {
+  intro: [],
+  loop: bars([
+    { g: 'A-------A-A-A-A-', k: 'X.......x.x.x.x.', s: '............xxxx', h: 'c...............', x: 'B...............', l: 'c-------g-g-j-j-', l2: '9-------c-c-g-g-' },
+    { g: 'F-------F-F-F-F-', k: 'x.x.x.x.x.x.x.x.', s: BB, h: HC8, l: 'l-------j-j-h-h-', l2: 'h-------g-g-e-e-' },
+    { g: 'A-------A-A-A-A-', k: 'x.x.x.x.x.x.x.x.', s: BB, h: HC8, l: 'o-------l-l-j-j-', l2: 'j-------g-g-e-e-' },
+    { g: 'H-------H-H-H-H-', k: 'x.x.x.x.x.x.dddd', s: '....x...x.x.xxxx', h: HC8, l: 'g-------j-------', l2: 'c-------e-------' },
+    { g: 'A-aaA-aaA-aaA-aa', k: KGAL, s: BB, h: RC8, l: 'c---7-b-c---g-e-', l2: 'g---b-e-g---j-h-' },
+    { g: 'F-ffF-ffF-ffF-ff', k: KGAL, s: BB, h: RC8, l: 'c-------b---9---', l2: '9-------7---5---' },
+    { g: 'I-------K-------', k: 'X.x.x.x.X.x.x.x.', s: '....x...x.x.xxxx', h: 'c.x.x.x.c.x.x.x.', l: 'k-------m-------', l2: 'f-------h-------' },
+    { g: 'A...A...A-------', k: 'X...X...X.......', s: 'X...X...X.......', h: 'c...c...c.......', l: 'o---o---o-------', l2: 'j---j---j-------', x: '........K.......', ring: 2.4 },
+  ]),
+};
+
+/** GAMEOVER, 84. The title's hook again, slowly, over doom, one dive, and a bell. */
+const GAMEOVER = {
+  intro: [],
+  loop: bars([
+    { g: 'A---------------', k: 'X.......x.x.....', s: '........X.......', h: 'c...............', x: 'B...............', l: '........c---7---' },
+    { g: 'I---------------', k: 'X.......x.x.....', s: '........X.......', h: 'c...............', l: 'a-------c-------' },
+    { g: 'G---------------', k: 'X.......x.x.....', s: '........X.......', h: 'c...............', l: 'f-------e-------' },
+    { g: 'H---------------', k: 'X.......x.x.x.x.', s: '........X...X.XX', h: 'c...............', l: 'B---------------' },
+    { g: 'A-------------//', k: 'X...............', h: 'c...............', x: 'T.......T.......', l: 'c-------------/-', ring: 2 },
+  ]),
+};
+
+/* ------------------------------------------------------------- the band */
+
+function gtrEv(S, t, e, T, sd, ring, st) {
+  // a ringing last chord holds a moment, then decays into the amp's sustain
+  const len = e.len * sd + ring * 0.25, rel = ring ? ring * 0.75 : 0.07;
+  const f = mtof(ROOT + e.n);
+  if (e.kind === 1) {
+    // a player digs in on the beat and skims the rest; the amp flattens the
+    // level, so the difference has to live in how bright the chug is
+    const dig = (st & 3) === 0 ? 1.3 : (st & 1) ? 0.92 : 1.05;
+    S._own(S.gtr(T, f, len, mk(t, {
+      mute: true, notes: FIFTH, g: 0.5 + 0.06 * dig, cutoff: 750 * dig * (0.93 + 0.14 * S._r()),
+      dec: Math.min(len, 0.15), pri: 6,
+    })), t, 0);
+  } else if (e.kind === 2) {
+    S._own(S.gtr(T, f, len, mk(t, { notes: POWER, g: 0.42, slide: e.fall ? -12 : 0, rel, pri: 6 })), t, 0);
+  } else {
+    S._own(S.gtr(T, f, len, mk(t, {
+      notes: ONE, g: 0.6, cutoff: e.n < 12 ? 1500 : 2600, slide: e.fall ? -12 : 0, rel, pri: 6,
+    })), t, 0);
+  }
+}
+
+function bassEv(S, t, e, T, sd, ring) {
+  const len = e.kind === 1 ? Math.min(e.len * sd, sd * 1.3) : e.len * sd + ring * 0.25;
+  S._own(S.bassGtr(T, mtof(ROOT - 12 + (e.n % 12)), len, mk(t, {
+    mute: e.kind === 1, g: 0.55, rel: ring ? ring * 0.75 : 0.05, pri: 6,
+  })), t, 0);
+}
+
+function leadEv(S, t, e, T, sd, side) {
+  if (e.sq) {
+    // a pinch harmonic: the thumb catches the string and it screams an octave up
+    S._own(S.lead(T, mtof(LEAD0 + e.n), e.len * sd, mk(t, {
+      side, bend: 3, bendT: 0.05, vib: 55, rate: 7.4, g: 0.34, fall: 0, pri: 7,
+    })), t, 0);
+    return;
+  }
+  S._own(S.lead(T, mtof(LEAD0 + e.n), e.len * sd, mk(t, {
+    side, bend: e.bend, fall: e.fall ? 5 : 0, g: 0.4, pri: 7,
+  })), t, 0);
+}
+
+/** One-off hits and swells from a bar's `x` row. */
+function fx(S, t, B, c, st, T) {
+  const sd = t.stepDur;
+  if (c === 'B') {
+    S._own(S.subBoom(T, 44, 1.6, mk(t, { g: 0.5, drop: 0.4, sweep: 0.4, pri: 7 })), t, 0.2);
+  } else if (c === 'R') {
+    const d = (16 - st) * sd;
+    S._own(S.noiseHit(T, d, mk(t, {
+      type: 'bandpass', f: 300, f2: 7500, sweep: 1, q: 2.4, g: 0.14, atk: d * 0.94, dec: 0.05, pri: 5,
+    })), t, 0.3);
+  } else if (c === 'V' && B.chF.length) {
+    S._own(S.choir(T, B.chF, 16 * sd, mk(t, { g: 0.5, atk: 0.16, rel: 0.5, pri: 6 })), t, 0.4);
+  } else if (c === 'S' && B.chF.length) {
+    // industrial stab: a brass chord that is over before it starts, and a slammed door
+    S._own(S.pad(T, B.chF, 0.2, mk(t, {
+      g: 0.55, detune: 18, voices: 2, cutoff: 4200, open: 0.05, atk: 0.004, rel: 0.32, q: 1.2, pri: 7,
+    })), t, 0.4);
+    S._own(S.noiseHit(T, 0.3, mk(t, {
+      type: 'bandpass', f: 2400, f2: 500, q: 0.9, g: 0.26, atk: 0.001, dec: 0.28, pri: 6,
+    })), t, 0.3);
+  } else if (c === 'A') {
+    const v = S._v(5, null, 0, 0, 1, t.bus);
+    if (!v) return;
+    v.owner = t;
+    for (let k = 0; k < 3; k++) {
+      S._nz(v, T, 0.5, { type: 'bandpass', f: 1250 * METAL[k], q: 18, g: 0.24 / (k + 1), atk: 0.001, dec: 0.45 });
+    }
+    S._nz(v, T, 0.02, { type: 'highpass', f: 3000, q: 0.7, g: 0.2, dec: 0.02 });
+    S._own(v, t, 0.45);
+  } else if (c === 'T') {
+    S._own(S.fmBell(T, mtof(50), 4.5, mk(t, { g: 0.28, ratio: 1.41, index: 2.6, pri: 8 })), t, 0.6);
+    S._own(S.fmBell(T + 0.01, mtof(38), 5, mk(t, { g: 0.2, ratio: 2.007, index: 1.8, pri: 7 })), t, 0.5);
+  } else if (c === 'Y') {
+    // a long way off, something screams
+    const v = S._v(6, null, 0, 0, 1, t.bus);
+    if (!v) return;
+    v.owner = t;
+    gullet(S, v, T, 1.6, [
+      { f: 700, f2: 1900, q: 15, g: 0.4, sweep: 0.9 },
+      { f: 1100, f2: 2700, q: 17, g: 0.26, sweep: 0.78 },
+      { f: 1600, f2: 3400, q: 13, g: 0.12, sweep: 0.66 },
+    ], { g: 0.2, atk: 0.4, hold: 0.6, rel: 0.6, rate: 0.9, rate2: 1.5 });
+    S._own(v, t, 0.9);
+  } else if (c === 'Z') {
+    const v = S._v(4, null, 0, 0, 1, t.bus);
+    if (!v) return;
+    v.owner = t;
+    const sc = S._nz(v, T, 0.9, { type: 'bandpass', f: 1400, f2: 2300, q: 7, g: 0.26, atk: 0.01, dec: 0.88 });
+    gate(S, v, sc, S._scrabbleCurve, T, 0.85);
+    S._own(v, t, 0.75);
+  } else if (c === 'P' && t.rig) {
+    // pick slide: the edge of the pick dragged down the wound strings, and
+    // since it goes through the amp it arrives already furious
+    const v = S._v(5, null, 0, 0, 1, t.rig.gl);
+    if (!v) return;
+    v.owner = t;
+    const d = Math.min(0.9, (16 - st) * sd);
+    for (let k = 0; k < 2; k++) {
+      S._nz(v, T + k * 0.006, d, {
+        type: 'bandpass', f: 2800, f2: 240, sweep: 1, q: 5, g: 0.55, atk: 0.01, hold: d * 0.7, rel: d * 0.25,
+        to: k ? t.rig.gr : t.rig.gl,
+      });
+    }
+  } else if (c === 'K') {
+    crash(S, t, T, 0.5);
+    S._own(S.subBoom(T, 40, 2.6, mk(t, { g: 0.62, drop: 0.45, sweep: 0.5, pri: 8 })), t, 0.3);
+  }
+}
+
+/**
+ * Play one sixteenth of one bar. `thin` drops the off-beat chugs, which is how
+ * the siege sounds before the sky starts to fill up.
+ */
+function band(S, t, B, st, T, gated, thin) {
+  const sd = t.stepDur;
+  let c = B.k[st];
+  if (c === 'x') kick(S, t, T, 0.82, 1, 0.2);
+  else if (c === 'X') kick(S, t, T, 1.05, 0.95, 0.36);
+  else if (c === 'd') kick(S, t, T, 0.78, 1.05, 0.12);
+  c = B.s[st];
+  if (c === 'x' || c === 'X') {
+    if (gated) gatedSnare(S, t, T, c === 'X' ? 1.05 : 0.9); else snare(S, t, T, c === 'X' ? 1.05 : 0.9);
+  } else if (c === 'g') snare(S, t, T, 0.24);
+  c = B.h[st];
+  if (c === 'x') hat(S, t, T, (st & 3) === 0 ? 0.3 : 0.22, false);
+  else if (c === 'o') hat(S, t, T, 0.26, true);
+  else if (c === 'r') ride(S, t, T, 0.3, false);
+  else if (c === 'b') ride(S, t, T, 0.34, true);
+  else if (c === 'c') crash(S, t, T, 0.45);
+  c = B.t[st];
+  if (c === 'h') tom(S, t, T, 0.75, 0);
+  else if (c === 'm') tom(S, t, T, 0.75, 1);
+  else if (c === 'f') tom(S, t, T, 0.8, 2);
+  else if (c === 's') snare(S, t, T, 0.7);
+
+  const e = B.gE[st];
+  const ring = e && st + e.len >= 16 ? B.ring : 0;
+  if (e && !(thin && e.kind === 1 && (st & 1))) gtrEv(S, t, e, T, sd, ring, st);
+  const b = B.nb ? null : B.bE ? B.bE[st] : e;
+  if (b && !(thin && b.kind === 1 && (st & 1))) bassEv(S, t, b, T, sd, ring);
+  const l = B.lE[st];
+  if (l) leadEv(S, t, l, T, sd, B.twin ? -1 : 0);
+  const l2 = B.l2E[st];
+  if (l2) leadEv(S, t, l2, T, sd, 1);
+  c = B.x[st];
+  if (c !== '.') fx(S, t, B, c, st, T);
+}
+
+/** Step `s` of a song: the intro once, then the loop for ever (or until `bars`). */
+function play(S, t, s, T, song, thin) {
+  const bi = s >> 4, n0 = song.intro.length;
+  const B = bi < n0 ? song.intro[bi] : song.loop[(bi - n0) % song.loop.length];
+  band(S, t, B, s & 15, T, !!song.gated, thin);
+}
+
 const STEP = {
-
-  /* ---- TITLE — 78 BPM, D Phrygian. Slow, enormous, and it wants to be heard. */
-  title(S, t, s, T) {
-    const st = s % 64, bar = st >> 4, phase = (s / 64) | 0;
-    const barLen = t.stepDur * 16;
-    const CH = [CHORD.i, CHORD.bVI, CHORD.bII, CHORD.i][bar];
-    const chRoot = [0, 8, 1, 0][bar];
-
-    if (st % 16 === 0) {
-      // detuned analogue brass, chord in the middle octave plus its own root
-      const f = [];
-      for (let i = 0; i < CH.length; i++) f.push(mtof(ROOT + 12 + CH[i]));
-      f.push(mtof(ROOT + CH[0]));
-      S._own(S.pad(T, f, barLen * 1.2, mk(t, {
-        g: 0.62, detune: 12, voices: 2, cutoff: bar === 2 ? 1600 : 1150,
-        atk: barLen * 0.34, rel: barLen * 0.6, q: 1.1, pri: 6, vib: 0.13,
-      })), t, 0.42);
-      // low brass underneath — the thing that makes the room feel big
-      S._own(S.superSaw(T, mtof(ROOT - 12 + chRoot), barLen * 1.1, mk(t, {
-        n: 3, detune: 7, cutoff: 380, co0: 0.6, g: 0.34,
-        atk: barLen * 0.22, rel: barLen * 0.5, pri: 6,
-      })), t, 0.1);
-    }
-
-    // stalking bass: four deliberate steps a bar, never quite settling
-    const BP = [0, 6, 8, 14];
-    const BD = [[0, 0, 7, 3], [8, 8, 3, 10], [1, 1, 8, 5], [0, 0, 10, 7]][bar];
-    const bi = BP.indexOf(st % 16);
-    if (bi >= 0) {
-      S._own(S.acidBass(T, mtof(ROOT - 12 + BD[bi]), t.stepDur * (bi === 3 ? 3.4 : 2.1), mk(t, {
-        cutoff: 190, env: 620, q: 6, g: 0.38, decay: 0.5, drive: 1, pri: 6,
-      })), t, 0.12);
-    }
-
-    // the theme: four notes, a long way apart, with the room around them
-    const MPOS = [20, 26, 34, 44];
-    const mi = MPOS.indexOf(st);
-    if (mi >= 0) {
-      const n = MOTIF[mi] + (phase % 2 === 1 && mi === 3 ? 5 : 0);
-      S._own(S.fmBell(T, mtof(n), 2.9, mk(t, {
-        g: 0.34, ratio: 2.007, index: 4.2, atk: 0.004, pri: 8,
-      })), t, 0.62);
-      if (mi === 3) {
-        S._own(S.fmBell(T + 0.09, mtof(n - 12), 3.4, mk(t, {
-          g: 0.16, ratio: 1.41, index: 2.4, pri: 7,
-        })), t, 0.7);
-      }
-    }
-
-    // distant sub booms — somebody else's war, two rooms away
-    if (st === 0 && (phase & 1) === 0) {
-      S._own(S.subBoom(T, 47, 1.9, mk(t, { g: 0.6, drop: 0.4, sweep: 0.4, pri: 8 })), t, 0.3);
-    }
-    if (st === 40) {
-      S._own(S.subBoom(T, 33, 2.6, mk(t, { g: 0.34, drop: 0.5, sweep: 0.55, pri: 7 })), t, 0.85);
-    }
-    // wind through the intake shafts
-    if (st === 48) {
-      S._own(S.noiseHit(T, 2.6, mk(t, {
-        type: 'bandpass', f: 260, f2: 620, q: 2.2, g: 0.1, atk: 0.9, dec: 1.7, pink: true, pri: 4,
-      })), t, 0.8);
-    }
-  },
-
-  /* ---- PROWL — 104 BPM. Corridors. Sparse on purpose: SFX owns the midrange. */
-  prowl(S, t, s, T) {
-    const st = s % 16, bar = (s / 16) | 0, vari = (bar >> 3) & 3;
-    const barLen = t.stepDur * 16;
-
-    const PKICK = [[0, 6, 10], [0, 3, 8, 11], [0, 6, 10, 14], [0, 7, 10]][vari];
-    if (PKICK.indexOf(st) >= 0) kick(S, t, T, 0.72, 0.94, 0.34);
-
-    // industrial metal: deterministic per bar, so it varies but never wanders
-    if (h2(bar * 3 + vari, st * 7) > 0.76) {
-      const f = 420 * (1 + 3.4 * h2(st, bar + 7));
-      const v = S._v(3, null, 0, 0, 1, t.bus);
-      if (v) {
-        v.owner = t;
-        const d = 0.05 + 0.12 * h2(bar, st + 31);
-        S._nz(v, T, d, { type: 'bandpass', f, q: 11, g: 0.2, dec: d });
-        S._nz(v, T, 0.02, { type: 'highpass', f: 3800, q: 0.7, g: 0.09, dec: 0.02 });
-        S._own(v, t, 0.4);
-      }
-    }
-    if (st === 4 || st === 12) {
-      const v = S._v(4, null, 0, 0, 1, t.bus);
-      if (v) {
-        v.owner = t;
-        const f = [1180, 860, 1460, 640][vari];
-        for (let k = 0; k < 3; k++) {
-          S._nz(v, T, 0.3, { type: 'bandpass', f: f * METAL[k], q: 16, g: 0.09 / (k + 1), dec: 0.28 });
-        }
-        S._own(v, t, 0.55);
-      }
-    }
-    if (st % 2 === 1) hat(S, t, T, 0.05, false);
-
-    // the drone that never quite lets you relax
-    if (st === 0 && bar % 2 === 0) {
-      S._own(S.superSaw(T, mtof(ROOT - 12), barLen * 2.1, mk(t, {
-        n: 3, detune: 6, cutoff: 210, co0: 0.7, g: 0.27,
-        atk: barLen * 0.4, rel: barLen * 0.8, pri: 6,
-      })), t, 0.1);
-      if (vari >= 2) {
-        S._own(S.superSaw(T + 0.02, mtof(ROOT - 5), barLen * 2.05, mk(t, {
-          n: 2, detune: 9, cutoff: 300, g: 0.13, atk: barLen * 0.5, rel: barLen * 0.7, pri: 5,
-        })), t, 0.25);
-      }
-    }
-    // dissonant stab at the end of every eight bars
-    if (bar % 8 === 7 && st === 12) {
-      const cl = [deg(7) + 1, deg(11), deg(14) + 1];   // Eb / C / Eb, a semitone apart
-      S._own(S.pad(T, [mtof(ROOT + cl[0]), mtof(ROOT + cl[1]), mtof(ROOT + cl[2])], 0.75, mk(t, {
-        g: 0.3, detune: 16, voices: 1, cutoff: 2400, atk: 0.01, rel: 0.55, q: 3, pri: 7,
-      })), t, 0.75);
-    }
-    // something enormous going off a long way above you
-    if (bar % 4 === 2 && st === 8) {
-      S._own(S.subBoom(T, 37, 2.4, mk(t, { g: 0.34, drop: 0.5, sweep: 0.6, pri: 7 })), t, 0.8);
-    }
-  },
-
-  /* ---- SIEGE — 148 BPM. Missile Command. intensity adds layers, not volume. */
+  title(S, t, s, T) { play(S, t, s, T, TITLE, false); },
+  prowl(S, t, s, T) { play(S, t, s, T, PROWL, false); },
   siege(S, t, s, T) {
-    const st = s % 16, bar = (s / 16) | 0;
     const I = t.intensity;
-    const SB = [0, 0, 12, 0, 0, 10, 0, 12, 0, 0, 15, 0, 10, 0, 12, 3];
-
-    if (st % 4 === 0) kick(S, t, T, 0.85, 1, 0.3);
-    if (st === 4 || st === 12) snare(S, t, T, 0.5);
-    if (st % 2 === 1) hat(S, t, T, 0.075 + I * 0.05, false);
-    if (I > 0.45 && st % 4 === 2) hat(S, t, T, 0.07, true);
-
-    // relentless 16ths
-    S._own(S.acidBass(T, mtof(ROOT + SB[st]), t.stepDur * 0.92, mk(t, {
-      cutoff: 220 + I * 900, env: 1400 + I * 2400, q: 10.5, g: 0.3,
-      accent: st % 4 === 0 || st === 10, decay: 0.62, drive: 1, pri: 6,
-    })), t, 0.06);
-    if (I > 0.3 && st % 2 === 0) {
-      S._own(S.acidBass(T, mtof(ROOT + 12 + SB[st]), t.stepDur * 0.8, mk(t, {
-        cutoff: 500 + I * 1400, env: 900, q: 7, g: 0.1, decay: 0.5, pri: 4,
-      })), t, 0.15);
-    }
-
-    // arpeggiated lead, doubled an octave up when it gets hairy
-    const CH = [CHORD.i, CHORD.i, CHORD.bVII, CHORD.bVI][bar % 4];
-    const ARP = [0, 1, 2, 3, 2, 3, 1, 2];
-    const dense = I > 0.62 ? 1 : 2;
-    if (I > 0.12 && st % dense === 0) {
-      const n = ROOT + 24 + CH[ARP[st % 8]];
-      S._own(S.pluck(T, mtof(n), t.stepDur * 1.5, mk(t, {
-        type: 'sawtooth', g: 0.13 + I * 0.06, cutoff: 1400 + I * 3600, q: 4, pri: 5,
-      })), t, 0.3);
-      if (I > 0.72) {
-        S._own(S.pluck(T + 0.004, mtof(n + 12), t.stepDur * 1.1, mk(t, {
-          type: 'square', g: 0.055, cutoff: 5200, q: 2, pri: 4,
-        })), t, 0.45);
-      }
-    }
-    // eight-bar riser into the next phase of the wave
-    if (bar % 8 === 7 && st === 0) {
-      S._own(S.noiseHit(T, 1.7, mk(t, {
-        type: 'bandpass', f: 220, f2: 6200, q: 3, g: 0.14, atk: 1.5, dec: 0.2, pri: 6,
-      })), t, 0.5);
-    }
-    if (bar % 8 === 0 && st === 0) {
-      S._own(S.subBoom(T, 52, 1.1, mk(t, { g: 0.5, drop: 0.35, pri: 7 })), t, 0.25);
-    }
+    play(S, t, s, T, I < 0.34 ? SIEGE.lo : I < 0.67 ? SIEGE : SIEGE.hi, I < 0.34);
   },
-
-  /* ---- BOSS — MUTTER. 132 BPM in 7/8, so it never sits down. */
-  boss(S, t, s, T) {
-    const st = s % 14, bar = ((s / 14) | 0) % 4;
-    const barLen = t.stepDur * 14;
-    const CH = [CHORD.i, CHORD.bII, CHORD.i, CHORD.bVI][bar];
-
-    if (st === 0 || st === 6 || st === 10) kick(S, t, T, 0.9, 0.9, 0.4);
-    if (st === 13 && bar % 2 === 1) kick(S, t, T, 0.4, 1.1, 0.2);
-    if (st === 6) snare(S, t, T, 0.45);
-    if (st === 3 || st === 9) hat(S, t, T, 0.06, st === 9);
-
-    // monstrous distorted bass, seven eighths of it
-    if (st % 2 === 0) {
-      const RIFF = [0, 0, 1, 0, 3, -2, 0];
-      S._own(S.acidBass(T, mtof(ROOT - 12 + RIFF[st / 2] + (CH === CHORD.bVI ? 8 : 0)), t.stepDur * 1.85, mk(t, {
-        cutoff: 130, env: 780, q: 8, g: 0.42, decay: 0.75, drive: 2, pri: 7,
-      })), t, 0.1);
-    }
-    // choir: badly-tuned, far too many voices, entirely sincere
-    if (st === 0) {
-      const f = [];
-      for (let i = 0; i < CH.length; i++) f.push(mtof(ROOT + 12 + CH[i]));
-      S._own(S.pad(T, f, barLen * 1.25, mk(t, {
-        type: 'sawtooth', g: 0.42, detune: 19, voices: 3, cutoff: 1250,
-        atk: barLen * 0.3, rel: barLen * 0.55, q: 2.2, vib: 0.9, pri: 7,
-      })), t, 0.55);
-    }
-    if (st === 0 && bar % 2 === 0) {
-      S._own(S.subBoom(T, 41, 1.5, mk(t, { g: 0.62, drop: 0.42, pri: 8 })), t, 0.2);
-    }
-    // toms falling down the stairs
-    if ((bar === 1 && st === 9) || (bar === 3 && st === 11) || (bar === 2 && st === 12)) {
-      const v = S._v(5, null, 0, 0, 1, t.bus);
-      if (v) {
-        v.owner = t;
-        S._tone(v, T, 0.34, { type: 'sine', f: 150, f2: 78, sweep: 0.6, g: 0.5, dec: 0.32 });
-        S._nz(v, T, 0.12, { type: 'bandpass', f: 620, q: 2, g: 0.16, dec: 0.11 });
-        S._own(v, t, 0.5);
-      }
-    }
-  },
-
-  /* ---- VICTORY — 120 BPM, the theme finally allowed to be in a major key. */
-  victory(S, t, s, T) {
-    const st = s % 16, bar = (s / 16) | 0;
-    const barLen = t.stepDur * 16;
-    const PROG = [CHORD.I, CHORD.IV, CHORD.V, CHORD.I, CHORD.IV, CHORD.V, CHORD.I];
-    const CH = PROG[Math.min(bar, 6)];
-
-    if (st === 0) {
-      const f = [];
-      for (let i = 0; i < CH.length; i++) f.push(mtof(ROOT + 12 + CH[i]));
-      S._own(S.pad(T, f, barLen * (bar === 6 ? 3.4 : 1.15), mk(t, {
-        g: 0.6, detune: 10, voices: 2, cutoff: 2600, atk: bar === 0 ? 0.5 : 0.09,
-        rel: barLen * (bar === 6 ? 2.4 : 0.5), pri: 7,
-      })), t, 0.4);
-      S._own(S.superSaw(T, mtof(ROOT - 12 + CH[0]), barLen * 1.05, mk(t, {
-        n: 3, detune: 7, cutoff: 520, g: 0.34, atk: 0.04, rel: barLen * 0.5, pri: 6,
-      })), t, 0.1);
-      S._own(S.subBoom(T, 58, 1.1, mk(t, { g: 0.7, drop: 0.4, pri: 8 })), t, 0.3);
-    }
-    if (st % 4 === 0 && bar < 6) kick(S, t, T, 0.6, 1.05, 0.26);
-    if ((st === 8 || st === 14) && bar < 6) snare(S, t, T, 0.4);
-
-    // fanfare
-    if (bar < 4 && st % 2 === 0) {
-      const A = [0, 2, 1, 3, 2, 3, 1, 0];
-      S._own(S.pluck(T, mtof(ROOT + 24 + CH[A[st / 2]]), 0.4, mk(t, {
-        type: 'sawtooth', g: 0.16, cutoff: 4200, q: 3, pri: 6,
-      })), t, 0.35);
-    }
-    // the theme, in the parallel major, at last
-    const VM = [86, 84, 81, 86];
-    const VP = [64, 72, 80, 96];
-    const vi = VP.indexOf(s);
-    if (vi >= 0) {
-      S._own(S.fmBell(T, mtof(VM[vi]), vi === 3 ? 4.5 : 1.6, mk(t, {
-        g: 0.34, ratio: 2.007, index: 3.6, pri: 8,
-      })), t, 0.55);
-      S._own(S.fmBell(T + 0.01, mtof(VM[vi] - 12), vi === 3 ? 5 : 1.4, mk(t, {
-        g: 0.18, ratio: 1.41, index: 2, pri: 7,
-      })), t, 0.6);
-    }
-  },
-
-  /* ---- GAMEOVER — 62 BPM. Six cities. Nobody is going to say well done. */
-  gameover(S, t, s, T) {
-    const st = s % 16, bar = (s / 16) | 0;
-    const barLen = t.stepDur * 16;
-    const PROG = [CHORD.i, CHORD.bVI, CHORD.iv, CHORD.bII];
-    const CH = PROG[Math.min(bar, 3)];
-
-    if (st === 0) {
-      const f = [];
-      for (let i = 0; i < CH.length; i++) f.push(mtof(ROOT + 12 + CH[i]));
-      S._own(S.pad(T, f, barLen * (bar === 3 ? 2.6 : 1.15), mk(t, {
-        g: 0.5, detune: 13, voices: 2, cutoff: 780, atk: barLen * 0.35,
-        rel: barLen * (bar === 3 ? 1.8 : 0.6), q: 1.4, vib: 0.11, pri: 7,
-      })), t, 0.6);
-      S._own(S.superSaw(T, mtof(ROOT - 12 + CH[0]), barLen * 1.2, mk(t, {
-        n: 3, detune: 5, cutoff: 240, g: 0.3, atk: barLen * 0.3, rel: barLen * 0.7, pri: 6,
-      })), t, 0.15);
-    }
-    // a bell tolling down through the scale, slower each time
-    const GM = [74, 72, 70, 69];
-    const GP = [8, 22, 38, 56];
-    const gi = GP.indexOf(s);
-    if (gi >= 0) {
-      S._own(S.fmBell(T, mtof(GM[gi]), 3.2 + gi * 0.9, mk(t, {
-        g: 0.3 - gi * 0.03, ratio: 2.007, index: 3.4, pri: 8,
-      })), t, 0.72);
-    }
-    if (s === 56) {
-      S._own(S.fmBell(T + 0.6, mtof(50), 6, mk(t, { g: 0.26, ratio: 1.41, index: 2.6, pri: 8 })), t, 0.8);
-      S._own(S.subBoom(T + 0.6, 30, 4, mk(t, { g: 0.4, drop: 0.6, sweep: 0.7, pri: 8 })), t, 0.5);
-    }
-    if (st === 0 && bar === 0) {
-      S._own(S.subBoom(T, 44, 2.6, mk(t, { g: 0.5, drop: 0.45, pri: 8 })), t, 0.4);
-    }
-    // dust falling off the ceiling
-    if (st === 9 || st === 13) {
-      S._own(S.noiseHit(T, 1.4, mk(t, {
-        type: 'bandpass', f: 380, q: 3, g: 0.055, atk: 0.5, dec: 0.85, pink: true, pri: 3,
-      })), t, 0.7);
-    }
-  },
+  boss(S, t, s, T) { play(S, t, s, T, BOSS, false); },
+  victory(S, t, s, T) { play(S, t, s, T, VICTORY, false); },
+  gameover(S, t, s, T) { play(S, t, s, T, GAMEOVER, false); },
 };
 
 /* ===================================================================== SFX */
@@ -2451,11 +3050,11 @@ Object.assign(SFX, {
 
 /** 1987 gated snare: a real hit, a bright tail, and the tail cut off dead. */
 function gatedSnare(S, t, T, g) {
-  const v = S._v(6, null, 0, 0, 1, t.bus);
+  const v = S._v(7, null, 0, 0, 1, KIT(t));
   if (!v) return;
   v.owner = t;
-  S._tone(v, T, 0.13, { type: 'triangle', f: 210, f2: 146, sweep: 0.5, g: g * 0.5, dec: 0.12 });
-  S._nz(v, T, 0.16, { type: 'highpass', f: 1250, q: 0.8, g: g * 0.9, dec: 0.15 });
+  S._tone(v, T, 0.13, { type: 'triangle', f: 210, f2: 146, sweep: 0.5, g: g * 0.8, dec: 0.12 });
+  S._nz(v, T, 0.16, { type: 'highpass', f: 1250, q: 0.8, g: g * 1.3, dec: 0.15 });
   // the gate: held wide, then slammed shut mid-decay
   S._nz(v, T + 0.01, 0.24, {
     type: 'bandpass', f: 2100, q: 0.6, g: g * 0.55, atk: 0.006, hold: 0.185, rel: 0.012,
@@ -2463,155 +3062,11 @@ function gatedSnare(S, t, T, g) {
 }
 
 Object.assign(STEP, {
+  /* ---- HUNT, 160. prowl, but something is in here with you. */
+  hunt(S, t, s, T) { play(S, t, s, T, HUNT, false); },
 
-  /* ---- HUNT — 96 BPM, D Phrygian. prowl, but something is in here with you. */
-  hunt(S, t, s, T) {
-    const st = s % 16, bar = (s / 16) | 0, vari = (bar >> 3) & 3;
-    const barLen = t.stepDur * 16;
-
-    const HK = [[0, 7], [0, 6, 11], [0, 9], [0, 5, 10]][vari];
-    if (HK.indexOf(st) >= 0) kick(S, t, T, 0.7, 0.9, 0.36);
-
-    // industrial percussion, darker and sparser than the corridors used to be
-    if (h2(bar * 5 + vari, st * 11) > 0.8) {
-      const v = S._v(3, null, 0, 0, 1, t.bus);
-      if (v) {
-        v.owner = t;
-        const f = 340 * (1 + 2.6 * h2(st, bar + 19));
-        const d = 0.06 + 0.14 * h2(bar, st + 5);
-        S._nz(v, T, d, { type: 'bandpass', f, q: 13, g: 0.26, dec: d });
-        S._own(v, t, 0.45);
-      }
-    }
-    if (st === 6 && bar % 2 === 1) {
-      const v = S._v(4, null, 0, 0, 1, t.bus);
-      if (v) {
-        v.owner = t;
-        for (let k = 0; k < 2; k++) {
-          S._nz(v, T, 0.34, { type: 'bandpass', f: 760 * METAL[k + 1], q: 17, g: 0.15 / (k + 1), dec: 0.32 });
-        }
-        S._own(v, t, 0.6);
-      }
-    }
-    if (st % 4 === 2) hat(S, t, T, 0.04, false);
-
-    // the brass-ish swell underneath — this is the part with teeth
-    if (st === 0 && bar % 2 === 0) {
-      S._own(S.superSaw(T, mtof(ROOT - 12), barLen * 2.15, mk(t, {
-        n: 4, detune: 13, cutoff: 330, co0: 0.35, open: 0.55, g: 0.28,
-        atk: barLen * 0.55, rel: barLen * 0.9, pri: 6,
-      })), t, 0.12);
-      const fifth = (bar >> 1) % 4 === 3 ? 1 : 7;      // slips to the flat second
-      S._own(S.superSaw(T + 0.03, mtof(ROOT - 12 + fifth), barLen * 2.05, mk(t, {
-        n: 3, detune: 17, cutoff: 340, co0: 0.5, g: 0.15, atk: barLen * 0.7, rel: barLen * 0.8, pri: 5,
-      })), t, 0.3);
-    }
-
-    // Organic noises on their own clock. They deliberately do not land on the
-    // grid: the hash is seeded from the absolute bar, so nothing ever repeats.
-    if (h2(bar * 31, st * 7 + 3) > 0.965) {
-      const v = S._v(5, null, 0, 0, 1, t.bus);
-      if (v) {
-        v.owner = t;
-        const up = h2(bar, st) > 0.5;
-        gullet(S, v, T, 1.1, [
-          { f: up ? 300 : 520, f2: up ? 620 : 260, q: 6, g: 0.4 },
-          { f: up ? 760 : 1150, f2: up ? 1250 : 640, q: 9, g: 0.18 },
-        ], { g: 0.32, atk: 0.35, hold: 0.3, rel: 0.45, rate: 0.8, rate2: up ? 1.15 : 0.6 });
-        S._own(v, t, 0.7);
-      }
-    }
-    // a scrape somewhere off the corridor
-    if (h2(bar * 17 + 5, st * 3) > 0.977) {
-      const v = S._v(4, null, 0, 0, 1, t.bus);
-      if (v) {
-        v.owner = t;
-        const sc = S._nz(v, T, 0.9, {
-          type: 'bandpass', f: 1400, f2: 2300, q: 7, g: 0.24, atk: 0.01, dec: 0.88,
-        });
-        gate(S, v, sc, S._scrabbleCurve, T, 0.85);
-        S._own(v, t, 0.75);
-      }
-    }
-    // and once in a while, a long way off, something screams
-    if (bar % 4 === 3 && st === 13) {
-      const v = S._v(6, null, 0, 0, 1, t.bus);
-      if (v) {
-        v.owner = t;
-        gullet(S, v, T, 1.6, [
-          { f: 700, f2: 1900, q: 15, g: 0.4, sweep: 0.9 },
-          { f: 1100, f2: 2700, q: 17, g: 0.26, sweep: 0.78 },
-          { f: 1600, f2: 3400, q: 13, g: 0.12, sweep: 0.66 },
-        ], { g: 0.16, atk: 0.4, hold: 0.6, rel: 0.6, rate: 0.9, rate2: 1.5 });
-        S._own(v, t, 0.95);
-      }
-    }
-    if (st === 0 && bar % 4 === 2) {
-      S._own(S.subBoom(T, 34, 2.6, mk(t, { g: 0.32, drop: 0.5, sweep: 0.6, pri: 7 })), t, 0.8);
-    }
-  },
-
-  /* ---- HERO — 118 BPM, D mixolydian. The warden's opinion of the warden. */
-  hero(S, t, s, T) {
-    const st = s % 16, bar = (s / 16) | 0, cyc = bar % 8;
-    const sd = t.stepDur;
-    // D D C G D D C A — the only chord progression he has ever needed
-    const ROOTS = [0, 0, 10, 5, 0, 0, 10, 7];
-    const root = ROOTS[cyc];
-    const solo = cyc >= 4;
-
-    if (st === 0 || st === 6 || st === 8 || st === 11) kick(S, t, T, 0.85, 1, 0.28);
-    if (st === 4 || st === 12) gatedSnare(S, t, T, 0.5);
-    if (st % 2 === 0 && st !== 4 && st !== 12) hat(S, t, T, 0.055, false);
-    if (cyc === 0 && st === 0) hat(S, t, T, 0.16, true);
-    if (cyc === 4 && st === 0) hat(S, t, T, 0.14, true);
-
-    // palm-muted octave bass: every sixteenth, alternating octaves, all chug
-    const oct = (st % 4 === 2 || st % 4 === 3) ? 12 : 0;
-    S._own(S.acidBass(T, mtof(ROOT - 12 + root + oct), sd * 0.62, mk(t, {
-      cutoff: 240, env: 820, q: 5, g: 0.34, accent: st % 4 === 0, decay: 0.5, drive: 1, pri: 6,
-    })), t, 0.05);
-
-    // power chords: root, fifth, octave — chugged, not strummed
-    const CHUG = [0, 2, 3, 6, 7, 10, 11, 14];
-    if (CHUG.indexOf(st) >= 0) {
-      const long = st === 0 || st === 7;
-      S._own(S.pad(T, [
-        mtof(ROOT + 12 + root), mtof(ROOT + 19 + root), mtof(ROOT + 24 + root),
-      ], long ? sd * 3.4 : sd * 1.25, mk(t, {
-        g: 0.42, detune: 9, voices: 1, cutoff: 2600, q: 1.6,
-        atk: 0.006, rel: long ? sd * 1.8 : sd * 0.7, pri: 6,
-      })), t, 0.2);
-    }
-
-    // the solo. It is not a good solo. It is an extremely confident solo.
-    const RUN = [7, 8, 9, 10, 9, 8, 9, 11, 10, 9, 8, 7, 8, 9, 7, 6];
-    if (solo) {
-      if (st % 2 === 0 || (cyc >= 6 && st % 2 === 1)) {
-        const n = ROOT + 24 + root + pent(RUN[st]);
-        const bend = st === 14 || st === 6;
-        S._own(S.acidBass(T, mtof(n), sd * (bend ? 2.6 : 1.35), mk(t, {
-          type: 'sawtooth', cutoff: 1700, env: 4200, q: 6.5, g: 0.2,
-          slide: bend ? mtof(n + 2) : 0, decay: 0.55, accent: st % 4 === 0, pri: 7,
-        })), t, 0.35);
-        if (st % 4 === 0) {
-          S._own(S.pluck(T + 0.006, mtof(n + 7), sd * 1.1, mk(t, {
-            type: 'sawtooth', g: 0.07, cutoff: 3800, q: 3, pri: 5,
-          })), t, 0.4);
-        }
-      }
-    } else if (st === 8 || st === 13) {
-      // the verse answer: two notes, delivered like they cost money
-      const n = ROOT + 24 + root + pent(st === 8 ? 7 : 9);
-      S._own(S.acidBass(T, mtof(n), sd * 2.2, mk(t, {
-        type: 'sawtooth', cutoff: 1500, env: 3400, q: 6, g: 0.17, decay: 0.6, pri: 6,
-      })), t, 0.4);
-    }
-
-    if (st === 0 && cyc === 0) {
-      S._own(S.subBoom(T, 62, 0.9, mk(t, { g: 0.5, drop: 0.4, pri: 7 })), t, 0.2);
-    }
-  },
+  /* ---- HERO, 168, D mixolydian. The warden's opinion of the warden. */
+  hero(S, t, s, T) { play(S, t, s, T, HERO, false); },
 });
 
 // Null-prototype the lookup tables: sfx('constructor') and music('toString')
