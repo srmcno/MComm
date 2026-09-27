@@ -238,7 +238,9 @@ export function drawViewmodel(game, buf, W, H) {
     const bf = art.vm[k < 0.35 ? 'boot_fire0' : k < 0.68 ? 'boot_fire1' : 'boot_fire2'] || art.vm.boot_idle;
     if (bf) {
       const L0 = game.lights.sample(p.x, p.y);
-      const lum = clamp(0.7 + (L0[0] + L0[1] + L0[2]) / 3 * 0.5, 0.6, 1.6);
+      const lum = bf.cy !== undefined
+        ? clamp(0.72 + (L0[0] + L0[1] + L0[2]) / 3 * 0.3, 0.6, 1.2)
+        : clamp(0.7 + (L0[0] + L0[1] + L0[2]) / 3 * 0.5, 0.6, 1.6);
       if (bf.cy !== undefined) {
         // The frames already carry the leg's travel; this only adds the snap
         // up out of the bottom of the screen and the drop back into it.
@@ -280,7 +282,14 @@ export function drawViewmodel(game, buf, W, H) {
   const kick = Math.max(0, p.kick);
   const punch = 1 + Math.min(0.09, kick * 0.0062);
   const L = game.lights.sample(p.x, p.y);
-  const lum = clamp(0.62 + (L[0] + L[1] + L[2]) / 3 * 0.55 + (p.flashTimer > 0 ? 0.7 : 0), 0.5, 1.9);
+  const Lk = (L[0] + L[1] + L[2]) / 3;
+  const flashLum = p.flashTimer > 0 ? 0.7 : 0;
+  // The 3D frames are lit in the bake with a full studio rig of their own, so
+  // the world only nudges them; the old painted frames were made dark enough
+  // to take the full boost.
+  const lum = f.cy !== undefined
+    ? clamp(0.72 + Lk * 0.3 + flashLum * 0.5, 0.6, 1.25)
+    : clamp(0.62 + Lk * 0.55 + flashLum, 0.5, 1.9);
 
   let scale, x, y;
   if (f.cy !== undefined) {
