@@ -251,7 +251,7 @@ export class Particles {
       p.vx *= d; p.vy *= d; p.vz *= d;
       p.vz -= p.grav * dt;
       const nx = p.x + p.vx * dt, ny = p.y + p.vy * dt;
-      if (level && p.z < 1.4 && level.blocked(nx, ny)) {
+      if (level && p.z < 1.4 && level.blockedAt(nx, ny, p.z)) {
         if (p.hard && !p.additive && p.grav > 1) {
           // Blood that reaches a wall stays on it for a while and runs.
           p.vx = 0; p.vy = 0; p.vz = 0;

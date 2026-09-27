@@ -43,6 +43,7 @@ export class Player {
     this.regenTimer = 0;
     this.kickCooldown = 0;
     this.kickAnim = 0;
+    this.throwAnim = 0;           // a pipe bomb leaving the hand, drawn like kickAnim
     this.streak = 0;         // kills without being hit
     this.streakTimer = 0;
     this.swayX = 0;          // viewmodel lag behind the camera
@@ -150,6 +151,7 @@ export class Player {
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.kickCooldown = Math.max(0, this.kickCooldown - dt);
     this.kickAnim = Math.max(0, this.kickAnim - dt);
+    this.throwAnim = Math.max(0, this.throwAnim - dt);
     this.streakTimer = Math.max(0, this.streakTimer - dt);
     if (this.streakTimer === 0 && this.streak > 0) this.streak = 0;
     this.flashTimer = Math.max(0, this.flashTimer - dt);

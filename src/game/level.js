@@ -45,6 +45,10 @@ export class Level {
     this.visited = new Uint8Array(n);       // for the automap
     this.roofPanel = new Uint8Array(n);     // sky cells that start closed
     this.propBlock = new Uint8Array(n);     // pillars and other standing props
+    // How tall the prop in a blocked cell stands. Bodies cannot walk through a
+    // sandbag pile, but a nail, a bolt or a spray of blood goes over the top of
+    // it. 0 means full height (a pillar), which blockedAt() reads as 0.95.
+    this.propH = new Float32Array(n);
     this.decal = new Int16Array(n).fill(-1); // floor decal index, -1 for none
     this.decalAge = new Float32Array(n);
     this.roofOpen = 0;                      // 0..1 how far the roof has ground back
@@ -106,7 +110,10 @@ export class Level {
     this.fixtureUsed = new Uint8Array(n);
     for (const d of this.decor) {
       const i = this.idx(d.x, d.y);
-      if (d.solid) this.propBlock[i] = 1;
+      if (d.solid) {
+        this.propBlock[i] = 1;
+        this.propH[i] = Math.max(this.propH[i], (d.z || 0) + d.h);
+      }
       if (d.fixture) this.fixture[i] = d.fixture === 'urinal' ? 2 : 1;
     }
     // Strip lights, furnace mouths and candles light the room without being
@@ -237,14 +244,15 @@ export class Level {
   /**
    * Height-aware collision for things that fly.
    *
-   * Two differences from blocked(): a parapet only stops what is below its
-   * cap, and leaving the map is not an obstruction — flak has to cross the
-   * boundary, because every warhead in the game is outside it.
+   * Three differences from blocked(): a parapet only stops what is below its
+   * cap, a waist-high prop only stops what is below its top, and leaving the
+   * map is not an obstruction: flak has to cross the boundary, because every
+   * warhead in the game is outside it.
    */
   blockedAt(x, y, z) {
     if (x < 0 || y < 0 || x >= this.W || y >= this.H) return false;
     const i = this.idx(x, y);
-    if (this.propBlock[i] && z < 0.95) return true;
+    if (this.propBlock[i] && z < (this.propH[i] || 0.95)) return true;
     const c = this.wall[i];
     if (c === CELL_SOLID) return z < this.height[i];
     if (c === CELL_DOOR) return z < 1 && this.blocked(x, y);
@@ -304,6 +312,23 @@ export class Level {
       if (this.wall[i] === CELL_SOLID) return 'none';
     }
     return 'none';
+  }
+
+  /**
+   * Would tryUse() from here act on anything? Asked without touching it, so the
+   * Boot can prefer a shut door over whatever is lying on the floor in front of it.
+   */
+  canUse(x, y, ang) {
+    const dx = Math.cos(ang), dy = Math.sin(ang);
+    for (let d = 0.4; d <= 1.5; d += 0.35) {
+      const cx = (x + dx * d) | 0, cy = (y + dy * d) | 0;
+      if (!this.inBounds(cx, cy)) break;
+      const i = cy * this.W + cx;
+      if (this.wall[i] === CELL_DOOR) return this.doorOpen[i] < 0.92;
+      if (this.fixture && this.fixture[i]) return !this.fixtureUsed[i];
+      if (this.wall[i] === CELL_SOLID) return !!this.secret[i];
+    }
+    return false;
   }
 
   startPush(cx, cy, dx, dy) {
