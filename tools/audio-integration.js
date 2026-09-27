@@ -6,6 +6,7 @@ import { chromePath } from './chrome-path.js';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { SFX_NAMES } from '../src/audio/synth.js';
 
 const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
 const PORT = Number(process.env.TOOL_PORT || 8147);
@@ -16,15 +17,44 @@ const check = (name, ok, detail = '') => {
 };
 
 // ---------------------------------------------------------------- static
-const gameSrc = ['src/game/game.js', 'src/game/render.js', 'src/main.js', 'src/game/entities.js']
-  .map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
+// Every game and UI module, not a hand-kept list: gore.js calls seven sounds of
+// its own, and a list that missed it would ship a typo as silence.
+const srcFiles = [
+  ...fs.readdirSync(path.join(ROOT, 'src/game')).filter((f) => f.endsWith('.js')).map((f) => 'src/game/' + f),
+  ...fs.readdirSync(path.join(ROOT, 'src/ui')).filter((f) => f.endsWith('.js')).map((f) => 'src/ui/' + f),
+  'src/main.js',
+];
+const gameSrc = srcFiles.map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
 const synthSrc = fs.readFileSync(path.join(ROOT, 'src/audio/synth.js'), 'utf8');
 const voxSrc = fs.readFileSync(path.join(ROOT, 'src/audio/vox.js'), 'utf8');
 
+/** The first argument of every sfx( call, up to its comma or bracket. */
+function sfxArgs(src) {
+  const out = [];
+  for (const m of src.matchAll(/\bsfx\(/g)) {
+    let i = m.index + m[0].length, depth = 0, q = null;
+    const start = i;
+    for (; i < src.length; i++) {
+      const ch = src[i];
+      if (q) { if (ch === q && src[i - 1] !== '\\') q = null; continue; }
+      if (ch === "'" || ch === '"' || ch === '`') q = ch;
+      else if (ch === '(' || ch === '[' || ch === '{') depth++;
+      else if (ch === ')' || ch === ']' || ch === '}') { if (depth === 0) break; depth--; }
+      else if (ch === ',' && depth === 0) break;
+    }
+    out.push(src.slice(start, i));
+  }
+  return out;
+}
+
 const usedSfx = new Set();
-for (const m of gameSrc.matchAll(/\bsfx\(\s*'([a-z0-9_]+)'/g)) usedSfx.add(m[1]);
-for (const m of gameSrc.matchAll(/sfx\(\s*e\.def\.alert \|\| '([a-z0-9_]+)'/g)) usedSfx.add(m[1]);
-for (const m of gameSrc.matchAll(/alert: '([a-z0-9_]+)'/g)) usedSfx.add(m[1]);
+// Every quoted name the argument can evaluate to counts, so sfx(x ? 'a' : 'b')
+// and sfx(e.def.die || 'enemy_die') are checked on both sides. A string that is
+// compared against (=== 'rend') or built on ('chain' + n) is not a name.
+for (const arg of sfxArgs(gameSrc)) {
+  for (const m of arg.matchAll(/(?<![=!]=?=\s*)'([a-z0-9_]+)'(?!\s*\+)/g)) usedSfx.add(m[1]);
+}
+for (const m of gameSrc.matchAll(/\b(?:alert|die): '([a-z0-9_]+)'/g)) usedSfx.add(m[1]);
 // The chain stings are built by concatenation.
 for (let i = 2; i <= 5; i++) usedSfx.add('chain' + i);
 for (const m of gameSrc.matchAll(/sfx\(spec\.sfx/g)) {
@@ -32,8 +62,9 @@ for (const m of gameSrc.matchAll(/sfx\(spec\.sfx/g)) {
     .matchAll(/sfx: '([a-z0-9_]+)'/g)) usedSfx.add(w[1]);
 }
 
-// The synth registers sounds as object keys or methods, so match either shape.
-const missingSfx = [...usedSfx].filter((n) => !new RegExp(`\\b${n}\\s*[:(]`).test(synthSrc));
+// Ask the synth itself: sfx() on a name it does not know is a silent no-op.
+const known = new Set(SFX_NAMES);
+const missingSfx = [...usedSfx].filter((n) => !known.has(n));
 check(`all ${usedSfx.size} sfx names the game calls exist in synth.js`, missingSfx.length === 0,
   missingSfx.join(', '));
 

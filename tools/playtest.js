@@ -1699,6 +1699,192 @@ check('a thrown body bowls over the one behind it, a blast re-throws a lying hea
   s.bowled > 10 && s.pushed > 0.3 && s.blown > 1 && s.hop > 0.08,
   `pin took ${s.bowled} and slid ${s.pushed}; head blown ${s.blown}, hopped ${s.hop}`);
 
+// ------- 60. a bomb in a crowd cannot take the SFX pool from the player's gun
+// Twenty limb_rips on one frame used to be sixteen stacked copies, and the
+// pool they filled refused the nailer and the flak pistol for most of a second.
+s = await page.evaluate(async () => {
+  const { Sound } = await import('./src/audio/synth.js');
+  const oc = new OfflineAudioContext(2, 44100, 44100);
+  const snd = new Sound();
+  await snd.init(oc);
+  const live = (n) => snd._voices.filter((v) => v.name === n && v.head && !v.fading).length;
+  snd.sfx('pipebomb_blow');
+  for (let i = 0; i < 5; i++) {
+    snd.sfx('enemy_die'); snd.sfx('head_pop');
+    for (let k = 0; k < 4; k++) snd.sfx('limb_rip');
+    snd.sfx('gib');
+  }
+  for (let i = 0; i < 10; i++) snd.sfx('body_slam');
+  for (let i = 0; i < 20; i++) { snd.sfx('meat_thud'); snd.sfx('bone_bounce'); }
+  // and the crowd dying around it, until the pool is full
+  for (const n of ['wrencher_die', 'sparker_die', 'ghoul_die', 'howler_die', 'stalker_die', 'head_punt', 'splat']) {
+    for (let i = 0; i < 3; i++) snd.sfx(n);
+  }
+  const pool = snd._voices.filter((v) => v.pool === 0).length;
+  const rips = live('limb_rip');
+  snd.sfx('nailer_fire');
+  snd.sfx('flak_fire');
+  const out = { pool, rips, nailer: live('nailer_fire'), flak: live('flak_fire'), err: snd._err && snd._err.name };
+  snd.panic();
+  return out;
+});
+check("a bomb's worth of gore on one frame stays three rips deep and never refuses the player's gun",
+  s.pool >= 26 && s.rips <= 3 && s.nailer === 1 && s.flak === 1 && !s.err,
+  `pool ${s.pool}, ${s.rips} limb_rip live, nailer ${s.nailer}, flak ${s.flak}`);
+
+// ------- 61. a stalled frame cannot abort a gated sound effect
+// The audio clock running past the start time used to make gate()'s tail event
+// overlap its own curve, which threw and took the rest of the effect with it.
+s = await page.evaluate(async () => {
+  const { Sound } = await import('./src/audio/synth.js');
+  const oc = new OfflineAudioContext(2, 44100, 44100);
+  const snd = new Sound();
+  await snd.init(oc);
+  const out = {};
+  oc.suspend(0.5).then(() => {
+    const t0 = snd._t;
+    snd._t = function () { return this._now() - 0.03; };     // as if the frame had stalled 30 ms
+    for (const n of ['radio_close', 'radio_static', 'door_close', 'acid_burn', 'roof_open']) {
+      snd._err = null; snd.sfx(n); out[n] = snd._err ? snd._err.name : 'ok';
+    }
+    snd._t = t0;
+    oc.resume();
+  });
+  await oc.startRendering();
+  return out;
+});
+check('a sound effect whose start time the audio clock has already passed still plays whole',
+  Object.values(s).every((x) => x === 'ok'), JSON.stringify(s));
+
+// ------- 62. voice lines have priorities, and a queued line waits for its caption
+// A stand-in engine with the real floor rules: a higher priority cuts in, the
+// rest queue, and onStart fires when a line is actually heard.
+await page.evaluate(() => {
+  window.FAKEVOX = () => {
+    const e = { t: 0, active: null, queue: [], said: [], cancels: 0, engine: 'robot', lastLine: '', lastRequested: '' };
+    const start = (it) => {
+      e.active = { ...it, end: e.t + it.d };
+      e.lastLine = it.text;
+      e.said.push([+e.t.toFixed(2), it.text, it.p]);
+      if (it.o.onStart) it.o.onStart(it.d);
+    };
+    e.pump = () => {
+      if (e.active && e.t >= e.active.end) e.active = null;
+      if (!e.active && e.queue.length) {
+        let b = 0;
+        for (let i = 1; i < e.queue.length; i++) if (e.queue[i].p > e.queue[b].p) b = i;
+        start(e.queue.splice(b, 1)[0]);
+      }
+    };
+    e.say = (text, o = {}) => {
+      const p = o.priority || 0;
+      e.lastRequested = text;
+      e.pump();
+      const it = { text, o, p, d: 3 };
+      if (e.active) {
+        if (p <= e.active.p) {
+          if (e.queue.length >= 2) return 0;
+          e.queue.push(it);
+          return 3;
+        }
+        e.active = null;
+        e.queue = e.queue.filter((q) => q.p >= p);
+      }
+      start(it);
+      return 3;
+    };
+    e.sayLine = (key, o) => e.say(key, o);
+    e.cancel = () => { e.cancels++; e.active = null; e.queue.length = 0; };
+    e.setVolume = () => {};
+    e.setMode = () => {};
+    Object.defineProperty(e, 'busy', { get() { e.pump(); return !!e.active; } });
+    e.step = (dt) => { e.t += dt; e.pump(); };
+    return e;
+  };
+});
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.newGame(1); g.loadLevel(0); g.setState('play');
+  const real = g.vox, hs = g.hud.say, subs = g.subtitlesOn;
+  const v = window.FAKEVOX();
+  g.vox = v; g.subtitlesOn = true; g.radio.reset();
+  const caps = [];
+  g.hud.say = function (t, d) { caps.push([+v.t.toFixed(2), t]); return hs.call(this, t, d); };
+  g.radio.say('ilsa', 'ilsa_low_health', 'Heal.', { priority: 1 });
+  g.radio.update(1 / 60);
+  v.step(1);
+  g.speak('mirv_warning', {}, 'Plural.');
+  const radioAfter = g.radio.current ? g.radio.current.key : null;
+  g.speak('idle_taunt', {}, 'Productivity.');
+  const before = caps.map((c) => c[1]);
+  v.step(2.2);
+  v.step(1);
+  g.vox = real; g.hud.say = hs; g.subtitlesOn = subs; g.radio.reset();
+  const taunt = caps.find((c) => c[1] === 'idle_taunt');
+  return { said: v.said, radioAfter, before, tauntAt: taunt ? taunt[0] : null };
+});
+const mirv = s.said.find((x) => x[1] === 'mirv_warning');
+check('a MIRV warning cuts in over the radio instead of queueing behind it, and takes the portrait with it',
+  !!mirv && mirv[0] === 1 && mirv[2] === 3 && s.radioAfter === null,
+  s.said.map((x) => `${x[0]}s ${x[1]} p${x[2]}`).join(', '));
+check('a line that has to wait is captioned when it is heard, not when it was asked for',
+  !s.before.includes('idle_taunt') && s.tauntAt === 4.2, `caption at ${s.tauntAt}s, voice free at 4.2s`);
+
+// ------- 63. the death exchange is heard whole, and the game over card waits for it
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.newGame(1); g.loadLevel(0); g.setState('play');
+  const real = g.vox;
+  const v = window.FAKEVOX();
+  g.vox = v; g.radio.reset();
+  const idle = { anyPressed: () => false };
+  const god = g._god;
+  g._god = false; g.player.health = 20; g._hurtSaid = false;
+  g.radio.say('brick', 'brick_low_health', 'Ow.', { priority: 1 });
+  g.player.hurt(9999, g, 'test');
+  g.onPlayerHurt(null, 'melee');
+  g.onPlayerHurt(null, 'melee');              // the body takes another hit before the card
+  const queued = g.radio.queue.map((q) => q.key);
+  for (let t = 0; t < 2.6; t += 1 / 30) { g.radio.update(1 / 30); v.step(1 / 30); }
+  const cancelsBefore = v.cancels;
+  g.gameOver('killed');
+  for (let t = 0; t < 16; t += 1 / 30) { g.updateGameOver(1 / 30, idle); v.step(1 / 30); }
+  g.vox = real; g._god = god; g.setState('title');
+  return { queued, said: v.said.map((x) => x[1]), cut: v.cancels - cancelsBefore };
+});
+check("dying queues only the death lines, and Brick's last words, the card and Ilsa's answer all play",
+  s.queued.join() === 'brick_death,ilsa_death' && s.cut === 0 &&
+    s.said.filter((k) => k !== 'brick_low_health').join() === 'brick_death,game_over,ilsa_death' &&
+    !s.said.includes('brick_low_health'),
+  `queued ${s.queued.join('+')}; heard ${s.said.join(' > ')}; ${s.cut} cut`);
+
+// ------- 64. no ducking for silence, and captions read the way the voice does
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game;
+  const { plainText } = await import('./src/audio/speech.js');
+  const real = g.vox, duck = g.sound.duck, vv = g.volVox;
+  const v = window.FAKEVOX();
+  g.vox = v; g.radio.reset();
+  let ducks = 0;
+  g.sound.duck = () => { ducks++; };
+  g.volVox = 0;
+  g.speak('idle_taunt', {}, 'Productivity.');
+  g.speakAs('ilsa', 'ilsa_low_health', 'Heal.');
+  const silent = ducks;
+  g.volVox = vv; v.cancel();
+  g.speak('idle_taunt', {}, 'Productivity.');
+  const heard = ducks - silent;
+  v.cancel();
+  const raw = 'Bunker {Sieben|S IY1 B AH N}, {HH AH} a stray } and | here %s.';
+  g.speakAs('mutter', null, raw);
+  const caption = g.lastSpoken.text;
+  g.vox = real; g.sound.duck = duck; g.radio.reset();
+  return { silent, heard, caption, want: plainText(raw) };
+});
+check('voice volume at zero leaves the music alone, and captions use the same plainText as the voice',
+  s.silent === 0 && s.heard > 0 && s.caption === s.want,
+  `ducks at 0%: ${s.silent}, at full: ${s.heard}; "${s.caption}"`);
+
 // ------------------------------------------------------------- report
 console.log('');
 if (errors.length) {
