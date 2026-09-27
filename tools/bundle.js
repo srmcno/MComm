@@ -35,9 +35,11 @@ const html = `<title>NUKEHAUS</title>
     background: #06050a; color: #d8d2c4;
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
-  #wrap { position: fixed; inset: 0; display: grid; place-items: center; background: #06050a; }
+  /* Pinned, not laid out: a grid row sized from the canvas's own pixel size
+     cropped the frame after a resize (see index.html). */
+  #wrap { position: fixed; inset: 0; background: #06050a; overflow: hidden; }
   canvas#screen {
-    display: block; width: 100%; height: 100%;
+    position: absolute; inset: 0; display: block; width: 100%; height: 100%;
     image-rendering: pixelated; cursor: none; touch-action: none;
   }
   #overlay { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 10; }
