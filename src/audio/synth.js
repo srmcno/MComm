@@ -89,6 +89,12 @@ const PENT = [0, 2, 4, 7, 9];
 const MAXV = [26, 44];          // concurrent voices: [sfx, music]
 const BUDGET = [130, 300];      // hard node ceiling per pool: the anti-leak valve
 const LOOKAHEAD = 0.2;          // sequencer scheduling horizon, seconds
+// Live copies of any one sound effect. Twenty limb_rips on one frame are one
+// phasey blob as loud as the bomb that caused them, and they take the pool
+// from the player's own gun. Past the cap, a copy that has had its moment
+// hands over to the newcomer; a crowd on the same frame is simply refused.
+const PER_NAME = 3;
+const RETRIGGER = 0.05;         // seconds a copy plays before a newer one may take its place
 /** The pool limits, read-only, so tests can bound the graph by what it promises. */
 export const POOL_LIMITS = Object.freeze({ voices: MAXV.slice(), nodes: BUDGET.slice() });
 const SEND_LV = [0.16, 0.36, 0.7];
@@ -117,6 +123,8 @@ export class Sound {
     this._nc = [0, 0];
     this._seq = 0;
     this._rs = 0x1a2b3c4d;
+    // which sfx() call is building right now, so its voices can be counted by name
+    this._name = null; this._inst = 0; this._head = false; this._at = 0;
 
     // mix state (settable before init)
     this._vMaster = 0.85; this._vMusic = 0.8; this._vSfx = 0.95;
@@ -397,7 +405,9 @@ export class Sound {
     const v = {
       pool, pri, score, out, nodes: [out], srcs: [], pending: 0,
       end: this._now(), alive: true, owner: null, onend: null,
+      name: this._name, inst: this._inst, head: this._head, born: this._at, fading: false,
     };
+    this._head = false;
     v.onend = () => { if (--v.pending <= 0) this._free(v); };
     this._nc[pool]++;
 
@@ -478,6 +488,41 @@ export class Sound {
     if (i >= 0) this._voices.splice(i, 1);
   }
 
+  /**
+   * Make room for one more copy of `name`, or say there is none. The oldest
+   * copy is faded out rather than cut, since it is usually still ringing.
+   */
+  _room(name) {
+    const arr = this._voices;
+    let n = 0, old = null;
+    for (let i = 0; i < arr.length; i++) {
+      const v = arr[i];
+      if (!v.head || v.fading || v.name !== name) continue;
+      n++;
+      if (!old || v.inst < old.inst) old = v;
+    }
+    if (n < PER_NAME) return true;
+    if (this._now() - old.born < RETRIGGER) return false;
+    for (let i = 0; i < arr.length; i++) if (arr[i].inst === old.inst) this._fade(arr[i]);
+    return true;
+  }
+
+  /** A quick fade and stop: the polite way to take a voice that is still sounding. */
+  _fade(v) {
+    if (!v.alive || v.fading) return;
+    v.fading = true;
+    const t = this._now(), g = v.out.gain;
+    try {
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(clamp(fin(g.value, 1), 0, 4), t);
+      g.linearRampToValueAtTime(0, t + 0.03);
+    } catch (e) { /* the stop below still ends it */ }
+    for (let i = 0; i < v.srcs.length; i++) {
+      try { v.srcs[i].stop(t + 0.035); } catch (e) { /* already done */ }
+    }
+    if (v.end > t + 0.035) v.end = t + 0.035;
+  }
+
   _kill(v) {
     if (!v.alive) return;
     const t = this._now();
@@ -552,17 +597,21 @@ export class Sound {
     if (!this._ready) return;
     const fn = SFX[name];
     if (!fn) return;
+    const prev = this._name;
     try {
+      if (!this._room(name)) return;
       const o = this._o;
       o.vol = clamp(fin(opts.vol, 1), 0, 4) * (MIX[name] || 1);
       o.rate = clamp(fin(opts.rate, 1), 0.25, 4);
       o.pan = clamp(fin(opts.pan, 0), -1, 1);
       o.delay = clamp(fin(opts.delay, 0), 0, 20);
       const t = this._t(this._now() + o.delay);
+      this._name = name; this._inst++; this._head = true; this._at = t;
       fn(this, t, o);
       const p = PUMP[name];
       if (p) this._pumpMusic(t, p * Math.min(1, fin(opts.vol, 1)));
     } catch (e) { this._err = e; /* a broken sound effect must never stop the game */ }
+    this._name = prev; this._head = false;
   }
 
   /**
@@ -1408,8 +1457,13 @@ function gullet(S, v, t, dur, peaks, o) {
  */
 function gate(S, v, node, curveArr, t, dur) {
   const cg = S._ctx.createGain();
-  cg.gain.setValueCurveAtTime(curveArr, t, dur);
-  cg.gain.setValueAtTime(0, t + dur + 0.002);
+  // A stall between sfx() reading the clock and getting here (a bake, a heavy
+  // gore frame) leaves `t` in the past. The browser then starts the curve at
+  // now instead, and a tail event at t + dur lands inside it and throws, which
+  // took the rest of the sound with it. Start from now, and leave the tail room.
+  const t0 = Math.max(t, S._now());
+  cg.gain.setValueCurveAtTime(curveArr, t0, dur);
+  try { cg.gain.setValueAtTime(0, t0 + dur + 0.01); } catch (e) { /* the source's own stop ends it */ }
   node.disconnect();
   node.connect(cg);
   cg.connect(v.out);
@@ -2263,12 +2317,15 @@ bake('pipe', 0.85, 1, (d, sr, R) => {
 });
 
 /* ------------------------------------------------------------- weapons */
+// The player's own guns (and the boot) allocate at priority 8, above anything
+// gore or the enemies make, so a full pool on a bloody frame never costs the
+// shot you just fired. PER_NAME keeps a fast gun from taking the pool itself.
 
 const SFX = {
 
   // THE WIDOW
   flak_fire(S, t, o) {
-    const v = V(S, o, 6, 0.3, 0.14); if (!v) return;
+    const v = V(S, o, 8, 0.3, 0.14); if (!v) return;
     const r = jr(S, o, 0.05);
     smp(S, v, t, 'widow', { g: 1.05, rate: r });
     // the room answering, in stereo, which the baked mono layer cannot do
@@ -2278,7 +2335,7 @@ const SFX = {
   // THE SPLITTER. weapons.js still points the Splitter at flak_fire; this is
   // the sound it should be making.
   splitter_fire(S, t, o) {
-    const v = V(S, o, 7, 0.34, 0.16); if (!v) return;
+    const v = V(S, o, 8, 0.34, 0.16); if (!v) return;
     const r = jr(S, o, 0.04);
     smp(S, v, t, 'splitter', { g: 1.1, rate: r });
     S._nz(v, t + 0.008, 0.8, { type: 'lowpass', f: 1200 * r, f2: 90, q: 0.8, g: 0.34, atk: 0.005, dec: 0.72, pink: true });
@@ -2305,12 +2362,12 @@ const SFX = {
   },
 
   nailer_fire(S, t, o) {
-    const v = V(S, o, 5, 0.16, 0); if (!v) return;
+    const v = V(S, o, 8, 0.16, 0); if (!v) return;
     smp(S, v, t, 'nailer', { g: 0.85, rate: jr(S, o, 0.07) });
   },
 
   halo_fire(S, t, o) {
-    const v = V(S, o, 7, 0.22, 0.45); if (!v) return;
+    const v = V(S, o, 8, 0.22, 0.45); if (!v) return;
     const r = jr(S, o, 0.03);
     smp(S, v, t, 'halo', { g: 1.0, rate: r });
     // a live shimmer on top, so the hang of the ring moves in the stereo field
@@ -4406,13 +4463,13 @@ bake('pipe_land', 0.6, 1, (d, sr, R) => {
 Object.assign(SFX, {
 
   kick_swing(S, t, o) {
-    const v = V(S, o, 4, 0.25, 0); if (!v) return;
+    const v = V(S, o, 8, 0.25, 0); if (!v) return;
     smp(S, v, t, 'swish', { g: 0.7, rate: jr(S, o, 0.08) * 0.65 });
     S._nz(v, t, 0.18, { type: 'bandpass', f: 250, f2: 700, q: 1, g: 0.18, atk: 0.1, dec: 0.08, pink: true });
   },
 
   kick_hit(S, t, o) {
-    const v = V(S, o, 6, 0.4, 0.1); if (!v) return;
+    const v = V(S, o, 8, 0.4, 0.1); if (!v) return;
     smp(S, v, t, 'boot_hit', { g: 1.0, rate: jr(S, o, 0.08) });
     smp(S, v, t + 0.004, 'crack', { g: 0.3, rate: jr(S, o, 0.2) });
   },
@@ -4435,7 +4492,7 @@ Object.assign(SFX, {
   },
 
   pipebomb_throw(S, t, o) {
-    const v = V(S, o, 4, 0.3, 0.1); if (!v) return;
+    const v = V(S, o, 8, 0.3, 0.1); if (!v) return;
     smp(S, v, t, 'swish', { g: 0.6, rate: jr(S, o, 0.08) });
     S._nz(v, t + 0.03, 0.05, { type: 'bandpass', f: 2900, q: 9, g: 0.16, atk: 0.001, dec: 0.045 });
   },

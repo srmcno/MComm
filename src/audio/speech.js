@@ -31,7 +31,7 @@
 // when the first Speech is constructed, which main.js does inside the first
 // user gesture.
 
-import { pickLine, pickLineAt, voiceOf } from './vox.js';
+import { pickLine, pickLineAt, voiceOf, lineStarted } from './vox.js';
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const num = (v, d) => (isNum(v) ? v : d);
@@ -651,6 +651,8 @@ export class Speech {
    * Speak. Returns the estimated duration in seconds, or 0 if nothing will be
    * said. Floor rules match the formant Vox: a higher priority cuts in, equal
    * or lower waits in a queue of at most two, and a stale line is dropped.
+   * A queued line returns its estimate too; `opts.onStart` fires when it
+   * really starts, on either engine, and never for a line that was dropped.
    */
   say(text, opts = {}) {
     try {
@@ -796,6 +798,7 @@ export class Speech {
     this._route = 'natural';
     this._lastText = plainText(raw);
     this._lastVoice = role;
+    lineStarted(o, est);
 
     const fire = () => {
       if (a.dead || this._active !== a) return;
