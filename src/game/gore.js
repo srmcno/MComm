@@ -506,12 +506,22 @@ export class Gore {
     const headshot = zf >= rig.neck - 0.04 && near < 1.4;
     let n = 0;
     const max = spec.parts || 1;
+    const quad = !!QUADRUPED[e.kind];
     for (let k = 0; k < 5 && n < max; k++) {
       const b = o[k];
       if (e.maim & b) continue;
       // Losing a head is fatal, so off a hit that was not, it takes a real
       // headshot. Off a kill it is just another part.
       let chance = b !== HEAD ? p : headshot ? spec.head * (1.15 - near / 2.8) : killed ? spec.head * p * 0.35 : 0;
+      // Parts come off where the blast is. A burst at the hat should not take
+      // the boots, so a part far above or below the burst is rarely the one
+      // that goes; a real headshot is already measured to the head itself.
+      if (!(b === HEAD && headshot)) {
+        const pz = b === HEAD ? rig.head
+          : (b & (ARM_R | ARM_L)) ? (quad ? rig.shoulder * 0.6 : rig.shoulder - 0.1)
+          : rig.hip * 0.55;
+        chance *= clamp(1.15 - Math.abs(zf - pz) * 2.2, 0.08, 1);
+      }
       if (rng() < chance) {
         if (this.sever(e, b, dx, dy, 3 + knock * 0.55)) { n++; p *= 0.6; }
       }

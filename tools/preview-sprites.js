@@ -39,6 +39,11 @@ expected.push('mutter_dead');
 expected.push('key_red', 'key_blue', 'key_gold', 'medkit_small', 'medkit_big', 'ammo_flak', 'ammo_crate');
 for (let i = 0; i < 4; i++) expected.push(`treasure${i}`);
 expected.push('barrel', 'barrel_lit', 'pillar', 'lamp');
+// Set dressing: the furniture, fixtures and remains each floor is dressed with.
+for (const k of ['desk', 'chair', 'filing', 'locker', 'vending', 'cooler', 'toilet', 'urinal',
+  'skeleton', 'sandbags', 'crate', 'crates', 'console', 'plant', 'mop', 'cone', 'chains', 'hook',
+  'corpse', 'corpse2', 'nosecone', 'pinball', 'candles', 'pew', 'trash']) expected.push(`prop_${k}`);
+for (const k of ['wood', 'salt', 'rust', 'tech']) expected.push(`pillar_${k}`);
 for (let i = 0; i < 3; i++) expected.push(`flare${i}`);
 expected.push('weapon_splitter', 'weapon_nailer', 'weapon_halo', 'weapon_pipebomb', 'weapon_deadman');
 expected.push('wh_stick', 'wh_mirv', 'wh_smart', 'wh_screamer', 'wh_buster');
