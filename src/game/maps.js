@@ -762,8 +762,9 @@ const LOOKS = [
       CIRCUIT: 'FLOOR_RAISED', SCREENS: 'FLOOR_RAISED', VENT: 'FLOOR_CONCRETE', STEEL_PLATE: 'FLOOR_CONCRETE' },
     ceilsBy: { PIPES: 'CEIL_PIPES', RUST: 'CEIL_CONCRETE', TILE: 'CEIL_CONCRETE', CIRCUIT: 'CEIL_CABLES',
       SCREENS: 'CEIL_CABLES', VENT: 'CEIL_PIPES' },
-    density: 0.13,
-    decor: [['desk', 4], ['chair', 4], ['filing', 3], ['locker', 2], ['cooler', 1], ['vending', 1],
+    density: 0.24,
+    openDensity: 0.05,
+    decor: [['desk', 5], ['chair', 3], ['filing', 3], ['locker', 2], ['cooler', 1], ['vending', 1],
       ['plant', 3], ['mop', 1], ['corpse', 2], ['trash', 2], ['cone', 1], ['console', 1], ['crate', 1]],
     deck: [['crate', 2], ['sandbags', 2], ['corpse2', 1]],
     decorBy: {
@@ -815,8 +816,8 @@ const LOOKS = [
     floorsBy: { PIPES: 'FLOOR_GRATE', VENT: 'FLOOR_GRATE', FLESH: 'FLOOR_CONCRETE' },
     ceilsBy: { PIPES: 'CEIL_PIPES', VENT: 'CEIL_PIPES', STEEL_PLATE: 'CEIL_CONCRETE' },
     density: 0.1,
-    decor: [['hook', 4], ['chains', 3], ['skeleton', 2], ['corpse2', 2], ['crates', 2], ['crate', 1],
-      ['sandbags', 1], ['nosecone', 1], ['trash', 1]],
+    decor: [['hook', 3], ['chains', 2], ['skeleton', 2], ['corpse2', 2], ['crates', 3], ['crate', 2],
+      ['sandbags', 2], ['nosecone', 1], ['trash', 1]],
     deck: [['crate', 2], ['sandbags', 2], ['nosecone', 1]],
     props: [],
     features: [],
@@ -1168,10 +1169,11 @@ function dressLevel(def, idx, P) {
         const roomPool = !onDeck && fam && ((look.decorBy && look.decorBy[fam]) || COMMON_ROOMS[fam]);
         const base = onDeck ? look.deck : (roomPool || look.decor);
         if (!base || !base.length) continue;
-        if (hash3(x, y, seed + 51) > density * (onDeck ? 0.25 : 1)) continue;
         // Against a wall, anything goes and furniture is favoured; out in the
-        // open only the things that stand on their own.
+        // open only the things that stand on their own, and fewer of them.
         const backed = solidWall(x - 1, y) || solidWall(x + 1, y) || solidWall(x, y - 1) || solidWall(x, y + 1);
+        const chance = onDeck ? density * 0.25 : backed ? density : (look.openDensity || density * 0.4);
+        if (hash3(x, y, seed + 51) > chance) continue;
         const pool = base.filter(([k]) => fits(x, y, k) && (backed || !DECOR[k].wall))
           .map(([k, wt]) => [k, backed && DECOR[k].wall ? wt * 2 : wt]);
         if (!pool.length) continue;
