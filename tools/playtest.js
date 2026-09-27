@@ -1699,6 +1699,204 @@ check('a thrown body bowls over the one behind it, a blast re-throws a lying hea
   s.bowled > 10 && s.pushed > 0.3 && s.blown > 1 && s.hop > 0.08,
   `pin took ${s.bowled} and slid ${s.pushed}; head blown ${s.blown}, hopped ${s.hop}`);
 
+// ------- 60. side views: the sprite faces the way it walks, and the arm shot
+// off the flank nearest the camera is the one that disappears
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  G.arena();
+  const p = g.player;
+  const e = await G.spawn('wrencher', 2, 0);
+  const out = {};
+  // Facing +y, which is screen-right for a camera looking down +x: its right
+  // flank faces the camera, and the generator paints that as view 1.
+  e.ang = Math.PI / 2; e.state = 2;
+  out.right = e.frameKey(p.x, p.y);
+  out.rightZone = g.gore.zoneAt(e, e.x - e.radius, e.y, e.z + e.height * 0.6);
+  e.ang = -Math.PI / 2;
+  out.left = e.frameKey(p.x, p.y);
+  out.leftZone = g.gore.zoneAt(e, e.x - e.radius, e.y, e.z + e.height * 0.6);
+  e.ang = Math.PI;
+  out.front = e.frameKey(p.x, p.y);
+  e.headlessT = 1; e.state = 6; e.ang = Math.PI / 2;
+  out.headless = e.frameKey(p.x, p.y);
+  g.enemies.length = 0;
+  return out;
+});
+check('side views: facing screen-right shows its right side (view 1), screen-left its left (view 3)',
+  /_walk1_/.test(s.right) && s.rightZone === 2 && /_walk3_/.test(s.left) && s.leftZone === 4 &&
+  /_walk0_/.test(s.front) && /_walk1_/.test(s.headless),
+  `${s.right} near flank ${s.rightZone}, ${s.left} near flank ${s.leftZone}, ${s.front}, headless ${s.headless}`);
+
+// ------- 61. gore bookkeeping: the rotation cache is bounded and cleared, a
+// dead wasp is only gibbed once, and the fallback rig matches the art's
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  const gore = await import('./src/game/gore.js');
+  const art = window.NUKEHAUS.art;
+  const out = {};
+  // Every die and dead frame of the cast, maimed, turned through every step.
+  let peak = 0;
+  const keys = Object.keys(art.sprites).filter((k) => /^(wrencher|sparker|ghoul)_(die\d|dead)$/.test(k));
+  for (const k of keys) for (const m of [0, 3, 12, 31]) {
+    const f = m ? art.maim(k, m) : art.sprites[k];
+    if (!f) continue;
+    for (let st = 1; st < 16; st++) { gore.rotFrame(f, st * Math.PI / 8); peak = Math.max(peak, gore.rotationStats().px); }
+  }
+  out.peakMpx = +(peak / 1e6).toFixed(2);
+  G.arena();
+  out.afterClear = gore.rotationStats().px;
+  let fallbackOff = 0;
+  for (const [k, r] of Object.entries(art.rig || {})) {
+    const d = gore.RIG_DEFAULT[k];
+    if (!d) { fallbackOff = 9; continue; }
+    for (const j of ['hip', 'shoulder', 'neck', 'head']) fallbackOff = Math.max(fallbackOff, Math.abs(d[j] - r[j]));
+  }
+  out.rigOff = +fallbackOff.toFixed(3);
+  const w = await G.spawn('wasp', 3, 0);
+  w.hurt(999, g, g.player.x, g.player.y);
+  G.step(1);
+  let gibs = 0;
+  const gib0 = g.gib;
+  g.gib = (e) => { if (e === w) gibs++; return gib0.call(g, e); };
+  for (let k = 0; k < 3; k++) { g.explodeAt(w.x + 0.3, w.y, 0.4, 3, 90); G.step(0.4); }
+  g.gib = gib0;
+  out.waspGibs = gibs;
+  g.enemies.length = 0;
+  return out;
+});
+check('the rotation cache stays inside its budget and a level load empties it; a dead wasp gibs once',
+  s.peakMpx <= 6.5 && s.afterClear === 0 && s.waspGibs === 1 && s.rigOff < 0.006,
+  `peak ${s.peakMpx} Mpx, ${s.afterClear} px after load, wasp gibbed ${s.waspGibs}x, fallback rig off by ${s.rigOff}`);
+
+// ------- 62. blasts: a quadruped's head only goes to a hard burst at its face,
+// and a crawler loses its head to a burst where its head is actually drawn
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  const { WEAPONS } = await import('./src/game/weapons.js');
+  const { HEAD, LEG_R, LEG_L } = await import('./src/game/gore.js');
+  G.arena();
+  const spec = WEAPONS.pistol.gore;
+  const out = { quad: 0, above: 0, crawler: 0 };
+  for (let i = 0; i < 200; i++) {
+    g.enemies.length = 0;
+    const e = await G.spawn(i & 1 ? 'stalker' : 'ghoul', 4, 0);
+    e.hp = e.maxHp = 200; e.state = 1;
+    const bx = e.x - 0.7, by = e.y, bz = e.z + e.height * 0.5;
+    const killed = e.hurt(12, g, bx, by);
+    g.gore.blast(e, bx, by, bz, 12, spec, killed);
+    if (e.maim & HEAD) out.quad++;
+    g.gore.clear();
+    const q = await G.spawn('ghoul', 4, 1);
+    q.hp = q.maxHp = 34; q.state = 1;
+    q.hurt(26, g, q.x, q.y);
+    g.gore.blast(q, q.x, q.y, q.z + q.height + 0.6, 26, spec, false);
+    if (q.maim & HEAD) out.above++;
+    g.gore.clear();
+  }
+  for (let i = 0; i < 60; i++) {
+    g.enemies.length = 0;
+    const e = await G.spawn('wrencher', 4, 0);
+    e.hp = e.maxHp = 2000; e.state = 5; e.stateT = -99;
+    g.gore.sever(e, LEG_R, 0, 1, 1); g.gore.sever(e, LEG_L, 0, -1, 1);
+    e._pose(1 / 60, g);
+    const z = e.z + e.zOff + g.gore.rigOf('wrencher').head * e.height;
+    g.gore.blast(e, e.x - 0.2, e.y, z, 30, spec, false);
+    if (e.maim & HEAD) out.crawler++;
+    g.gore.clear();
+  }
+  g.enemies.length = 0;
+  return out;
+});
+check('a light burst in front of a quadruped rarely takes its head, one over it never does, a crawler\'s drawn head is hit',
+  s.quad < 40 && s.above === 0 && s.crawler > 30,
+  `quad heads ${s.quad}/200, over-the-top ${s.above}/200, crawler heads ${s.crawler}/60`);
+
+// ------- 63. loose parts: over a parapet they land on its cap, they fade in
+// the end, the Boot does not reach them through a wall, and a pipe bomb in a
+// crowd is one big rip rather than twenty
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  G.arena();
+  const lv = g.level;
+  const out = {};
+  let cell = null;
+  for (let y = 1; y < lv.H - 1 && !cell; y++) for (let x = 2; x < lv.W - 1 && !cell; x++) {
+    const i = y * lv.W + x;
+    if (lv.wall[i] === 1 && lv.height[i] < 0.5 && !lv.blocked(x - 0.5, y + 0.5) && !lv.blocked(x - 1.5, y + 0.5)) cell = [x, y, lv.height[i]];
+  }
+  const e = await G.spawn('wrencher', 3, 0);
+  g.enemies.length = 0;
+  if (cell) {
+    const c = g.gore.spawnPart(e, 'arm', cell[0] - 0.6, cell[1] + 0.5, 0.62, 1.4, 0, 2.6);
+    for (let k = 0; k < 180; k++) g.gore.update(1 / 60);
+    out.parapet = { inCell: lv.idx(c.x, c.y) === cell[1] * lv.W + cell[0], z: +(c.z - c.rad).toFixed(2), cap: +cell[2].toFixed(2), settled: c.settled };
+    out.life = +c.life.toFixed(1);
+  }
+  // A full wall with open floor either side of it, along x.
+  let wall = null;
+  for (let y = 2; y < lv.H - 2 && !wall; y++) for (let x = 3; x < lv.W - 2 && !wall; x++) {
+    const i = y * lv.W + x;
+    if (lv.wall[i] === 1 && lv.height[i] >= 1 && !lv.propBlock[i] && !lv.wall[i - 1] && !lv.wall[i - 2] && !lv.wall[i + 1] &&
+        !lv.propBlock[i - 1] && !lv.propBlock[i - 2] && !lv.propBlock[i + 1]) wall = [x, y];
+  }
+  if (wall) {
+    g.gore.clear();
+    const px = wall[0] - 1.2, py = wall[1] + 0.5;
+    const behind = g.gore.spawnPart(e, 'head', wall[0] + 1.3, py, 0.1, 0, 0, 0);
+    behind.settled = true;
+    out.throughWall = !!g.gore.kickable(px, py, 1, 0, 3, 0.6);
+    const front = g.gore.spawnPart(e, 'arm', wall[0] - 0.3, py, 0.1, 0, 0, 0);
+    front.settled = true;
+    out.inFront = g.gore.kickable(px, py, 1, 0, 3, 0.6) === front;
+  }
+  G.arena();
+  for (const [k, dx, dy] of [['wrencher', 3.6, -0.5], ['sparker', 4.0, 0.45], ['priest', 4.6, -0.1], ['wrencher', 4.2, -0.9], ['sparker', 3.3, 0.8]]) {
+    await G.spawn(k, dx, dy);
+  }
+  const heard = {};
+  const sfx0 = g.sound.sfx;
+  g.sound.sfx = (name, o) => { heard[name] = (heard[name] || 0) + 1; return sfx0.call(g.sound, name, o); };
+  g.detonateBomb({ x: g.player.x + 3.9, y: g.player.y, z: 0.3, spec: { blastRadius: 6.2, damage: 130, gore: { sever: 0.9, head: 0.5, parts: 4, knock: 18, gib: 70, lift: 5 } } });
+  G.step(0.1);
+  g.sound.sfx = sfx0;
+  out.rips = heard.limb_rip || 0;
+  out.pops = heard.head_pop || 0;
+  out.severed = g.gore.parts.length;
+  g.enemies.length = 0;
+  return out;
+});
+check('a limb over a parapet lands on its cap and fades in time; the Boot stops at walls; a crowd bomb is one or two rips',
+  s.parapet && s.parapet.z >= s.parapet.cap - 0.02 && s.life >= 45 && s.life <= 70 &&
+  s.throughWall === false && s.inFront === true && s.severed >= 8 && s.rips >= 1 && s.rips <= 2 && s.pops <= 2,
+  `parapet ${JSON.stringify(s.parapet)}, life ${s.life}s; through wall ${s.throughWall}, in front ${s.inFront}; ` +
+  `${s.severed} parts off, ${s.rips} rips, ${s.pops} pops`);
+
+// ------- 64. an armless gunman has to improvise, and improvising is worse
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  const { ARM_R, ARM_L } = await import('./src/game/gore.js');
+  G.arena();
+  const p = g.player;
+  const out = {};
+  for (const kind of ['sparker', 'bellows', 'wrencher']) {
+    const e = await G.spawn(kind, 1, 0);
+    e.hp = e.maxHp = 999;
+    g.gore.sever(e, ARM_R, 0, 1, 1); g.gore.sever(e, ARM_L, 0, -1, 1);
+    let worst = 0;
+    const hurt0 = p.hurt;
+    p.hurt = (n) => { worst = Math.max(worst, n); };
+    for (let i = 0; i < 20; i++) e._strike(g, true, 1.0);
+    p.hurt = hurt0;
+    out[kind] = { armless: e.armless, worst: +worst.toFixed(1), real: +(e.def.damage * (g.diff.enemyDamage || 1)).toFixed(1) };
+    g.enemies.length = 0;
+  }
+  return out;
+});
+check('an armless Sparker or Bellows headbutts for less than its real attack; a Wrencher still hurts',
+  s.sparker.armless && s.sparker.worst > 0 && s.sparker.worst < s.sparker.real &&
+  s.bellows.armless && s.bellows.worst < s.bellows.real * 0.5 && s.wrencher.worst >= 7,
+  `sparker ${s.sparker.worst} vs ${s.sparker.real}, bellows ${s.bellows.worst} vs ${s.bellows.real}, wrencher ${s.wrencher.worst}`);
+
 // ------------------------------------------------------------- report
 console.log('');
 if (errors.length) {
