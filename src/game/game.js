@@ -299,7 +299,11 @@ export class Game {
           solid: true, hp: e.kind === 'barrel' ? 20 : 999,
         });
         // A pillar is architecture, so it stops you. A drum you can shove past.
-        if (e.kind === 'pillar') this.level.propBlock[this.level.idx(e.x, e.y)] = 1;
+        if (e.kind === 'pillar') {
+          const i = this.level.idx(e.x, e.y);
+          this.level.propBlock[i] = 1;
+          this.level.propH[i] = 0; // full height: nothing goes over a pillar
+        }
       } else {
         if (e.kind === 'treasure') treasureTotal++;
         this.items.push({ kind: e.kind, x: e.x, y: e.y, z: 0, weapon: e.weapon, taken: false, bob: Math.random() * TAU });
@@ -1365,7 +1369,42 @@ export class Game {
       return;
     }
 
-    // Nothing alive in reach. Loose parts come next: heads are footballs.
+    // Nothing alive in reach. What goes off or opens comes before the mess on
+    // the floor: every room that has had a fight is carpeted in limbs and the
+    // dead, and a live pipe bomb or a barrel in reach must still take the Boot.
+    const cosArc = Math.cos(BOOT.arc);
+    for (const it of this.items) {
+      if (it.taken || !it.solid || it.kind !== 'barrel') continue;
+      const d = dist(p.x, p.y, it.x, it.y);
+      if (d > BOOT.range + 0.4) continue;
+      const cosA = ((it.x - p.x) * ca + (it.y - p.y) * sa) / (d || 1);
+      if (cosA < cosArc) continue;
+      if (!this.level.lineOfSight(p.x, p.y, it.x, it.y)) continue;
+      this.damageProp(it, 999);
+      return;
+    }
+    for (const b of this.bombs) {
+      if (!b.settled) continue;
+      const d = dist(p.x, p.y, b.x, b.y);
+      if (d >= BOOT.range) continue;
+      // One at your heels counts; one behind you does not.
+      const cosA = ((b.x - p.x) * ca + (b.y - p.y) * sa) / (d || 1);
+      if (cosA < cosArc && d > 0.5) continue;
+      if (!this.level.lineOfSight(p.x, p.y, b.x, b.y)) continue;
+      // Punting a live pipe bomb is exactly as good an idea as it sounds.
+      b.settled = false;
+      b.vx = ca * 13; b.vy = sa * 13; b.vz = 5.5;
+      this.sound.sfx('punt');
+      this.hud.popup('BOMB PUNTED', { size: 12, life: 1.1, color: rgba(255, 132, 46, 255) });
+      return;
+    }
+    // A shut door, a secret or a toilet in front of the boot is what it was aimed at.
+    if (this.level.canUse(p.x, p.y, p.ang)) {
+      this.tryUse();
+      this.sound.sfx('kick_wall', { vol: 0.5 });
+      return;
+    }
+    // Then loose parts: heads are footballs.
     const part = this.gore.kickable(p.x, p.y, ca, sa, BOOT.range - 0.35, BOOT.arc + 0.2);
     if (part) {
       this.gore.punt(part, ca, sa, p.pitch / (this.rc.projY || 300));
@@ -1382,7 +1421,7 @@ export class Game {
       const d = Math.hypot(dx, dy);
       if (d > BOOT.range + e.radius) continue;
       const cosA = (dx * ca + dy * sa) / (d || 1);
-      if (cosA < Math.cos(BOOT.arc)) continue;
+      if (cosA < cosArc) continue;
       if (!this.level.lineOfSight(p.x, p.y, e.x, e.y)) continue;
       if (d < cBest) { cBest = d; corpse = e; }
     }
@@ -1404,26 +1443,6 @@ export class Game {
       return;
     }
 
-    // Nothing to kick? Try the architecture, then a barrel, then a pipe bomb.
-    for (const it of this.items) {
-      if (it.taken || !it.solid) continue;
-      const d = dist(p.x, p.y, it.x, it.y);
-      if (d > BOOT.range + 0.4) continue;
-      const cosA = ((it.x - p.x) * ca + (it.y - p.y) * sa) / (d || 1);
-      if (cosA < Math.cos(BOOT.arc)) continue;
-      if (it.kind === 'barrel') { this.damageProp(it, 999); return; }
-    }
-    for (const b of this.bombs) {
-      const d = dist(p.x, p.y, b.x, b.y);
-      if (d < BOOT.range && b.settled) {
-        // Punting a live pipe bomb is exactly as good an idea as it sounds.
-        b.settled = false;
-        b.vx = ca * 13; b.vy = sa * 13; b.vz = 5.5;
-        this.sound.sfx('punt');
-        this.hud.popup('BOMB PUNTED', { size: 12, life: 1.1, color: rgba(255, 132, 46, 255) });
-        return;
-      }
-    }
     this.tryUse();
     this.sound.sfx('kick_wall', { vol: 0.5 });
   }
@@ -1467,6 +1486,7 @@ export class Game {
     // A bomb bursting in the sky counts as flak: it can catch a warhead.
     const blast = this.sky.detonate(b.x, b.y, Math.max(0.4, b.z), spec.blastRadius, 0, 'pipebomb');
     blast.idealRange = -1;
+    blast.gore = spec.gore || null;
   }
 
   // ---------------------------------------------------------------- firing
@@ -1684,7 +1704,9 @@ export class Game {
     let best = { wall: false, enemy: null, item: null, x, y, z };
     for (let t = 0; t < maxDist; t += step) {
       const px = x + dx * t, py = y + dy * t, pz = z + dz * t;
-      if (pz < 0.02 || pz > 1.5 || this.level.blocked(px, py)) {
+      // Height-aware, so a round clears a sandbag pile it passes over; the
+      // map edge still stops it, which blockedAt() leaves to flak.
+      if (pz < 0.02 || pz > 1.5 || !this.level.inBounds(px, py) || this.level.blockedAt(px, py, pz)) {
         return { wall: true, enemy: null, item: null, x: px - dx * step, y: py - dy * step, z: pz };
       }
       for (const e of this.enemies) {
@@ -1832,6 +1854,8 @@ export class Game {
 
   onFlakBurst(b, f) {
     const spec = WEAPONS[f.weapon];
+    // The sweep of this burst takes bodies apart the way this weapon does.
+    b.gore = (spec && spec.gore) || null;
     this.particles.airburst(b.x, b.y, b.z, b.maxR, 0);
     this.sound.sfx('airburst', { pan: this.panAt(b.x, b.y), vol: clamp(1 - dist3(b.x, b.y, b.z, this.player.x, this.player.y, this.player.z) / 140, 0.15, 1) });
     if (f.ring) {
@@ -1852,6 +1876,7 @@ export class Game {
         const cz = b.z + (uz * Math.cos(t) + vz * Math.sin(t)) * R;
         const sub = this.sky.detonate(cx, cy, cz, f.ring.blastRadius, 0, 'halo');
         sub.secondary = true;
+        sub.gore = f.ring.gore || null;
         this.particles.airburst(cx, cy, cz, f.ring.blastRadius * 0.8, 0);
       }
       this.sound.sfx('halo_sweep');
@@ -1938,7 +1963,7 @@ export class Game {
       const killed = e.hurt(b.deadman ? 999 : 42, this, b.x, b.y);
       // The Deadman kills everything; taking it apart as well would bury the
       // floor in limbs nobody is there to see.
-      if (!b.deadman && !e.def.boss) this.gore.blast(e, b.x, b.y, b.z, 42, EXPLOSION_GORE, killed);
+      if (!b.deadman && !e.def.boss) this.gore.blast(e, b.x, b.y, b.z, 42, b.gore || EXPLOSION_GORE, killed);
     }
   }
 
@@ -2427,6 +2452,10 @@ export class Game {
 
   /** Body comes apart. Gore is the point. */
   gib(e) {
+    // Once per body. A kill, the blast that made it and every later blast over
+    // the same corpse all ask for this; only the first one gets the chunks.
+    if (e._gibbed) return;
+    e._gibbed = true;
     // Real chunks with weight: they bounce, stick to walls and stay a while.
     const chunks = Math.min(9, 2 + (e.def.gib >> 1));
     for (let i = 0; i < chunks; i++) {

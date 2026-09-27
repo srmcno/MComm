@@ -111,6 +111,9 @@ export class Blast {
     this.life = 0.55 + radius * 0.03;
     this.chain = chain;
     this.source = source;
+    // The firing weapon's gore spec, set by whoever fired it. A warhead's own
+    // payload cooking off is nobody's weapon and leaves this null.
+    this.gore = null;
     this.hit = new Set();
     this.alive = true;
   }

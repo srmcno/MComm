@@ -559,7 +559,7 @@ export class Bolt {
     this.life -= dt;
     this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
     if (this.life <= 0) { this.alive = false; return; }
-    if (this.z < 0.05 || this.z > 2.4 || game.level.blocked(this.x, this.y)) {
+    if (this.z < 0.05 || this.z > 2.4 || !game.level.inBounds(this.x, this.y) || game.level.blockedAt(this.x, this.y, this.z)) {
       this.alive = false;
       game.onBoltImpact(this, null);
       return;
