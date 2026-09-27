@@ -1460,6 +1460,8 @@ export class Game {
     if (this.bombs.length >= spec.maxLive) return;
     p.ammo[AMMO_BOMB]--;
     p.kick = Math.max(p.kick, 4);
+    // The throw frames play whatever is in hand; drawViewmodel times them off this.
+    p.throwAnim = 0.3;
     const a = p.aimVector(this.rc.projY);
     this.bombs.push(new PipeBomb(
       p.x + a.x * 0.4, p.y + a.y * 0.4, p.z - 0.05,

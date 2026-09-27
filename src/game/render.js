@@ -274,9 +274,12 @@ export function drawViewmodel(game, buf, W, H) {
       if (bf.cy !== undefined) {
         // The frames already carry the leg's travel; this only adds the snap
         // up out of the bottom of the screen and the drop back into it.
-        const bs = vmScale(bf, H);
+        const bs = vmScale(bf, W, H);
         const bx = W / 2 - bf.cx * bs + Math.sin(p.bobPhase) * 6 * s;
-        const by = H / 2 - bf.cy * bs + (1 - Math.sin(Math.min(1, k) * Math.PI)) * H * 0.16;
+        // Same bottom hold as the guns, which only bites once a narrow window
+        // has shrunk the frame.
+        const by = Math.max(H / 2 - bf.cy * bs, H - bf.h * bs + 1)
+          + (1 - Math.sin(Math.min(1, k) * Math.PI)) * H * 0.16;
         blitFrame(buf, W, H, bf, bx, by, { scale: bs, lum });
       } else {
         const bs = (H * 0.60) / bf.h;
@@ -288,14 +291,25 @@ export function drawViewmodel(game, buf, W, H) {
     return;
   }
 
+  // A pipe bomb leaves the hand in the throw frames, whatever was being held
+  // when B went down; like the Boot, the gun comes back once it is gone.
+  let vm = spec.vm;
   let stateKey = 'idle';
-  if (p.fireAnim > 0) {
+  if (p.throwAnim > 0) {
+    vm = 'pipebomb';
+    const k = 1 - p.throwAnim / 0.3;
+    stateKey = k < 0.34 ? 'fire0' : k < 0.68 ? 'fire1' : 'fire2';
+  } else if (p.fireAnim > 0) {
     const k = 1 - p.fireAnim / Math.max(0.001, Math.min(0.22, spec.refire * 0.85));
     stateKey = k < 0.34 ? 'fire0' : k < 0.68 ? 'fire1' : 'fire2';
+  } else if (spec.kind === 'throw' && (game.bombs.length > 0 || p.ammoFor(p.weapon) < 1)) {
+    // One out waiting for the button, or none left in the bag: the hand is
+    // empty and on the detonator, not holding a second live bomb.
+    stateKey = 'fire2';
   } else if (p.cooldown > spec.refire * 0.45 && spec.refire > 0.5) {
     stateKey = p.cooldown > spec.refire * 0.7 ? 'reload0' : 'reload1';
   }
-  const f = art.vm[spec.vm + '_' + stateKey] || art.vm[spec.vm + '_idle'];
+  const f = art.vm[vm + '_' + stateKey] || art.vm[vm + '_idle'];
   if (!f) return;
 
   // Weapon swap dip.
@@ -326,7 +340,7 @@ export function drawViewmodel(game, buf, W, H) {
     // The art is rendered with the crosshair as its principal point, so pin
     // that point to the middle of the screen and every barrel converges on
     // the reticle. The bottom edge is then held on the screen's bottom edge.
-    scale = vmScale(f, H) * punch;
+    scale = vmScale(f, W, H) * punch;
     x = W / 2 - f.cx * scale + bobX + p.swayX * s + game.shakeX * 40 + kick * 0.5 * s;
     y = H / 2 - f.cy * scale + bobY + kick * 1.7 * s + swapOff;
     y = Math.max(y, H - f.h * scale + 1);
@@ -337,7 +351,7 @@ export function drawViewmodel(game, buf, W, H) {
   }
   blitFrame(buf, W, H, f, x, y, { scale, lum });
 
-  if (p.flashTimer > 0) {
+  if (p.flashTimer > 0 && vm === spec.vm) {
     const fl = art.vm[spec.flash] || art.vm.flash_medium;
     if (fl) {
       const k = p.flashTimer / 0.075;
@@ -358,8 +372,15 @@ export function drawViewmodel(game, buf, W, H) {
   }
 }
 
-/** Viewmodel frames are drawn so their full height covers 64% of the screen. */
-function vmScale(f, H) { return (H * 0.64) / f.h; }
+/**
+ * Viewmodel frames are drawn so their full height covers 64% of the screen,
+ * unless that would push the frame off the sides: the crosshair sits at cx, so
+ * the wider half of the frame has to fit in half the screen. Landscape windows
+ * never reach the width cap; portrait and narrow ones shrink to fit.
+ */
+function vmScale(f, W, H) {
+  return Math.min((H * 0.64) / f.h, W / (2 * Math.max(f.cx, f.w - f.cx)));
+}
 
 // ------------------------------------------------------------ full screens
 
