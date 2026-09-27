@@ -18,6 +18,10 @@ export const WEAPONS = {
     flakSpeed: 138, blastRadius: 5.4, spread: 0.0, pellets: 1,
     kick: 5.2, shakeAmount: 0.5, flash: 'flash_small', light: [1.0, 0.72, 0.34],
     sfx: 'flak_fire', groundDamage: 34,
+    // What a burst does to a body: chance a part comes off, the extra chance
+    // that part is the head (a burst at head height), how many parts one
+    // burst may take, the shove, and the force at which the whole thing goes.
+    gore: { sever: 0.5, head: 0.8, parts: 1, knock: 7, gib: 0, lift: 2.5 },
   },
   splitter: {
     id: 'splitter', slot: 2, name: 'THE SPLITTER',
@@ -27,6 +31,8 @@ export const WEAPONS = {
     flakSpeed: 126, blastRadius: 4.3, spread: 0.055, pellets: 3,
     kick: 9.5, shakeAmount: 1.1, flash: 'flash_medium', light: [1.0, 0.66, 0.3],
     sfx: 'flak_fire', groundDamage: 26,
+    // Three shells, so up close three chances at a part each.
+    gore: { sever: 0.6, head: 0.5, parts: 2, knock: 9, gib: 0, lift: 3 },
   },
   nailer: {
     id: 'nailer', slot: 3, name: 'THE NAILDRIVER',
@@ -36,6 +42,8 @@ export const WEAPONS = {
     projectileSpeed: 62, range: 26, damage: 17, spread: 0.028, pellets: 1,
     kick: 2.4, shakeAmount: 0.35, flash: 'flash_plume', light: [1.0, 0.84, 0.5],
     sfx: 'nailer_fire',
+    // Chips: damage piles up per part and a burst to one limb takes it off.
+    gore: { sever: 0.14, head: 0.3, parts: 1, knock: 0.4, gib: 0, lift: 0 },
   },
   halo: {
     id: 'halo', slot: 4, name: 'THE HALO',
@@ -46,6 +54,7 @@ export const WEAPONS = {
     spread: 0, pellets: 1,
     kick: 11, shakeAmount: 1.6, flash: 'flash_ring', light: [0.42, 0.95, 1.0],
     sfx: 'halo_fire', groundDamage: 30,
+    gore: { sever: 0.5, head: 0.4, parts: 2, knock: 9, gib: 0, lift: 3 },
   },
   pipebomb: {
     id: 'pipebomb', slot: 5, name: 'PIPE BOMBS',
@@ -55,6 +64,7 @@ export const WEAPONS = {
     throwSpeed: 17, blastRadius: 6.2, damage: 130, fuse: 6.5, maxLive: 4,
     kick: 4.5, shakeAmount: 0.4, flash: 'flash_small', light: [1.0, 0.8, 0.5],
     sfx: 'pipebomb_throw', groundDamage: 130,
+    gore: { sever: 0.9, head: 0.5, parts: 4, knock: 18, gib: 70, lift: 5 },
   },
   deadman: {
     id: 'deadman', slot: 6, name: "DEADMAN'S SWITCH",
@@ -79,6 +89,7 @@ export const BOOT = {
   id: 'boot', name: 'THE BOOT', vm: 'boot',
   refire: 0.52, range: 2.35, arc: 0.62, damage: 52,
   knockback: 13, liftKick: 3.2, shakeAmount: 1.3,
+  gore: { sever: 0.2, head: 1, parts: 1, knock: 13, gib: 0, lift: 3.2 },
 };
 
 export const AMMO_MAX = { [AMMO_FLAK]: 180, [AMMO_NAIL]: 320, [AMMO_CHARGE]: 3, [AMMO_BOMB]: 12 };

@@ -8,6 +8,7 @@ import { WARHEAD_TYPES } from './sky.js';
 import { ST } from './entities.js';
 import { STATE, PAUSE_MENU } from './game.js';
 import { WEAPONS } from './weapons.js';
+import { rotFrame } from './gore.js';
 
 const AMBER = rgba(255, 186, 64, 255);
 const HOT = rgba(255, 240, 200, 255);
@@ -95,16 +96,28 @@ export function renderWorld(game, W, H) {
   S.length = 0;
 
   for (const e of game.enemies) {
-    const f = art.sprites[e.frameKey(cam.x, cam.y)];
+    const key = e.frameKey(cam.x, cam.y);
+    let f = art.sprites[key];
     if (!f) continue;
+    // Missing parts come from the sprite generator; without it, the whole body.
+    if (e.maim) f = game.gore.maimFrame(key, e.maim) || f;
+    let z = e.z + (e.zOff || 0), h = e.height;
+    if (e.roll) {
+      // Turning over in the air: rotate about the middle of the body.
+      const rf = rotFrame(f, e.roll);
+      if (rf !== f) {
+        const k = rf.h / f.h;
+        z += h * 0.5 * (1 - k);
+        h *= k;
+        f = rf;
+      }
+    }
     S.push({
-      x: e.x, y: e.y, z: e.z, frame: f, h: e.height,
-      tint: e.painFlash > 0.02 ? rgba(255, 90, 70, 255) : 0,
-      alphaOverride: undefined,
-      _pain: e.painFlash,
+      x: e.x, y: e.y, z, frame: f, h,
+      tint: e.painFlash > 0.02 ? rgba(255, 110, 90, Math.min(200, e.painFlash * 210)) : 0,
     });
-    if (e.painFlash > 0.02) S[S.length - 1].tint = rgba(255, 110, 90, Math.min(200, e.painFlash * 210));
   }
+  game.gore.collect(S);
 
   for (const it of game.items) {
     if (it.taken) continue;
