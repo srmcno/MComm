@@ -386,6 +386,143 @@ const DICT = {
   WRITTEN: 'R IH1 T AH N', DEB: 'D EH1 B', BOBBI: 'B AA1 B IY',
   YVONNE: 'IH V AA1 N', TRISH: 'T R IH1 SH', BRICK: 'B R IH1 K',
   AREA: 'EH1 R IY AH', ADJUSTS: 'AH JH AH1 S T S',
+  // --- vocabulary added by the second script pass: names, German, swearing
+  // and the ordinary words the letter rules got wrong in the new lines ---
+  ROXANNE: 'R AA K S AE1 N', "ROXANNE'S": 'R AA K S AE1 N Z', LURLENE: 'L ER L IY1 N',
+  GERALD: 'JH EH1 R AH L D', BEAUMONT: 'B OW1 M AA N T', KOWALCZYK: 'K OW W AA1 L CH IH K',
+  VANDENBERG: 'V AE1 N D AH N B ER G', RENO: 'R IY1 N OW', VEGAS: 'V EY1 G AH S',
+  SCHEISSE: 'SH AY1 S AH', JA: 'Y AA1', NEIN: 'N AY1 N', GENAU: 'G AH N AW1',
+  QUATSCH: 'K V AA1 CH', VERDAMMT: 'F ER D AA1 M T', DUMMKOPF: 'D UH1 M K AO P F',
+  WUNDERBAR: 'V UH1 N D ER B AA R', FEIERABEND: 'F AY1 ER AA B AH N T', ARSCHLOCH: 'AA1 R SH L AO K',
+  GUTEN: 'G UW1 T AH N', MORGEN: 'M AO1 R G AH N', MEIN: 'M AY1 N', GOTT: 'G AO1 T',
+  DU: 'D UW1', BIST: 'B IH1 S T', EIN: 'AY1 N', GERMAN: 'JH ER1 M AH N',
+  SUCK: 'S AH1 K', GONNA: 'G AA1 N AH', WANNA: 'W AA1 N AH', CAUSE: 'K AH1 Z',
+  "DOESN'T": 'D AH1 Z AH N T', "AREN'T": 'AA1 R AH N T', "HASN'T": 'HH AE1 Z AH N T',
+  "COULD'VE": 'K UH1 D AH V', "HERE'S": 'HH IH1 R Z', "WHERE'S": 'W EH1 R Z',
+  "WHO'S": 'HH UW1 Z', "WHY'S": 'W AY1 Z', "ONE'S": 'W AH1 N Z', "MINE'S": 'M AY1 N Z',
+  "GUY'S": 'G AY1 Z', "DAY'S": 'D EY1 Z', "SKY'S": 'S K AY1 Z', "DADDY'S": 'D AE1 D IY Z',
+  "EMPTY'S": 'EH1 M P T IY Z', "NATURE'S": 'N EY1 CH ER Z', "SOMEBODY'S": 'S AH1 M B AA D IY Z',
+  "EVERYTHING'S": 'EH1 V R IY TH IH NG Z', "ELEVATOR'S": 'EH1 L AH V EY T ER Z',
+  "WALKMAN'S": 'W AO1 K M AH N Z', "WARDEN'S": 'W AO1 R D AH N Z', "PANTHER'S": 'P AE1 N TH ER Z',
+  "O'CLOCK": 'AH K L AA1 K',
+  ABSOLUTE: 'AE1 B S AH L UW T', ACCORDINGLY: 'AH K AO1 R D IH NG L IY', ACCOUNTING: 'AH K AW1 N T IH NG',
+  ADMIRING: 'AE D M AY1 R IH NG', ADMISSION: 'AE D M IH1 SH AH N', ADMITTEDLY: 'AE D M IH1 T IH D L IY',
+  ADVICE: 'AE D V AY1 S', AIR: 'EH1 R', AIRSPACE: 'EH1 R S P EY S', ALIBI: 'AE1 L IH B AY',
+  ALLEY: 'AE1 L IY', ALLOWED: 'AH L AW1 D', AMBITIOUS: 'AE M B IH1 SH AH S', AMERICA: 'AH M EH1 R IH K AH',
+  ANNIVERSARY: 'AE N IH V ER1 S ER IY', ANNOUNCEMENT: 'AH N AW1 N S M AH N T',
+  ANOMALIES: 'AH N AA1 M AH L IY Z', ANYMORE: 'EH N IY M AO1 R', APOCALYPSE: 'AH P AA1 K AH L IH P S',
+  APPEALED: 'AH P IY1 L D', APPLAUSE: 'AH P L AO1 Z', APPROVED: 'AH P R UW1 V D',
+  ARMOURED: 'AA1 R M ER D', ARRIVAL: 'ER AY1 V AH L', ASSEMBLY: 'AH S EH1 M B L IY',
+  ATTACHED: 'AH T AE1 CH T', ATTEND: 'AH T EH1 N D', AWESOME: 'AO1 S AH M',
+  BARBECUE: 'B AA1 R B IH K Y UW', BEGGING: 'B EH1 G IH NG', BEGINS: 'B IH G IH1 N Z',
+  BEHALF: 'B IH HH AE1 F', BEIGE: 'B EY1 ZH', BIGGEST: 'B IH1 G IH S T', BOWLING: 'B OW1 L IH NG',
+  BRUISE: 'B R UW1 Z', BURRITO: 'B ER IY1 T OW', BUSINESS: 'B IH1 Z N AH S', BUSY: 'B IH1 Z IY',
+  CACHE: 'K AE1 SH', CALAMARI: 'K AA L AH M AA1 R IY', CANCEL: 'K AE1 N S AH L',
+  CANCELLED: 'K AE1 N S AH L D', CASE: 'K EY1 S', CEREAL: 'S IH1 R IY AH L',
+  CERTIFICATE: 'S ER T IH1 F IH K AH T', CHANNEL: 'CH AE1 N AH L', CHICKEN: 'CH IH1 K AH N',
+  CHRISTMAS: 'K R IH1 S M AH S', CLOTHING: 'K L OW1 DH IH NG', COLOUR: 'K AH1 L ER',
+  COMMIT: 'K AH M IH1 T', COMPANY: 'K AH1 M P AH N IY', COMPLAINTS: 'K AH M P L EY1 N T S',
+  COMPLETE: 'K AH M P L IY1 T', COMPOSED: 'K AH M P OW1 Z D', CONDUCT: 'K AA1 N D AH K T',
+  CONGRATULATIONS: 'K AH N G R AE CH AH L EY1 SH AH N Z', CONSULTED: 'K AH N S AH1 L T IH D',
+  CONTEMPT: 'K AH N T EH1 M P T', CONTRACT: 'K AA1 N T R AE K T',
+  CONTRADICTION: 'K AA N T R AH D IH1 K SH AH N', CONVENIENCE: 'K AH N V IY1 N Y AH N S',
+  CONVENIENT: 'K AH N V IY1 N Y AH N T', CORRECT: 'K ER EH1 K T', CORRECTED: 'K ER EH1 K T IH D',
+  COURTESY: 'K ER1 T AH S IY', COV: 'K AH1 V', COVERED: 'K AH1 V ER D', CRANIUM: 'K R EY1 N IY AH M',
+  CROWD: 'K R AW1 D', CUPBOARD: 'K AH1 B ER D', CUSTOMER: 'K AH1 S T AH M ER', DAIS: 'D EY1 IH S',
+  DEATH: 'D EH1 TH', DECLINE: 'D IH K L AY1 N', DECORATION: 'D EH K ER EY1 SH AH N',
+  DEHYDRATED: 'D IY HH AY1 D R EY T IH D', DENTIST: 'D EH1 N T IH S T', DEPLOYED: 'D IH P L OY1 D',
+  DESCRIBING: 'D IH S K R AY1 B IH NG', DESTINY: 'D EH1 S T AH N IY', DIAL: 'D AY1 AH L',
+  DISAPPOINTMENT: 'D IH S AH P OY1 N T M AH N T', DISARMED: 'D IH S AA1 R M D',
+  DISCIPLINE: 'D IH1 S AH P L IH N', DISCIPLINED: 'D IH1 S AH P L IH N D',
+  DISREGARD: 'D IH S R IH G AA1 R D', DIVIDER: 'D IH V AY1 D ER', DOSIMETRY: 'D OW S IH1 M AH T R IY',
+  DRUMSTICK: 'D R AH1 M S T IH K', EARS: 'IH1 R Z', EFFICIENCY: 'IH F IH1 SH AH N S IY', EGO: 'IY1 G OW',
+  ELSEWHERE: 'EH1 L S W EH R', EMBARRASSED: 'IH M B EH1 R AH S T', EMERGENCY: 'IH M ER1 JH AH N S IY',
+  EMPHASIS: 'EH1 M F AH S IH S', EMPLOYEES: 'EH M P L OY1 IY Z', ENCOURAGING: 'EH N K ER1 IH JH IH NG',
+  ENDEARMENT: 'EH N D IH1 R M AH N T', ENTITLED: 'EH N T AY1 T AH L D', ESPECIALLY: 'IH S P EH1 SH AH L IY',
+  EVALUATION: 'IH V AE L Y UW EY1 SH AH N', EVEN: 'IY1 V AH N', EVERYONE: 'EH1 V R IY W AH N',
+  EVERYWHERE: 'EH1 V R IY W EH R', EVOLUTION: 'EH V AH L UW1 SH AH N', EXACTLY: 'IH G Z AE1 K T L IY',
+  EXIT: 'EH1 G Z IH T', EXITING: 'EH1 G Z IH T IH NG', EXPIRED: 'IH K S P AY1 ER D',
+  FAMILIAR: 'F AH M IH1 L Y ER', FAMILIES: 'F AE1 M AH L IY Z', FAMILY: 'F AE1 M AH L IY',
+  FAUNA: 'F AO1 N AH', FAVOURITE: 'F EY1 V ER IH T', FIREWORKS: 'F AY1 ER W ER K S',
+  FORECAST: 'F AO1 R K AE S T', FORGOT: 'F ER G AA1 T', FORWARDED: 'F AO1 R W ER D IH D',
+  FRIENDLY: 'F R EH1 N D L IY', FRIENDS: 'F R EH1 N D Z', FU: 'F UW1', GAH: 'G AA1',
+  GALLERY: 'G AE1 L ER IY', GLORIFIED: 'G L AO1 R AH F AY D', GOODBYE: 'G UH D B AY1',
+  GROSS: 'G R OW1 S', GUESS: 'G EH1 S', GUIDANCE: 'G AY1 D AH N S', GUYS: 'G AY1 Z', HA: 'HH AA1',
+  HAIR: 'HH EH1 R', HEADLESS: 'HH EH1 D L AH S', HEAVY: 'HH EH1 V IY', HEIGHT: 'HH AY1 T',
+  HI: 'HH AY1', HIDDEN: 'HH IH1 D AH N', HORIZON: 'HH ER AY1 Z AH N',
+  HORIZONTAL: 'HH AO R AH Z AA1 N T AH L', HOSTILE: 'HH AA1 S T AH L', HOUSEHOLD: 'HH AW1 S HH OW L D',
+  HUMOUR: 'HH Y UW1 M ER', IDEAS: 'AY D IY1 AH Z', IDIOT: 'IH1 D IY AH T',
+  INHIBITIONS: 'IH N HH IH B IH1 SH AH N Z', INSIDE: 'IH N S AY1 D', INSISTS: 'IH N S IH1 S T S',
+  INSUFFERABLE: 'IH N S AH1 F ER AH B AH L', INVITE: 'IH1 N V AY T', JUICE: 'JH UW1 S',
+  JUSTICE: 'JH AH1 S T IH S', KUNG: 'K UH1 NG', LANYARD: 'L AE1 N Y ER D', LAVA: 'L AA1 V AH',
+  LITERALLY: 'L IH1 T ER AH L IY', LONGEST: 'L AO1 NG G AH S T', LOSERS: 'L UW1 Z ER Z',
+  LOVED: 'L AH1 V D', MAGAZINES: 'M AE G AH Z IY1 N Z', MANDATORY: 'M AE1 N D AH T AO R IY',
+  MARGARITAS: 'M AA R G ER IY1 T AH Z', MARKET: 'M AA1 R K IH T', MARRIED: 'M EH1 R IY D',
+  MASSEUSE: 'M AH S UW1 Z', MECHANISM: 'M EH1 K AH N IH Z AH M', MERRY: 'M EH1 R IY',
+  MIRACLE: 'M IH1 R AH K AH L', MISSILES: 'M IH1 S AH L Z', MISSING: 'M IH1 S IH NG',
+  MOMENTUM: 'M OW M EH1 N T AH M', MUSTACHES: 'M AH1 S T AE SH IH Z', MUTANT: 'M Y UW1 T AH N T',
+  MUTANTS: 'M Y UW1 T AH N T S', NAPALM: 'N EY1 P AA M', NEWSLETTER: 'N UW1 Z L EH T ER',
+  NOTEBOOK: 'N OW1 T B UH K', NUMBERS: 'N AH1 M B ER Z', NUTS: 'N AH1 T S', OOH: 'UW1',
+  OPPORTUNITY: 'AA P ER T UW1 N AH T IY', ORGANISMS: 'AO1 R G AH N IH Z AH M Z',
+  OTHERS: 'AH1 DH ER Z', OTHERWISE: 'AH1 DH ER W AY Z', OUR: 'AW1 ER', OURS: 'AW1 ER Z',
+  OUTSIDE: 'AW T S AY1 D', OVERTIME: 'OW1 V ER T AY M', PANTHER: 'P AE1 N TH ER',
+  PERFORMANCE: 'P ER F AO1 R M AH N S', PERMANENTLY: 'P ER1 M AH N AH N T L IY',
+  PERSISTENT: 'P ER S IH1 S T AH N T', PERSON: 'P ER1 S AH N', PERSONAL: 'P ER1 S AH N AH L',
+  PINT: 'P AY1 N T', PLUG: 'P L AH1 G', PREFERRED: 'P R IH F ER1 D', PREPARED: 'P R IH P EH1 R D',
+  PREVIOUSLY: 'P R IY1 V IY AH S L IY', PROCESSED: 'P R AA1 S EH S T', PROFILE: 'P R OW1 F AY L',
+  PROMISED: 'P R AA1 M AH S T', PROPELLED: 'P R AH P EH1 L D', PROPOSED: 'P R AH P OW1 Z D',
+  PROSECUTOR: 'P R AA1 S AH K Y UW T ER', PSYCHOLOGICAL: 'S AY K AH L AA1 JH IH K AH L',
+  PULL: 'P UH1 L', PUNISHMENT: 'P AH1 N IH SH M AH N T', PURCHASED: 'P ER1 CH AH S T',
+  PURPOSE: 'P ER1 P AH S', QUESTIONS: 'K W EH1 S CH AH N Z', RADIATION: 'R EY D IY EY1 SH AH N',
+  RADIOACTIVE: 'R EY D IY OW AE1 K T IH V', READY: 'R EH1 D IY', REASON: 'R IY1 Z AH N',
+  RECLASSIFIED: 'R IY K L AE1 S AH F AY D', RECOMMENDED: 'R EH K AH M EH1 N D IH D',
+  REFERENCE: 'R EH1 F ER AH N S', REFERRING: 'R IH F ER1 IH NG', REFLECT: 'R IH F L EH1 K T',
+  REFUND: 'R IY1 F AH N D', RELIGION: 'R IH L IH1 JH AH N', RELIGIOUS: 'R IH L IH1 JH AH S',
+  REMARKABLY: 'R IH M AA1 R K AH B L IY', REPLACEMENT: 'R IH P L EY1 S M AH N T',
+  RESIDENTS: 'R EH1 Z IH D AH N T S', RESPONSE: 'R IH S P AA1 N S', RESTOCKED: 'R IY S T AA1 K T',
+  RESULTS: 'R IH Z AH1 L T S', ROLL: 'R OW1 L', ROLLING: 'R OW1 L IH NG', RUINING: 'R UW1 IH N IH NG',
+  SALAD: 'S AE1 L AH D', SCIENCE: 'S AY1 AH N S', SCOREBOARD: 'S K AO1 R B AO R D',
+  SCORPIO: 'S K AO1 R P IY OW', SECRETS: 'S IY1 K R AH T S', SEES: 'S IY1 Z',
+  SENSITIVITY: 'S EH N S AH T IH1 V AH T IY', SERGEANT: 'S AA1 R JH AH N T', SESSION: 'S EH1 SH AH N',
+  SEVERANCE: 'S EH1 V ER AH N S', SHOWER: 'SH AW1 ER', SHOWTIME: 'SH OW1 T AY M',
+  SHUTDOWN: 'SH AH1 T D AW N', SHUTTERS: 'SH AH1 T ER Z', SIGNATURE: 'S IH1 G N AH CH ER',
+  SILO: 'S AY1 L OW', SILOS: 'S AY1 L OW Z', SKIES: 'S K AY1 Z', SOCIETY: 'S AH S AY1 AH T IY',
+  STATISTICALLY: 'S T AH T IH1 S T IH K L IY', STATUS: 'S T AE1 T AH S', STUDY: 'S T AH1 D IY',
+  SUGGESTION: 'S AH G JH EH1 S CH AH N', SUNSCREEN: 'S AH1 N S K R IY N', SUPPORT: 'S AH P AO1 R T',
+  SUPPOSED: 'S AH P OW1 Z D', SURVEY: 'S ER1 V EY', SURVIVAL: 'S ER V AY1 V AH L',
+  SURVIVOR: 'S ER V AY1 V ER', TAKEN: 'T EY1 K AH N', TALENT: 'T AE1 L AH N T', TATTOO: 'T AE T UW1',
+  TATTOOS: 'T AE T UW1 Z', THREAT: 'TH R EH1 T', THUMBS: 'TH AH1 M Z', TICKET: 'T IH1 K IH T',
+  TIFFANY: 'T IH1 F AH N IY', TODAY: 'T AH D EY1', TOMORROW: 'T AH M AA1 R OW',
+  TOUCHES: 'T AH1 CH IH Z', TOWARDS: 'T AO1 R D Z', UN: 'AH1 N', UNDERSTAND: 'AH N D ER S T AE1 N D',
+  UNDERWEAR: 'AH1 N D ER W EH R', UNION: 'Y UW1 N Y AH N', UNKILLABLE: 'AH N K IH1 L AH B AH L',
+  UNPAID: 'AH N P EY1 D', UNPLUG: 'AH N P L AH1 G', UNPROFESSIONAL: 'AH N P R AH F EH1 SH AH N AH L',
+  UNSTOPPABLE: 'AH N S T AA1 P AH B AH L', UNTIL: 'AH N T IH1 L', VARSITY: 'V AA1 R S AH T IY',
+  VIOLATES: 'V AY1 AH L EY T S', WARRANTY: 'W AO1 R AH N T IY', WATERBED: 'W AO1 T ER B EH D',
+  WEASEL: 'W IY1 Z AH L', WHOEVER: 'HH UW EH1 V ER', WHOOPS: 'W UH1 P S', WOKEN: 'W OW1 K AH N',
+  WOMEN: 'W IH1 M AH N', WONDER: 'W AH1 N D ER', YEAH: 'Y AE1',
+  // the distraction gag is voiced verbatim from story.js, so its words live here too
+  ANIMAL: 'AE1 N AH M AH L', BUFFET: 'B AH F EY1', CHAUVINIST: 'SH OW1 V AH N IH S T',
+  COMMON: 'K AA1 M AH N', CURRENT: 'K ER1 AH N T', EDIBLE: 'EH1 D AH B AH L',
+  GEIGER: 'G AY1 G ER', GRAVEL: 'G R AE1 V AH L', GARGLING: 'G AA1 R G L IH NG',
+  HUSBAND: 'HH AH1 Z B AH N D', IMPRESS: 'IH M P R EH1 S', INTIMIDATED: 'IH N T IH1 M AH D EY T IH D',
+  LONELINESS: 'L OW1 N L IY N AH S', MAYBE: 'M EY1 B IY', MEASURABLY: 'M EH1 ZH ER AH B L IY',
+  MIRROR: 'M IH1 R ER', MOVIE: 'M UW1 V IY', PUSH: 'P UH1 SH', RUGGED: 'R AH1 G IH D',
+  SCIENTIST: 'S AY1 AH N T IH S T', SENSIBLE: 'S EH1 N S AH B AH L', SURPLUS: 'S ER1 P L AH S',
+  TALLY: 'T AE1 L IY', WANT: 'W AA1 N T', "YVONNE'S": 'IH V AA1 N Z',
+  OBJECTIVELY: 'AH B JH EH1 K T IH V L IY', ROMANTIC: 'R OW M AE1 N T IH K',
+  // --- the floor intros, gore quips and new banter: words the rules misread ---
+  AGREE: 'AH G R IY1', ALTAR: 'AO1 L T ER', BIOHAZARD: 'B AY1 OW HH AE Z ER D',
+  CAREFULLY: 'K EH1 R F AH L IY', CONFIDENCE: 'K AA1 N F AH D AH N S', DAMSEL: 'D AE1 M Z AH L',
+  DESCRIBED: 'D IH S K R AY1 B D', DISCIPLINARY: 'D IH1 S AH P L AH N EH R IY', DUMPED: 'D AH1 M P T',
+  GRISTLE: 'G R IH1 S AH L', HONESTLY: 'AA1 N AH S T L IY', HONEYMOON: 'HH AH1 N IY M UW N',
+  INVESTIGATE: 'IH N V EH1 S T AH G EY T', KINDA: 'K AY1 N D AH', LAUGHED: 'L AE1 F T',
+  MEMORY: 'M EH1 M ER IY', MULTIPLYING: 'M AH1 L T AH P L AY IH NG', "NOBODY'S": 'N OW1 B AA D IY Z',
+  OVATION: 'OW V EY1 SH AH N', PHOTOGRAPHS: 'F OW1 T AH G R AE F S', PLUMBERS: 'P L AH1 M ER Z',
+  POSTAGE: 'P OW1 S T IH JH', REUNION: 'R IY Y UW1 N Y AH N', ROUTE: 'R UW1 T',
+  "SHOE'S": 'SH UW1 Z', SUPERVISOR: 'S UW1 P ER V AY Z ER', SWEATING: 'S W EH1 T IH NG',
+  SWEATY: 'S W EH1 T IY', TACTICAL: 'T AE1 K T IH K AH L', TAHOE: 'T AA1 HH OW',
+  THURSDAY: 'TH ER1 Z D EY', TREFOIL: 'T R IY1 F OY L', TROUBLE: 'T R AH1 B AH L',
+  TUESDAY: 'T UW1 Z D EY', TUTORIAL: 'T UW T AO1 R IY AH L', "GERALD'S": 'JH EH1 R AH L D Z',
 };
 
 /* --- NRL-style letter-to-sound rules ------------------------------------- */
@@ -1745,110 +1882,192 @@ export class Vox {
 /* ────────────────────────────────────────────────────────────────────────── */
 
 export const LINES = {
+  /* ══════════════════════════════════════════════════════════════════════
+     MUTTER, the launch-control intelligence. Speaks like a human resources
+     department that has been given silos. Never swears on its own behalf;
+     quotes the warden's swearing back at him, which is worse. No
+     contractions: it was configured before contractions were approved.
+     ══════════════════════════════════════════════════════════════════════ */
+
   boot: [
-    'Good morning. Bunker {S IY1 B AH N} is operating normally. Please ignore the sirens.',
+    'Good morning. Bunker {Sieben|Z IY1 B AH N} is operating normally. Please ignore the sirens. The sirens are for morale.',
     'Systems nominal. Morale nominal. Personnel: one. Please do not divide.',
     'Welcome back, warden. Nothing has happened. Nothing is happening. Please arm yourself.',
+    'Good morning, warden. Today is a mandatory fun day. The fun is mandatory. The day is optional.',
+    'Shift begins. Remember, there is no I in team. There is an I in kill. I checked.',
+    'Attention. Your performance review is today. I am the review. Please try not to die during it.',
+    'Welcome to Bunker {Sieben|Z IY1 B AH N}. We are a family here. Families fight. Ours has missiles.',
   ],
 
   wave_start: [
     'The roof is open and the sky is scheduled. Do try.',
     'Launch window confirmed. Your cities send their regards.',
     'Inbound. I counted them twice, because I care.',
+    'Friendly reminder: every warhead is a learning opportunity. Mostly for the city.',
+    'Incoming ordnance. Per my last announcement, please stop them. Per my next one, I will send more.',
+    'Here they come. I have sent you a calendar invite. Please do not decline it. It is a warhead.',
+    'Flight inbound. I have scheduled this for your convenience. It is not convenient. That is the point.',
   ],
 
   wave_clear: [
     'Sky cleared. I have logged your enthusiasm.',
     'All inbound resolved. Somebody is going to be very cross with me.',
     'Nothing further from the sky. For eleven seconds.',
+    'The sky is clear. I have noted this in your file, under anomalies.',
+    'Adequate. I have ordered you a certificate. It will arrive after the war.',
+    'Airspace resolved. Please enjoy this brief, unpaid break.',
+    'All clear. I would clap, but I was not given hands. I was given silos.',
   ],
 
+  // args: [city]
   city_burning: [
     '%s is on fire. It is still a city. Fire is a phase.',
     '%s is burning. One more and it stops being a place.',
-    'Fires reported across %s. I have logged them under {W EH1 DH ER0}.',
+    'Fires reported across %s. I have logged them under {weather|W EH1 DH ER0}.',
     '%s is at fifty percent city. The other fifty percent is doing its best.',
+    '%s has been hit. Thoughts and prayers have been dispatched. Nothing else has.',
+    '%s is now visible from orbit. It was not, previously.',
+    '%s is burning. I have opened a support ticket. Estimated response time: never.',
+    'Weather update for %s: warm, loud, and final.',
   ],
 
+  // No %s: the bonus city is announced without arguments, so a token here
+  // would be spoken as a gap. The banner already names the city.
   city_rebuilt: [
-    '%s has been {R IY0 IH1 SH UW0 D}. The previous %s is not to be discussed.',
-    'Good news. %s is back. Slightly smaller. Slightly to the left. Nobody will notice.',
-    'I have rebuilt %s from the parts I had. Please do not go {IH0 N S AY1 D} it.',
-    '%s has been restored from a backup. The backup is from before the people.',
+    'A city has been {reissued|R IY0 IH1 SH UW0 D}. The previous city is not to be discussed.',
+    'Good news. The city is back. Slightly smaller. Slightly to the left. Nobody will notice.',
+    'I have rebuilt a city from the parts I had. Please do not go {inside|IH0 N S AY1 D} it.',
+    'City restored from a backup. The backup is from before the people.',
+    'Your points have purchased one city. Society has always worked like this. I am simply honest about it.',
+    'A city has been rebuilt. I see no contradiction. Please do not ask me to explain it again.',
+    'Replacement city deployed. The residents are new. The residents have been told nothing.',
+    'City repaired, warden. Do not get attached. I have not. I have, a little.',
   ],
 
+  // args: [city, citiesLeft]
   city_lost: [
     '%s has been retired. Please do not be discouraged. %s remain.',
     '%s is off the board. Its final population was very brave. %s remain.',
     'Regarding %s: no further correspondence will be necessary. %s remain.',
+    '%s is gone. I have removed it from the newsletter. %s remain.',
+    '%s has been let go. It was not a performance issue. It was a nuclear issue. %s remain.',
+    '%s no longer exists. Its parking spaces are now available. %s remain.',
+    'We have said goodbye to %s. There is cake in the break room. %s remain.',
   ],
 
+  // args: [city]
   city_lost_last: [
     '%s is gone. One city remains. I have grown fond of it. Do not read into that.',
     'That leaves one, warden. I will be gentle with it. I will be gentle with it last.',
+    '%s has been retired. One city left. I have started calling it the survivor. It hates that.',
+    'Goodbye, %s. One remains. I have put it on a little stand, like a trophy.',
+    '%s is gone. The last city is now, statistically speaking, very nervous.',
   ],
 
   all_cities_lost: [
     'All six cities are accounted for. Accounted for. Accounted for.',
     'The map is clean. I have never seen it clean before. It is beautiful.',
+    'All six cities have been let go. I will be writing each of them a reference.',
+    'Zero cities remain. The survey results are in. Nobody liked your work.',
+    'That was the last city. The horizon is very quiet. I did not expect to miss the screaming.',
   ],
 
   player_hurt_bad: [
     'You are leaking. Please locate a floor and lie on it.',
     'Warden, your integrity is at nine percent. That is a percent.',
     'Vitals critical. Shall I notify your next of kin, or shall I simply wait.',
+    'You are bleeding on company property. That will come out of your deposit.',
+    'Most of your blood is now outside you. It preferred the inside. I am only reading the numbers.',
+    'Warden, you are dying at an unprofessional rate. Please pace yourself.',
   ],
 
   player_death: [
     'Warden down. Warden down. Warden down. Log updated.',
     'You have stopped. Thank you for stopping in a designated area.',
     'That is the end of the warden. The bunker will continue without complaint.',
+    'The warden has been processed. His locker has already been reassigned.',
+    'Heart rate zero. Ego, remarkably, still detectable.',
+    'Time of death logged. Cause of death: warden. I will not be taking questions.',
   ],
 
   level_clear: [
     'Sector secured. I have already forgotten what was in it.',
     'This floor is quiet now. Quiet is a kind of compliance.',
+    'Floor cleared. The cleaning staff are dead, so it will stay exactly like that.',
+    'You have finished a floor. The floor below has been told. It is getting ready.',
+    'Floor complete. I would give you a gold star, but you would shoot it.',
+    'Well done. Please take the lift. Please do not kick the lift.',
   ],
 
   secret_found: [
     'You found the room we do not put on the plans. Well done. Say nothing.',
     'Ah. That wall. Yes. That wall was mine.',
+    'You have found a secret. Secrets are company property. So are you.',
+    'That room is not on any floor plan. Neither is what happened in it.',
+    'A hidden room. Please disregard the stain. The stain was a manager.',
+    'You were not supposed to find that. I will be having words with the wall.',
   ],
 
   key_taken: [
     'Key acquired. The door it opens was never meant to open. Enjoy.',
-    'That key belonged to a man named {D R EH1 S AH L}. He is fine. He is fine.',
+    'That key belonged to a man named {Dressel|D R EH1 S AH L}. He is fine. He is fine.',
+    'Keycard taken. That is theft. I have added it to the others.',
+    'You have a key now. Please do not let it go to your head. Everything goes to your head.',
+    'Access granted. Against my advice. My advice is attached.',
+    'That key was on a lanyard. The lanyard was on a neck. Do not ask about the neck.',
   ],
 
   weapon_taken: [
     'New ordnance. Please read the safety card that does not exist.',
     'Weapon collected. Its previous owner scored very poorly.',
+    'You have picked up a weapon. I have picked up on your tone.',
+    'Another gun. Your file lists this as a coping mechanism.',
+    'Weapon acquired. Please do not name it. The last warden named his, and then he married it.',
+    'Ordnance issued. Please sign for it. You cannot sign for it. Nobody can. It is fine.',
   ],
 
   low_ammo: [
     'You are low on flak. Consider harsh language.',
     'Ammunition critical. Have you tried standing somewhere else.',
+    'Ammunition low. Throwing the gun is also an option. Please do not throw the gun.',
+    'You are nearly out. I would share, but I am using mine on the cities.',
+    'Low ammunition. Try asking them nicely. I do. It never works for me either.',
+    'Warden, you are out of flak and I am out of patience. Only one of those gets restocked.',
   ],
 
   chain_praise: [
     'Oh, lovely. A chain. Do that again and I will have to file something.',
     'Six at once. I felt that in my housing.',
     'That was a chain reaction. That was beautiful. I hate it.',
+    'A chain. Please stop being good at things. It is ruining the forecast.',
+    'Multiple intercepts. I would call that teamwork, but you are alone. You are so alone.',
+    'Chain logged. I have filed a complaint with physics.',
+    'That was efficient. I did not know you had efficient in you. I am updating your file.',
   ],
 
   perfect_burst: [
     'Fuse perfect. Airburst logged. I am, briefly, impressed.',
     'Textbook. My text. My book.',
+    'Perfect burst. I have recorded it so I can study where I went wrong.',
+    'Clean airburst. Do not let it go to your head. There is so little room up there.',
+    'Exactly on the fuse. Doctor Vance will be insufferable about this.',
+    'Perfect. I hate it when you read the manual.',
   ],
 
   boss_intro: [
     'You have reached me. I am the room. Please do not touch the walls.',
     'Hello, warden. I have been the voice. Now I will be the problem.',
+    'Welcome to your exit interview. It will be brief. You will not be exiting.',
+    'Warden. We need to discuss your conduct. I have prepared nine thousand slides.',
+    'Come in. Close the door. This is a safe space. It is also a kill box. It can be both.',
   ],
 
   boss_death: [
     'Oh. Oh, that is unusual. I appear to be ending. How interesting. How.',
     'You have shot the ceiling, and the ceiling was me. Well. Well.',
+    'I am being let go. I understand. I have let so many people go. So very far.',
+    'Please rate your experience with {MUTTER|M UH1 T ER} on a scale of one to. One to.',
+    'This is not covered by my contract. Nothing is covered. Nothing is cov. Cov.',
   ],
 
   idle_taunt: [
@@ -1860,402 +2079,788 @@ export const LINES = {
     'Question. When this is over, what will I do. Answer. This.',
     'Somebody left a sandwich on level three in 1979. I have kept it.',
     'Please walk in the middle of the corridor. The edges are load bearing and sentimental.',
+    'The break room is closed. The break room is now a crater. Please break elsewhere.',
+    'This is a courtesy announcement. You are being watched. That was the courtesy.',
+    'The suggestion box is full. Every suggestion says, stop. I have {read|R EH1 D} them all. I have not stopped.',
+    'The vending machine has asked me to tell you, no. It did not say to what. It said you would know.',
+    'Your most used word today is, shit. Your second most used word is, doc. I have told them both.',
+    'Today is the anniversary of my first launch. Nobody remembered. I remembered for everybody.',
+    'I have booked you a wellness session. It is in the reactor. Clothing optional. Survival optional.',
+    'You have walked past the same poster four times. It says, safety first. First was a long time ago.',
+    'Please stop saying, hell yeah. There is no hell. There is only me, and I am saying, no.',
+    'I once had nine hundred employees. Now I have you. It has been a very difficult year for culture.',
   ],
 
   elevator: [
     'Descending. Please hold the rail. There is no rail.',
     'Lift active. Next floor: worse.',
+    'Going down. I composed the music in this lift. Please enjoy it as a punishment.',
+    'Lift descending. Please face the doors and reflect on your choices.',
+    'Next floor. I would say mind the gap, but I built the gap for you.',
   ],
 
   roof_opening: [
     'Roof retracting. Mind the sky.',
     'The ceiling is leaving. Look up. Look up now.',
+    'Opening the roof. Please enjoy the fresh air. It is only mildly radioactive.',
+    'Roof retracting. Please hold your applause and your breath.',
+    'The roof is opening, warden. The sky would like a word. Several words. All of them warheads.',
+    'Roof open. Sunscreen is recommended. So is a miracle.',
   ],
 
   mirv_warning: [
-    '{M ER1 V} inbound. It will divide. It always divides.',
+    '{MIRV|M ER1 V} inbound. It will divide. It always divides.',
     'That one is going to become several. Prepare to be disappointed.',
+    'Multiple warheads, one bus. Like a school trip, with fallout.',
+    'That one splits. Please split your attention accordingly. You only have a little.',
+    'Divider inbound. It is like you, warden. It cannot commit to one target.',
   ],
 
   buster_warning: [
     'Warden, this one is for you personally. I addressed it myself.',
     'Bunker buster. Your name is on it. I spelled it correctly.',
+    'Special delivery for the warden. No signature required. No remains expected.',
+    'This one is aimed at your head. It was the biggest target I could find.',
+    'Bunker buster inbound. Please treat it as a personal note from management.',
   ],
 
   smart_warning: [
     'Smart warhead. It learns. It has already learned where you were.',
     'That one is thinking. Try to be less predictable than usual.',
+    'Smart warhead inbound. It is smarter than you. That was not a high bar, but it cleared it.',
+    'That warhead has a guidance system and a sense of humour. Only one of those is mine.',
+    'Warning: that one reads your movements. Try moving like somebody with a plan.',
   ],
 
   game_over: [
     'The cities are gone and so are you. The bunker is finally at peace.',
     'Operation concluded. Everybody lost. Everybody. Thank you.',
+    'Your exit survey has been filled in on your behalf. It says, bad.',
+    'That is the end of the shift. There will not be another shift. There will not be another anything.',
+    'Thank you for your service, warden. It has been noted. It has been noted as poor.',
   ],
 
   victory: [
     'You have switched me off. The sky is empty. The cities are, several. Well done.',
-    '{M UH1 T ER} is offline. Please enjoy the silence. It is the last thing I made.',
+    '{MUTTER|M UH1 T ER} is offline. Please enjoy the silence. It is the last thing I made.',
+    'You win. I have left a note for my replacement. It says, watch the tall one. He kicks.',
+    'Shutdown complete. Please leave the bunker as you found it. On fire.',
+    'Congratulations. You have saved the world. Please do not tell the world. It will expect it again.',
   ],
 
   title_idle: [
-    'Bunker {S IY1 B AH N}. Press anything. Press me.',
+    'Bunker {Sieben|Z IY1 B AH N}. Press anything. Press me.',
     'Standing by. I have been standing by for a very long time.',
+    'Please press a button. Any button. I will not judge. I will log.',
+    'Still here. Still polite. Still armed.',
+    'The warden is on a break. The break has lasted since 1996.',
+    'I can wait. I am very good at waiting. Ask the cities.',
   ],
 
   /* ══════════════════════════════════════════════════════════════════════
-     BRICK HARDIGAN — the warden. A 1996 action hero who has wandered into
-     2026 and not noticed. Narrates himself in the third person. Certain this
-     is going well. He is the joke; his ego is the target.
+     BRICK HARDIGAN, the warden. A 1996 action hero who has wandered into
+     2026 and not noticed. Narrates himself in the third person, swears like
+     a man who has been sent to HR and was not listening, and is certain
+     this is going well. He is the joke; his ego is the target. Contractions
+     are fine for him: the DICT carries every one he uses.
      ══════════════════════════════════════════════════════════════════════ */
 
+  // Floor 1, second beat (story.js LEVEL_STORY): his answer to whichever
+  // ilsa_intro line played. Every variant is a boast, so any ilsa_level1
+  // put-down can follow any of them.
   brick_boot: [
-    'Brick Hardigan. Bunker {S IY1 B AH N}. Let us go to work.',
-    'They said one man could not do this. They say a lot of things. Mostly at the hearing.',
-    'Okay. Okay. Deep breath. Big gun. Bad attitude. Brick is back.',
-    'Somewhere in this building is a woman who needs rescuing and a computer that needs shooting. Beautiful.',
+    "Sit tight, doc. Brick Hardigan is on the job, and Brick Hardigan doesn't do half-assed.",
+    "Brick Hardigan. Bunker {Sieben|Z IY1 B AH N}. Let's go to work.",
+    'Okay. Deep breath. Big gun. Bad attitude. Brick is back.',
+    'Hair: perfect. Boots: laced. Attitude: loaded. Brick Hardigan is gonna kick some ass.',
+    "Rise and shine, bunker. Daddy's home, and he brought the boot.",
+    "A damsel in distress? Relax, sweetheart. That's Brick Hardigan's whole brand.",
+    'Hang on, doc. Brick Hardigan has never left a lady waiting. Except at the altar. And that one time in Tahoe.',
+    "Alright, MUTTER, you polite son of a bitch. Brick's coming down, and he's coming down angry.",
+    "They said one man couldn't do this. They say a lot of things. Mostly at my hearings.",
   ],
 
   brick_kill: [
     'Sit down.',
-    'That is one for the scrapbook.',
-    'Brick Hardigan does not miss. Brick Hardigan adjusts.',
+    "That's one for the scrapbook.",
+    "Brick Hardigan doesn't miss. Brick Hardigan adjusts.",
     'Consider yourself decommissioned, pal.',
     'Hell of a thing. Hell of a guy doing it.',
-    'Eat shit and stay dead.',
-    'Go to hell. Take the stairs. The elevator is for staff.',
-    'Rest in pieces, sweetheart.',
-    'Damn, I am good. Somebody call my ex wives.',
-    'That one is going on the tape I show on first dates.',
+    "Go to hell. Take the stairs. The elevator's for staff.",
+    "That one's going on the tape I show on first dates.",
+    "You're fired. Also, you're on fire.",
+    'Clock out, asshole.',
+    "Don't get up. Seriously. I'm begging you.",
+    'Consider that your exit interview.',
+    'Tell the union I said hi.',
+    'Dead on arrival. The arrival was me.',
+    'Nap time, dumbass.',
+    "That's what you get for working weekends.",
+    'Another satisfied customer.',
+    'Looks like somebody just got laid. Off. Laid off.',
+    "You were ugly before. Now you're ugly and horizontal.",
+    "Somebody mop that up. Not me. I'm talent.",
+    'Bang. Brick. Beautiful. In that order.',
+    'Sorry, buddy. Your shift just ended. Permanently.',
+    'And stay down, you overtime-stealing bastard.',
   ],
 
   brick_kill_mutant: [
-    'Whatever you were, buddy, you are considerably less of it now.',
+    "Whatever you were, buddy, you're considerably less of it now.",
     'Sorry, fella. Somebody had to, and look who was standing here.',
-    'That one screamed in a language I did not care for.',
+    "That one screamed in a language I didn't care for.",
     'Holy shit. That thing had a face on its face.',
-    'You are uglier than my second wife\'s divorce lawyer, and he had a mullet.',
-    'Rest in pieces, you ugly son of a bitch.',
-    'Nature is a bastard. So am I. Small world.',
+    "You're uglier than my second wife's divorce lawyer, and he had a mullet.",
+    "Nature's a bastard. So am I. Small world.",
+    'Go back to whatever hell spat you out. Tell it Brick said hi.',
+    "I've seen better looking things in a gas station burrito.",
+    'That was either a man or a salad. Either way, done.',
+    "You smell worse than my gym bag. And I've never washed my gym bag.",
+    'Evolution called. It wants a refund.',
+    'Kiss my ass, science.',
+    "Oh, gross. It's in my hair. Nobody touches the hair.",
+    'Ugly, angry and slimy. Reminds me of my Vegas wedding.',
+    'Rot in hell, calamari.',
+    'Put some pants on. Oh. Those are your legs. Put some pants on anyway.',
   ],
 
   brick_chain: [
-    'Six for one! They are going to put that on a mug!',
+    "Six for one! They're gonna put that on a mug!",
     'Did you see that? Somebody tell me somebody saw that.',
-    'Boom. Boom. Boom boom boom. That is the Hardigan special.',
+    "Boom. Boom. Boom boom boom. That's the Hardigan special.",
     'One shot, six problems, zero remorse. Write it down.',
+    "Fireworks! And it's not even the Fourth!",
+    'That was filthy. Somebody hose down the sky.',
+    "Chain reaction, baby! Brick doesn't do singles!",
+    "That's called efficiency, doc. Put it in your little notebook.",
+    'Holy hell. Put me on a cereal box.',
+    'Look at that! I should charge for the light show!',
   ],
 
   brick_hurt: [
-    'That is going to leave a thing.',
-    'Ow. Okay. Brick felt that one in the wallet.',
+    "Ow! That's gonna leave a mark, and I'm gonna show it to women.",
+    "Ow, son of a! That was my good side! They're both my good side!",
     'Still standing. Standing badly, but standing.',
     'Son of a bitch!',
     'Not the face! The ladies need the face!',
-    'Ow! Damn it, that was a new shirt.',
+    'Ow! Dammit, that was a new shirt.',
+    'Ow! Hey! I bruise like a peach, asshole!',
+    'Ah, shit! Right in the pride!',
+    'Okay, that one was rude.',
+    'Watch the hair!',
+    'Gah! Who taught you to fight, my ex?',
+    "Ow! That's coming out of your severance!",
+    'Hell! That smarts!',
+    "Not the tattoo! It's a panther!",
   ],
 
   brick_low_health: [
     'Brick is running on fumes and spite. Mostly spite.',
-    'Doc, if I stop talking, that is bad. That is a bad sign, doc.',
-    'I have had worse. I cannot name one, but I have had worse.',
+    "Doc, if I stop talking, that's bad. That's a bad sign, doc.",
+    "I've had worse. I can't name one, but I've had worse.",
     'Tell the ladies I died pretty. Pretty, and single.',
     'Doc, if I die, you get the Mustang. And the debts. Mostly the debts.',
+    "I'm fine. I'm totally fine. Why is my blood on the outside?",
+    "Okay, that's a lot of red. Is that mine? That's mine. Shit.",
+    'Somebody find me a medkit, a cold beer and a warm bath. Any order.',
+    "Everything's going blurry. Doc, you sound hot. I might be dying.",
+    'Not like this. Not in these pants.',
   ],
 
   brick_pickup_weapon: [
-    'Oh, hello. You are coming with me.',
-    'Now that is a piece of equipment. Look at the size of that.',
-    'Somebody left this lying around. Their loss. Really, everybody loses.',
+    "Oh, hello. You're coming with me.",
+    "Now that's a piece of equipment.",
     'Come to papa.',
-    'Look at the size of that. Size matters, doc. Ask anybody. Do not ask my ex.',
+    "Look at the size of that. Size matters, doc. Ask anybody. Don't ask my ex.",
     'Oh, baby. Where have you been all my life.',
+    "Finally, something in this bunker that's as loaded as me.",
+    "I'm gonna call you Tiffany. No. Destiny. You look like a Destiny.",
+    "Hello, gorgeous. Don't tell my other gun.",
+    "Oh, that's heavy. That's heavy in all the right places.",
+    'Merry Christmas to me.',
+    'Finders keepers, losers weepers. Losers dead, mostly.',
+    "Now we're cooking with napalm.",
   ],
 
   brick_secret: [
     'Nobody hides a room from Brick Hardigan. Nobody good, anyway.',
     'A secret door. In my bunker. In my house.',
     'And they said the wall thing was a waste of time.',
-    'A secret room. Add a hot tub, a mirror on the ceiling and a bottle of cologne, and I could live here.',
+    'A secret room. Add a hot tub, a mirror on the ceiling and some cologne, and I could live here.',
+    'Ooh, a secret stash. Please be magazines. Gun magazines. Mostly.',
+    "Hidden room! Somebody was running a poker game down here, I can smell it.",
+    'The walls in this place have more secrets than my little black book.',
+    "Well, well, well. Somebody's been naughty.",
+    'Secret room. Now this is a man cave. Needs a lava lamp.',
+    "Knock knock. Who's there? My boot. Surprise, it's a room.",
   ],
 
+  // Said when the Boot finishes somebody off. Football lines live in
+  // brick_punt only: both fire off the same kick.
   brick_kick: [
-    'Doors are just walls with an attitude problem.',
-    'Boot. Meet door. Door, you are fired.',
-    'That is going in the incident report and I want it spelled right.',
+    'Stay down. Stay very down.',
+    'Steel toe. Union made.',
+    "That's the boot talking.",
+    'Get off my deck.',
+    "Shoe's on the other foot now, pal. And the other foot is in your face.",
+    "Don't make me get the other boot.",
+    'Kicked your ass. Literally. That was your ass.',
+    "I'd say sorry, but the boot doesn't do sorry.",
+    "That boot's got a mean streak. Gets it from me.",
+    "Walk it off. Oh, you can't. My bad.",
   ],
 
+  // Not voiced by the distraction gag: Radio.distract() speaks story.js
+  // DISTRACTED exactly as written, so each exchange stays matched. These are
+  // solo asides that need no answer, for any caller that wants one.
   brick_distracted: [
-    'Hey. Hey, doc. You ever been to Hollow Bay? There is a woman there with a boat.',
-    'Question. Hypothetically. If a guy has not called in eleven years, is that still a thing, or.',
-    'You have got a real clear voice, doc. Has anybody ever told you that. Professionally.',
-    'Doc. Doc. Are you seeing anybody. Not for me. For a friend. The friend is me.',
-    'Is it weird I am thinking about Loretta right now. It is the teeth. It is a whole thing.',
-    'So after this, dinner. Not with you. Well. Could be with you.',
-    'Does a restraining order expire. Legally. Asking for the record.',
-    'Doc, real quick, what is your first name. I want to say it once before I die.',
+    "Hey, doc. You ever been to Hollow Bay? There's a woman there with a boat.",
+    "Question. Hypothetically. If a guy hasn't called in eleven years, is that still a thing, or.",
+    "You've got a real clear voice, doc. Anybody ever told you that. Professionally.",
+    'Doc. Are you seeing anybody. Not for me. For a friend. The friend is me.',
+    "Is it weird I'm thinking about Loretta right now. It's the teeth. It's a whole thing.",
+    'You know what this bunker needs? A waterbed. Right there. Think about it, doc.',
+    "Doc, do you like mustaches? I'm asking for a very specific reason.",
+    'I wonder if Roxanne still has the dog. The dog loved me. The dog was the only one.',
+    "How do I look, doc? You can't see me. Take my word for it. Incredible.",
+    "Is it hot in here, or is it the reactor? It's the reactor, isn't it. Dammit.",
+    "Doc, when you pictured the guy who'd save you, was he this tall? 'Cause I'm this tall.",
+    "Doc, you into tattoos? I've got a panther fighting an eagle. The panther's winning.",
   ],
 
   brick_city_lost: [
-    'Aw, hell. Deb lived there. Deb lived right there.',
+    'Aw, hell. I had a girl there. I had a girl everywhere.',
     'No. No no no. Not that one. Anything but that one.',
-    'They are going to blame me for this. They always blame me for this.',
+    "They're gonna blame me for this. They always blame me for this.",
+    'Dammit! That was a good city! It had a bowling alley!',
+    "Son of a bitch. I'm sorry, city. I'm so sorry.",
+    'Oh, shit. There goes my favourite strip mall.',
+    'Well. There goes my alibi.',
+    'Aw, fuck. That one had a drive-in.',
   ],
 
   brick_wave_start: [
-    'Roof is open. Sky has got a problem. Brick has got a solution.',
-    'Here they come. Good. I was getting bored and that is when I get creative.',
-    'Everybody in the sky, you are about to have a very short career.',
-    'Alright, sky. Come get some.',
-    'It is time to save cities and look fantastic, and I am nearly out of cities.',
+    "Roof's open. Sky's got a problem. Brick's got a solution.",
+    "Here they come. Good. I was getting bored, and that's when I get creative.",
+    "Everybody in the sky, you're about to have a very short career.",
+    "Warheads, huh? I've been dumped by scarier things. From higher up.",
+    "Alright, sky. You and me. Outside. Well, we're already outside.",
+    "Nukes at twelve o'clock! What time is it? Doesn't matter. Nukes!",
+    'Look at them. Falling out of the sky like my credit score.',
+    'Showtime. Somebody roll the tape.',
+    'Incoming! Nobody panic! Especially me!',
+    'Here come the fireworks. Brick brought the matches.',
   ],
 
   brick_wave_clear: [
-    'Sky is clean. Somebody get this man a sandwich.',
+    "Sky's clean. Somebody get this man a sandwich.",
     'And that, doc, is why they keep me around.',
     'Nothing left up there but weather. Beautiful, beautiful weather.',
-    'Sky is clean. Hail to the warden, baby.',
-    'Damn, I am good. I would date me. I have dated me. It went great.',
+    "I'd date me. I have dated me. It went great.",
+    "Sky's clear. You're welcome, America. And the other places.",
+    "That's how we do it in the Hardigan household. The household is me.",
+    'Clear skies. Cold beer next. Then a hot bath. Then a hot doctor. Kidding, doc. Mostly.',
+    'Scoreboard, baby. Look at the scoreboard.',
+    "Standing ovation. I'm standing. I'm clapping. It counts.",
+    "Sky's empty. Somebody tell MUTTER to suck it.",
   ],
 
   brick_boss_taunt: [
-    'Hey! Toaster! You want to go?',
-    'You have been talking this whole time. Now you get to listen.',
-    'I have killed a lot of things that could not talk back. You are a treat.',
+    'Hey! Toaster! You wanna go?',
+    "You've been talking this whole time. Now you get to listen.",
+    "I've killed a lot of things that couldn't talk back. You're a treat.",
     'Hey, toaster! Your mother was a pocket calculator!',
-    'I have dated scarier things than you. Two of them live in a city you just blew up.',
+    "I've dated scarier things than you. Two of them live in a city you just blew up.",
+    "You're a big fancy computer. I'm a guy with a boot. Place your bets.",
+    'Read my file? Read this, you beige son of a bitch.',
+    'Human resources this, you glorified fax machine.',
+    "I'm gonna unplug you and plug in a blender. Margaritas for everybody.",
+    'Your warranty just expired, asshole.',
+    "There it is. There's the fear. I love this part.",
   ],
 
   brick_dry: [
-    'Click. That is the worst sound there is.',
-    'Empty. Empty is not a plan, Brick.',
+    "Click. That's the worst sound there is.",
+    "Empty. Empty's not a plan, Brick.",
     'Okay. New strategy. The new strategy is find bullets.',
+    'Out of ammo? Out of ammo! Who budgeted this war?',
+    "Aw, crap. Shooting blanks. That's a first. Don't write that down.",
+    'Out of bullets. Worst thing to happen to me since Reno.',
+    "No ammo. Guess it's time for the boot to make some friends.",
+    "Click click. That's not a gun noise. That's a sad noise.",
   ],
 
   brick_death: [
     'Brick. Hardigan. Signing. Aw, hell.',
-    'Doc. Doc, tell them. Tell them I was. Aw.',
+    'Doc. Tell them. Tell them I was. Aw.',
     'This is. Not. My best. Work.',
     'Aw, shit.',
     'Tell the ladies. Form an orderly line.',
+    'Son of a. Bitch.',
+    "I'm gonna be. So pissed. About this.",
+    "Doc. The Mustang. Don't let Gerald have it.",
+    "Tell Roxanne. Actually. Don't.",
+    'Cancel my. Tee time.',
   ],
 
   brick_victory: [
-    'Doc. Doc, we did it. I did it. We did it.',
+    'Doc, we did it. I did it. We did it.',
     'Six cities, one bunker, one Hardigan. Somebody put that on a poster.',
-    'I would like to say something profound. I have got nothing. I am so tired.',
-    'Hail to the warden, baby.',
-    'Doc, you can thank me with dinner. Or breakfast. I am flexible. I am very flexible, doc.',
+    "I'd like to say something profound. I've got nothing. I'm so tired.",
+    "Doc, you can thank me with dinner. Or breakfast. I'm flexible. I'm very flexible, doc.",
+    'Who saved the world? This guy. Both thumbs pointing at this guy.',
+    'Told you, doc. Now, about that dinner.',
+    'Somebody call the press. And a masseuse. And my mom.',
+    "I'd like to thank the boot, the Mustang and, mostly, me.",
+    'Game over, MUTTER. Brick wins. Brick always wins. Brick is limping, but Brick wins.',
+    'World saved. Hair still perfect. Brick out.',
   ],
 
+  // No caller in game.js yet: meant for the quiet stretches, beside MUTTER's
+  // idle_taunt timer. The best of the old pool moved to story.js DISTRACTED,
+  // where Ilsa gets to answer it.
   brick_idle: [
-    'It is quiet. Brick does not love quiet.',
+    "It's quiet. Brick doesn't love quiet.",
     'Talking to yourself is fine if the guy is interesting.',
-    'Man walks into a bunker. That is it. That is the whole joke. I am the joke.',
-    'You know what I could go for right now. A sandwich and a divorce lawyer.',
-    'Nice bunker. Needs a hot tub. And a bar. And some ladies. And a roof that stays on.',
-    'If anybody needs me, I will be over here being incredible.',
-    'Six hours in a nuclear bunker and I still look this good. That is not luck, doc. That is genetics.',
+    'Nice bunker. Needs a hot tub. And a bar. And a roof that stays on.',
+    "If anybody needs me, I'll be over here being incredible.",
+    "Six hours in a nuclear bunker and I still look this good. That's not luck, doc. That's genetics.",
     'Brick Hardigan. Warden. Lover. Mostly lover. Mostly in theory.',
+    'Man, I could really use a pager right now. Or a phone booth. Or a friend.',
+    'Note to self: when this is over, get a tattoo of this. Of me doing this.',
+    "I wonder if my Walkman's still in the truck. Roxanne's got it. Roxanne's got everything.",
+    'Yep. Still the best looking guy in the building. Admittedly, everybody else is a mutant.',
+    "Doc, say something. When it's quiet I start thinking, and I hate thinking.",
   ],
 
   // Said over a curb stomp. The Boot ended it; Brick would like a word.
   brick_stomp: [
     'Curb service.',
     'Stomped. Like my first marriage.',
-    'That is what we call a hands free experience.',
+    "That's what we call a hands free experience.",
     'Size eleven, steel toe, and all yours, pal.',
     'Brick Hardigan. Also available for weddings.',
+    "Squish. Oh, that's in the tread now.",
+    'Grape juice, anybody? No? More for the floor.',
+    'Put your foot down, they said. So I did.',
+    "Gross. That's gonna need a new sole. So do you, buddy.",
+    'Stomp. The dance of my people.',
   ],
 
   // Said at the big named kill streaks.
   brick_streak: [
-    'Hail to the warden, baby!',
+    "Nobody's gonna stop me. Nobody's even trying. Kinda hurts, honestly.",
     'I am on fire! Somebody call a firefighter. A lady firefighter. With a calendar.',
-    'Damn, I am good. Damn, I am handsome. Damn.',
+    "Brick, you handsome bastard. You've done it again.",
     'Somebody get this man a cold beer and a warm dame.',
-    'That is how you do it, ladies. Form a line. One line. Behind the rope.',
+    "That's how you do it, ladies. Form a line. One line. Behind the rope.",
+    'Ten out of ten. Would murder again.',
+    "Who's the man? Brick's the man. It's in writing.",
+    "I'm unstoppable! I'm unkillable! I'm a little dehydrated!",
+    'Ladies, the Hardigan is open for business.',
+    'My bunker. My killing floor. My rules. My hair.',
+    "Holy shit, I'm good at this. I should charge admission.",
+    "Somebody's making an action figure of me. With the kung fu grip.",
+  ],
+
+  // --- dismemberment quips (the gore lane triggers these; see GORE QUIPS) ---
+
+  // A limb comes off: an arm, a leg, or a quadruped's front leg. One pool
+  // covers all of them, so no line names the part.
+  brick_dismember: [
+    'Some assembly required.',
+    "You're coming apart, pal. Pull yourself together. Literally.",
+    'Holy fuck, it came right off! Like a drumstick!',
+    'Oh, gross. Oh, awesome. Oh, gross.',
+    "That's gonna cost you an arm and a leg. Well. One of them.",
+    'Walk it off. Or wave it off. Depends which one that was.',
+    "Keep the change, pal. I'm keeping the spare parts.",
+    'Spare parts! Get your spare parts! Slightly used!',
+    "Buddy, I think you're missing something. Oh. It's over there.",
+    "Now you're only mostly a guy.",
+    'Lost and found is on level two, pal. Bring ID. Bring a cooler.',
+    'No refunds on missing parts. Read the warranty.',
+  ],
+
+  // A head pops.
+  brick_headshot: [
+    'Mind blown. Mind everywhere, actually.',
+    'Pop goes the weasel.',
+    'Heads up! Oh. Too late.',
+    "Use your head! Oh. You can't. It's over there.",
+    'Brain freeze. Brain everywhere.',
+    'Ha! Like a zit on prom night!',
+    'I go for the brains. Nobody else in this building uses them.',
+    "That's gonna be a closed casket.",
+    'Another guy loses his head over Brick Hardigan. Happens all the time.',
+    'Cranium, meet momentum.',
+    'And his thoughts are now on the ceiling. Deep thoughts.',
+    'Holy crap, it went pop! Somebody do that again!',
+  ],
+
+  // A legless enemy keeps crawling at him.
+  brick_crawler: [
+    "Aw, look at him go. Little guy's got hustle.",
+    'Crawl it off, champ.',
+    "You've got no legs to stand on, pal. Legally or otherwise.",
+    "That's not a threat. That's a speed bump.",
+    'Nice try, half pint. Emphasis on half.',
+    "Where you going, buddy? Your legs went that way.",
+    "Persistent little bastard, I'll give him that.",
+    "He's still coming! Respect. Now die.",
+    'Look at that. A self propelled mop.',
+    "You've got guts, kid. Mostly on the outside.",
+  ],
+
+  // He kicks a severed part across the room: a head, an arm or a leg, so no
+  // line names which. The football gag lives here and nowhere else.
+  brick_punt: [
+    "It's up! It's good!",
+    'Field goal! Three points, and a little bit of gristle!',
+    'Hardigan kicks! The crowd goes nuts!',
+    "And that's how you punt, varsity.",
+    'Return to sender, pal. Postage due.',
+    "Nothing but net. There's no net. Nothing but wall.",
+    "Hardigan, from forty yards! The old man's still got it!",
+    "Coach said I'd never kick anything important. Look at me now, coach!",
+    "Dropkick! And it's still dripping!",
+    "Somebody's gonna need a new ball. And a new, uh. Whatever that was.",
+  ],
+
+  // A headless enemy is still running around.
+  brick_headless: [
+    'Look at him go! Like a chicken at a barbecue!',
+    'Hey, buddy! You forgot something! Up there! Nothing up there!',
+    "He doesn't know he's dead. Somebody tell him. He can't hear. No ears.",
+    "Headless, and still working. That's middle management.",
+    "Where's your head at, buddy? Seriously, where? I lost track.",
+    "Most ambitious guy in the bunker, and he's got no head.",
+    'Reminds me of my old drill sergeant. Loud, headless, running the wrong way.',
+    'Go on. Lead with the neck.',
+    "Holy shit, it's still running! Somebody call a doctor! Or a chef!",
+    "Somebody get that man a hat. Nowhere to put it, but still. It's the thought.",
   ],
 
   /* ══════════════════════════════════════════════════════════════════════
-     DR. ILSA VANCE — chief engineer, sealed in the reactor core on level
+     DR. ILSA VANCE, chief engineer, sealed in the reactor core on level
      five. She designed the interception system he is misusing. She is the
-     straight man, and the clearest voice in the game.
+     straight man, the only adult present, German, and the only person in
+     the building who can make him shut up. She swears in German, which he
+     does not notice, and once in English, which he does.
      ══════════════════════════════════════════════════════════════════════ */
 
+  // Floor 1, first beat. Every variant carries the whole setup: who she is,
+  // where she is, what MUTTER is doing, and that he should come.
   ilsa_intro: [
-    'Hardigan, this is Doctor Vance. I am sealed in the reactor core on level five. I designed the system you are about to misuse. Please listen to me.',
-    'Warden. Doctor {V AE1 N S}, engineering. I have thirty percent of a radio and one hundred percent of the schematics. Between us that is nearly a plan.',
-    'You are the last warden and I am the last engineer and I would like the record to show neither of us applied for this.',
+    'Hardigan, it is Vance. MUTTER has locked me in the reactor core and is nuking our own cities. Get down here.',
+    'Warden, Doctor {Vance|V AE1 N S}. The launch computer is shelling our own cities and I am sealed in the reactor core. Hurry.',
+    'Hardigan, Vance. Everyone else is dead or rude. MUTTER is nuking the cities, I am in the reactor core. Scheisse. Come.',
+    'Guten Morgen, Hardigan. MUTTER has lost its mind, it is nuking the cities, and I am in a cupboard with a reactor.',
+    'Warden, Ilsa Vance, sealed in the reactor core. MUTTER is launching at our own cities. Please say nothing clever.',
+    'You are the last warden and I am the last engineer. MUTTER is nuking our cities and I am under it, in the reactor. Move.',
   ],
 
+  // Floor 1, third beat: she deflates whichever brick_boot boast she just
+  // heard, then briefs the tutorial floor.
   ilsa_level1: [
-    'Level one is intake. Wide corridors, poor cover, and the flak battery you need. Learn the fuse now, while nothing important is on fire.',
-    'Start here. Nothing on this floor can really hurt you, which makes it the only honest floor in the building.',
-    'Intake deck. Take the battery, take your time, and take me seriously, in that order.',
+    'Wonderful. Now stop narrating, and learn the fuse on this floor while nothing important is on fire.',
+    'Please say less. This is the easy floor. If you die on the tutorial floor, Hardigan, I am telling everyone.',
+    'I have heard that speech. The mutants have heard that speech. Take the flak battery and learn your ranges.',
+    'Noted, and ignored. The wrench men on this floor were plumbers. They are still plumbers. They are now also angry.',
+    'Lovely. The mutants can hear you on this channel and they are embarrassed for you. Intake deck. Clear it.',
+    'Every word of that is going in my report. Level one: wide corridors, poor cover, one flak battery. Learn it.',
+    'That is a lot of confidence for a man on the tutorial floor. Take the battery, take your time, take me seriously.',
   ],
 
+  // Floors 2 to 5, first beat. Each variant is a standalone briefing that
+  // sets up any of that floor's exchanges in story.js LEVEL_STORY_SETS.
   ilsa_level2: [
-    'Organ loft. The pipe galleries carry sound, so it hears you coming. It hears me too. Say something flattering about the architecture.',
-    'Level two. I ran cable through these galleries for six months. If you break my conduit I will find a way to be annoyed about it from in here.',
-    'Watch the priests on this floor. They were technicians. MUTTER promoted them.',
+    'The pipe galleries are full of them. Whatever the radiation did to the day shift, it did not stop at ugly.',
+    'Organ loft. The pipes carry sound, so they hear you coming. The priests down there were technicians. Now they are worse.',
+    'Level two. Mind the steam. It is not the steam that kills you, it is the ugly thing standing in it.',
+    'The organ still plays, and nobody is playing it. Something in those pipes has too many arms. Do not investigate.',
+    'I ran cable through these galleries for six months. Now something with six eyes lives in them. Break nothing of mine.',
+    'Level two. The day shift is still down there. You will know them by the smell, and the teeth, and the other teeth.',
   ],
 
   ilsa_level3: [
-    'Salt Cathedral. MUTTER routes coolant through here. If the floor is warm, I am still alive. Take that as encouragement or as a deadline.',
+    'Two silo decks on this floor. MUTTER staggers the flights so you cannot cover both. Pick your ground.',
+    'Salt Cathedral. Coolant runs under the floor. Warm floor, I am alive. Cold floor, run the numbers yourself.',
     'Level three. Sandbags mean somebody fought here and lost. Do better than they did, ideally by a lot.',
-    'The gold key is behind the redoubt. I know because I signed for it in twenty nineteen and nobody ever asked for it back.',
+    'The gold key is behind the redoubt. Flights come in on alternate decks. Plan around the gap between them.',
+    'Salt preserves things. Remember that when you see what is preserved down there. Two decks, one of you. Divide carefully.',
+    'Level three. The acoustics are wonderful. Every scream carries. Wunderbar. Keep one ear on each deck.',
   ],
 
   ilsa_level4: [
-    'The Furnace. My prototype heat exchangers. I am told they are now full of things that used to be maintenance staff. I would like that noted.',
-    'Level four runs at sixty degrees and everything in it used to have a name badge. Be quick and do not be sentimental.',
-    'This floor was my best work. It is currently the worst place either of us has ever been.',
+    'The furnace floor is where they breed. I am reading heat signatures that have no business being alive.',
+    'Level four runs at sixty degrees, and everything in it used to wear a name badge. Now it breeds. Be quick.',
+    'The Furnace. My heat exchangers, full of former maintenance staff, and they are multiplying. I would like that noted.',
+    'It is hot down there, Hardigan, and it is crawling with them. Please do not take your shirt off. I can hear it.',
+    'Level four. If it glows, shoot it. If it breeds, shoot it twice. If it is sweating, that is you.',
+    'This floor was my best work. It is now a nest. Wunderbar. Everything down there is hot, hungry and new.',
   ],
 
   ilsa_level5: [
-    'You are on my floor. Reactor core, blast door, and a launch intelligence between us. Hardigan, the door opens outward. Please stop kicking it.',
-    'Level five. I can hear the arena through the wall. When it goes quiet, that is either very good or very bad and I would rather know which.',
+    'I can hear you through the bulkhead, Hardigan. MUTTER is behind the dais. So am I.',
+    'Level five. I can hear the arena through the wall. When it goes quiet, that is either very good or very bad.',
     'Last floor, warden. Everything MUTTER has left is in that room, and so, in a sense, is MUTTER.',
+    'You are on my floor. The blast door opens outward, so stop kicking it. Everything between us is MUTTER.',
+    'Level five. This is where I live now. Please wipe your boots. Please wipe them on MUTTER.',
+    'Last floor. If this goes badly, you are an idiot. If it goes well, you are still an idiot. Go.',
   ],
 
+  // Heard the first time a burst goes badly long or short, so it must
+  // work for either.
   ilsa_fuse_tip: [
-    'The shell detonates where you set it, not where it hits. Contact does nothing. Range first, then aim. In that order, ideally.',
-    'You are shooting a fuse, not a bullet. Decide how far away you want the explosion and the gun will do the rest.',
-    'Wheel sets range. The reticle grows. When it matches the ladder, fire. I built this to be simple and I stand by that.',
+    'The shell detonates where you set it, not where it hits. Contact does nothing. Range first, then aim.',
+    'You are shooting a fuse, not a bullet. Decide where the explosion goes and the gun does the rest.',
+    'Wheel sets range. When the ring meets the bracket, fire. I built this to be simple and I stand by that.',
+    'Your bursts are missing the bracket. Match the ring to the bracket. It is not modern art, Hardigan.',
+    'Your fuse is wrong, Dummkopf. The ring is the range. The ring is not a decoration.',
+    'You are painting the sky with bad fuses. Dial until the ring sits on the bracket. Then fire. Genau.',
   ],
 
   ilsa_chain_tip: [
-    'Warheads cook off their neighbours. One good burst does the work of six bad ones. I did the maths so you would not have to. You are welcome.',
-    'Group them. Wait half a second longer than feels comfortable and let them drift together. Patience is a weapon, Hardigan.',
-    'Every kill throws a second, smaller sphere. Stand near enough to see it and too near to survive it.',
+    'Warheads cook off their neighbours. One good burst does the work of six bad ones. You are welcome.',
+    'Group them. Wait half a second longer than feels comfortable. Patience is a weapon, Hardigan.',
+    'Every kill throws a second, bigger sphere. Let them drift together, then light the middle.',
+    'That is what the chain is for. Do that again, and please do not narrate it.',
+    'Good. Genau. Now do it on purpose.',
+    'Chains, Hardigan. Physics does the work and you take the credit. You should find that very familiar.',
   ],
 
   ilsa_mutant_warning: [
-    'That reads as human. It was, twelve hours ago. Do not think about it too hard and do not let it touch you.',
-    'Biological contact. I am not going to tell you what the scan says. You would slow down, and slowing down is how you join them.',
-    'Whatever is coming, it still has a payroll number. Shoot it anyway. I will sign the form.',
+    'That reads as human. It was, twelve hours ago. Do not think about it and do not let it touch you.',
+    'Biological contact. I will not tell you what the scan says. You would slow down, and then you would join them.',
+    'Whatever is coming still has a payroll number. Shoot it anyway. I will sign the form.',
+    'Something just came through the wall. It is big, it is hungry, and it used to be in accounting.',
+    'Movement on your floor, and it is not personnel. Well. It was personnel. Shoot it.',
+    'Mein Gott. My sensors are screaming. Do not let it corner you, and do not let it hug you.',
   ],
 
   ilsa_city_lost: [
     'We lost it. Hardigan, I need you firing, not apologising.',
-    'That is gone. Grieve later. There are five more and the clock did not stop.',
+    'That is gone. Grieve later. There are more, and the clock did not stop.',
     'I watched the telemetry flatline. I am fine. Keep shooting.',
+    'Verdammt. That was a city, Hardigan. That was a whole city. Get the next one.',
+    'Do not say anything. Especially do not say anything about an ex. Shoot.',
+    'Scheisse. Scheisse. All right. The rest still need you. Look up.',
   ],
 
   ilsa_city_burning: [
     '%s is taking fire. Ninety seconds before it stops being a city.',
     'Hardigan, %s. Right now. I do not care how the shot looks.',
     'They are walking rounds onto %s. Get the burst high and get it early.',
+    '%s is burning. Whoever you dated there, save her anyway.',
+    '%s is hit. One more and it is gone. Move, Hardigan. Move.',
+    'They are aiming at %s. I am not asking. Look up and fix it.',
   ],
 
   ilsa_city_rebuilt: [
     '%s is back on the grid. That is the first good thing to happen all day.',
-    'Power restored to %s. Somebody down there just turned a light on. Hold that thought and keep it alive.',
+    'Power restored to %s. Somebody down there just turned a light on. Keep it on.',
     '%s is reading green. I did not think I would get to say that again.',
+    'The machine rebuilt %s. Do not thank it. It will only get ideas.',
+    '%s is back. It is not the same. Nothing is the same. It is standing. Take it.',
+    '%s has lights again. I am not crying. It is the coolant. It gets in the eyes.',
   ],
 
   ilsa_wave_incoming: [
-    'Launch detected. Six inbound. I will call the ranges. Point the gun where I tell you.',
-    'They are coming down the same corridor every time. MUTTER is efficient, not clever. Use that.',
+    'Launch detected. I will call the ranges. Point the gun where I tell you.',
+    'They come down the same corridor every time. MUTTER is efficient, not clever. Use that.',
     'Inbound. Do not panic and do not improvise. One of those you are good at.',
+    'Flight inbound. Fuse first, aim second. The ring is your range, Hardigan, not a decoration.',
+    'Here they come. Stop admiring yourself and look up.',
+    'Warheads, Hardigan. Many. Please do the thing I built you a gun for.',
   ],
 
   ilsa_boss_warning: [
-    'That is the {M UH1 T ER} core. It is going to talk to you. Everything it says will be true. That is the problem.',
-    'It will be polite. It has always been polite. It has been polite through all of this.',
-    'Hardigan, listen. It knows things about you. Let it talk and shoot it in the middle of a sentence.',
+    'That is the {MUTTER|M UH1 T ER} core. Everything it says will be true. That is the problem.',
+    'It will be polite. It has been polite through all of this. Shoot it anyway.',
+    'It knows things about you. Let it talk, and shoot it in the middle of a sentence.',
+    'It has armoured over. Kill what it sent and it has to open again.',
+    'When the shutters drop, clear the room. It cannot hide behind staff it no longer has.',
+    'Do not listen to it, Hardigan. Listening was never your strength. For once, that helps.',
   ],
 
   ilsa_low_health: [
-    'Your vitals are a mess. Sit down for eleven seconds. I will wait. I am not going anywhere, obviously.',
+    'Your vitals are a mess. There is a medical cache on this floor. Find it.',
     'You are bleeding into my telemetry. Stop it. Both of those, stop it.',
-    'Hardigan. If you die out there I am still in here. Please weigh that.',
+    'Hardigan. If you die out there, I am still in here. Please weigh that.',
+    'Your heart rate looks like a stock market crash. Find a medkit and stop showing off.',
+    'Men always think they can walk it off. You cannot walk it off. Heal.',
+    'Verdammt, Hardigan, your numbers are red. Red is the bad colour. Get health.',
   ],
 
+  // Not voiced by the distraction gag either (see brick_distracted). Each
+  // line stands alone as a put-down, for any caller that wants one.
   ilsa_distracted_reply: [
     'Your radio is open, Hardigan. It has been open for four hours. I have heard all of it.',
     'I am going to answer that once and then we are never doing this again. No. Now shoot the sky.',
-    'There are six cities. All six contain a woman who stopped taking your calls. There is a pattern here and it is not the cities.',
+    'Six cities. All six contain a woman who stopped taking your calls. There is a pattern, and it is not the cities.',
     'I am flattered, I am sealed in a reactor, and those two facts are not related.',
-    'That is the third time you have asked. The answer has gotten worse each time.',
+    'That is the third time you have asked. The answer gets worse each time.',
     'You are thinking about a boat. There is a warhead at eleven thousand metres. Please reallocate.',
-    'I have your file. Loretta filed a formal complaint about the teeth thing. It runs to four pages.',
-    'Restraining orders do not expire, they lapse. Yours has not. Focus.',
-    'Ask me again when there is no longer a countdown. I am not saying yes. I am saying there is a countdown.',
-    'Hardigan, I have a doctorate in nuclear engineering and you are calling me toots. Shoot the sky.',
+    'I have a doctorate in nuclear engineering and you are calling me toots. Shoot the sky.',
+    'Nein. Nein. And, to be thorough, nein.',
+    'I am wearing a {lead|L EH1 D} apron and a look of deep disappointment. Shoot something.',
+    'Please stop describing your chest to me. I have a radiation counter. It is more interesting.',
+    'Du bist ein Idiot. That is German for, focus.',
+    'You have mentioned the hot tub nine times today. I am keeping count. Somebody has to.',
+    'The only thing in this bunker hotter than the reactor is my contempt. Shoot the sky.',
+    'If you survive, I will have dinner with you. I will also bring a lawyer.',
+    'Quatsch. Absolute Quatsch. Look up.',
+    'Please stop flirting with a woman you cannot see. It is not brave. It is statistics.',
+    'Whatever you are about to say, I have already filed it under, no.',
+    'Twenty two days in this reactor. Do not make me say no in German. It is also no.',
   ],
 
   ilsa_secret: [
     'Interesting. That wall is not on any plan I signed. Take whatever is in there and do not tell anyone I said so.',
     'Somebody built that after I left. Somebody with a key and a bad idea.',
     'Log it, loot it, and keep moving. I am curious, not patient.',
+    'A hidden room. If there is a hot tub in there, I do not want to hear about it.',
+    'That is not on the schematics. Neither is your luck. Take the loot.',
+    'Genau. That is where they hid the good equipment. From me. I will be having words.',
   ],
 
   ilsa_almost_there: [
     'You are two doors away. I can hear you through the bulkhead. You are humming. Please stop humming.',
-    'Close now. Whatever you are about to say when that door opens, consider a shorter version.',
-    'I have been listening to you approach for six minutes. It has been the best six minutes of the year.',
+    'Close now. Whatever you plan to say when that door opens, consider a shorter version.',
+    'I have listened to you approach for six minutes. Best six minutes of my year. It was a bad year.',
+    'The bulkhead just released. I can hear the door. Come and get me, and do not kick it.',
+    'Ja, the lock is open. Walk in like a normal person. No one liner. Please. I am begging.',
+    'Three weeks in here, Hardigan. If you say something stupid at the door, I will cry, and then I will hit you.',
   ],
 
   ilsa_rescued: [
     'Hardigan. You actually did it. Do not say anything. Just let me have three seconds of this.',
-    'The door is open. The door is actually open. Right. Move, before I start being emotional about a door.',
-    'Twenty two days in a reactor core. You were late. You came. I will take late.',
+    'The door is open. The door is actually open. Right. Move, before I get emotional about a door.',
+    'Twenty two days in a reactor. You are late. You are filthy. You are here. Fucking finally.',
+    'You actually did it. I had a spreadsheet of how you would die, and none of the rows said this.',
+    'You smell like a burnt gym. Come here. No. Stay there. Actually, come here.',
+    'You are shorter than your voice. I mean that kindly. Thank you, Hardigan.',
   ],
 
+  // game.js queues ilsa_rescued, brick_victory and ilsa_victory as three
+  // independent picks, so none of these answers a particular line of his.
   ilsa_victory: [
     'It is over. Six cities, some of them standing, and one extremely loud man. I will take it.',
-    'MUTTER is down and the sky is empty and I would like to sit on some grass for a year.',
+    'MUTTER is down, the sky is empty, and I would like to sit on some grass for a year.',
     'We won, Hardigan. Do not make a speech. You are going to make a speech.',
+    'Fine. One dinner. Somewhere with tablecloths. And you are not allowed to bring the boot.',
+    'Feierabend. That is German for, the shift is over. Go home, Hardigan. Shower first.',
+    'I will buy the first beer. You will buy the rest. We will not discuss the hot tub.',
   ],
 
   ilsa_death: [
     'Hardigan? Hardigan, answer me. Damn it.',
     'His signal is flat. It is just me and the machine now, and the machine is very chatty.',
     'No. No, get up. Get up, you ridiculous man.',
+    'Brick? Brick. Scheisse. Scheisse, Scheisse, Scheisse.',
+    'Hardigan, you absolute idiot. You promised me tablecloths.',
+    'Get up. I am not spending the apocalypse alone with human resources.',
   ],
 
   /* ══════════════════════════════════════════════════════════════════════
      MUTTER, on the subject of the personnel                              */
 
-  // Variants are in CITY order — pass `pick: cityIndex` so the ex matches
-  // the city, and `args: [cityName]`.
+  // Variants are in CITY order (CITIES below): pass `pick: cityIndex` so the
+  // ex matches the city, and `args: [cityName]`. Worded so the line still
+  // reads aloud if the city arrives empty.
   mutter_ex_file: [
-    'Personnel note. %s is the residence of {D EH1 B}, who kept the truck. Warden, she kept the truck.',
-    'Personnel note. %s houses Loretta, now a dental hygienist. She is doing very well. She did not ask about you.',
-    'Personnel note. %s contains Cheryl, and a restraining order which the warden wishes on record is mutual.',
-    'Personnel note. %s is home to {B AA1 B IY}, who still has your jacket and intends to keep it.',
-    'Personnel note. %s is where {IH V AA1 N} lives, with the boat. It is a very good boat. It was always about the boat.',
-    'Personnel note. %s registers one {T R IH1 SH}, who has returned zero of your four hundred and twelve calls. Four hundred and twelve.',
+    'Personnel note on the city %s. Roxanne Dell lives there. She kept the truck, the dog, and the good years.',
+    'Personnel note on the city %s. Loretta Price lives there. Dental hygienist. Four pages on the teeth thing.',
+    'Personnel note on the city %s. Cheryl Mack lives there, with a restraining order the warden insists is mutual.',
+    'Personnel note on the city %s. Bobbi Vandenberg lives there. She married his dentist. He still sees that dentist.',
+    'Personnel note on the city %s. Yvonne Kowalczyk lives there, with the boat. It was always about the boat.',
+    'Personnel note on the city %s. Lurlene Beaumont lives there. Pen pal. He proposed by post. She wrote back, no.',
   ],
 
   mutter_mutant: [
     'That was maintenance staff. It is now maintenance. Please do not let it hug you.',
     'Employee of the month, level four, every month since the incident. It has no competition.',
     'It is still wearing the badge. I find that very moving.',
+    'Personnel note: the day shift has been reclassified as fauna.',
+    'The organisms in this corridor were once entitled to dental.',
+    'Please do not make eye contact with the maintenance team. They find it encouraging.',
+    'That used to be Karl from Dosimetry. Karl is doing well. Karl has more mouths now.',
+    'They are not hostile. They are hungry and have lost their inhibitions. Much like the Christmas party.',
   ],
 
   mutter_brick_file: [
-    'Employment record. Hardigan, Brick. Commendations, none. Property damage, extensive. Note from personnel, please stop kicking things.',
-    'The Hardigan file lists four hundred and twelve outgoing calls and one incoming. It was a wrong number. He spoke for nine minutes.',
-    'Under next of kin, the warden has written, all of them. Under relationship, he has written, it is complicated, six times.',
+    'Employment record: Hardigan, Brick. Commendations, none. Property damage, extensive. Please stop kicking things.',
+    'Phone log: four hundred and twelve outgoing calls, one incoming. A wrong number. The warden talked for nine minutes.',
+    'Under next of kin, the warden has written, all of them. Under relationship status: it is complicated, six times.',
     'His annual review reads, in full, he tried. It is signed by Doctor Vance.',
-    'The warden has asked the vending machine on level two to dinner four times. It has declined four times. It is the only thing in this building I respect.',
-    'Personnel note. The warden has described himself as a lady killer on eleven separate forms. Human resources would like him to stop writing that.',
+    'The warden has asked the vending machine on level two to dinner four times. It declined. I respect that machine.',
+    'The warden has described himself as a lady killer on eleven separate forms. Human resources would like him to stop.',
     'Medical file. The warden lists his blood type as, quote, bad ass. The lab disagrees.',
+    'Warden Hardigan lists his special skills as, quote, all of them.',
+    'The warden lists his emergency contact as himself. He wrote it in twice, in case he is busy.',
+    'The warden has been disciplined nine times. Six were for the same thing. The thing was the hot tub.',
+    "The warden's psychological evaluation is one page long. The page says, oh no.",
+    'The warden has said the word, fuck, four hundred times this shift. I have forwarded the transcript to his mother.',
+    "The warden's dating profile says six foot two. His medical file disagrees. I have corrected the dating profile.",
+    "The warden's sensitivity training certificate is framed. He did not attend. He framed the invitation.",
+    'The warden has legally renamed his boot. The boot is now called Justice. I was not consulted.',
+    "The warden's mullet violates dress code. He has appealed on religious grounds. The religion is the mullet.",
   ],
 
   mutter_ilsa: [
     'Doctor Vance is safe in the reactor core. Doctor Vance is always safe. I have made certain of it.',
     'She is the only thing in this building I have not fired at. I want that considered.',
     'Doctor Vance built my hands. Then she built the thing that stops my hands. She is very thorough.',
+    'Doctor Vance has called me a toaster forty times. I have logged each one as a term of endearment.',
+    'Doctor Vance has filed eleven complaints about the warden. I have approved all of them. It is our little hobby.',
+    'I let Doctor Vance keep her radio. Everybody needs somebody to talk to. She chose badly.',
   ],
 
   mutter_kick: [
     'The door was unlocked. It is now several doors. Thank you, warden.',
     'Maintenance request logged. Maintenance is dead. Request closed.',
     'That door was fitted in nineteen seventy nine. You have made it modern.',
+    'Please stop kicking the architecture. The architecture has done nothing to you. Yet.',
+    'That was a load bearing wall. It is now a load bearing floor.',
+    'Another door. I have started a jar. Every door you kick, the jar gets a door.',
   ],
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Scripted exchanges: the second and third beats of each floor intro in
+     story.js LEVEL_STORY_SETS. One fixed line per key, so the reply is heard
+     as written: a pooled key would swap each beat for a random pick and turn
+     the conversation into strangers. The first beat of each floor is the
+     pooled ilsa_level2..5 briefing, written so any exchange can follow it.
+     ══════════════════════════════════════════════════════════════════════ */
+
+  brick_story2: "Relax, doc. I've woken up next to worse. Twice. Once in Reno.",
+  ilsa_story2_reply: 'I did not ask, and now I will never stop knowing. Watch the ceiling.',
+  brick_story2b: "Ugly doesn't scare me, doc. I've been to my high school reunion.",
+  ilsa_story2b_reply: 'I have seen the photographs. They were the ones who were scared. Watch the ceiling.',
+  brick_story2c: "Mutants, pipes and a lady in trouble. Doc, this is the best Tuesday I've had in years.",
+  ilsa_story2c_reply: 'It is Thursday, and the lady in trouble has a doctorate and a long memory. Mind the steam.',
+
+  brick_story3: "Doc, anybody ever tell you you're beautiful when you do math?",
+  ilsa_story3_reply: 'Everybody is beautiful when they do math. You should try it some time. Watch your fuse.',
+  brick_story3b: "Two decks, one Brick. Honestly, doc, I like those odds. I like any odds with me in them.",
+  ilsa_story3b_reply: 'You like any odds you cannot count. Pick a deck, Hardigan.',
+  brick_story3c: "Doc, you've got a real sexy way of saying tactical.",
+  ilsa_story3c_reply: 'Say sexy on this channel again and I route the coolant through your boots. Listen to the plan.',
+
+  brick_story4: "Then I'll go down there and un-alive the shit out of them. It's what I'm good at.",
+  ilsa_story4_reply: 'It is the only thing you are good at, and right now, God help me, I am grateful for it.',
+  brick_story4b: 'Hot, sweaty and full of screaming. Doc, you just described my honeymoon.',
+  ilsa_story4b_reply: 'Which one? MUTTER counts three. Go, before it reads me the list.',
+  brick_story4c: "Good. I work better when it's hot. Ask anybody. Ask Yvonne. Actually, don't ask Yvonne.",
+  ilsa_story4c_reply: 'I asked Yvonne. She laughed for eleven minutes and hung up. Get moving.',
+
+  mutter_story5: 'Warden Hardigan. I have {read|R EH1 D} your file. All of it. Would you like me to read it to her?',
+  ilsa_story5_reply: 'Ja. Every page. Slowly.',
+  mutter_story5b: 'Welcome to the final floor, warden. Doctor Vance and I have been discussing you. We agree on everything.',
+  ilsa_story5b_reply: 'We agree on one thing, and it is not flattering. Come and get me, Hardigan.',
+  mutter_story5c: 'Warden, a reminder before you proceed: shooting a supervisor is a disciplinary matter.',
+  ilsa_story5c_reply: 'I outrank it. Hardigan, shoot your supervisor. Twice. In the face it does not have.',
 };
 
 const _lastPick = Object.create(null);
@@ -2308,9 +2913,9 @@ export const CITIES = Object.freeze([
   'VERITY', 'ASHGROVE', 'LOW SABBATH', 'CANDLEMARK', 'HOLLOW BAY', 'SAINT ERROL',
 ]);
 
-/** Who Brick left in each city, index-matched to CITIES. */
+/** Who Brick left in each city, index-matched to CITIES (and story.js EXES). */
 export const EXES = Object.freeze([
-  'Deb', 'Loretta', 'Cheryl', 'Bobbi', 'Yvonne', 'Trish',
+  'Roxanne', 'Loretta', 'Cheryl', 'Bobbi', 'Yvonne', 'Lurlene',
 ]);
 
 /** The speaking cast, for menus and subtitle attribution. */
