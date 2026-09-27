@@ -1423,7 +1423,7 @@ function makeSparker() {
         for (let i = 0; i < bars; i += 2) fillRect(f, Math.round(pk.x - wpx + k) + i, gy, 1, Math.round(1.6 * k), gc);
         glow(f, pk.x - wpx + k + bars * 0.5, gy + k, (3 + chg * 4) * k, gc, { halo: chg > 0.6 ? 0.8 : 0.35, seed: 92, base: rgba(16, 30, 24, 255) });
         // the aerial: a whip antenna with a spark ball, crackling when charged
-        const ax = pk.x + wpx * 0.6, ay = pk.y - hh / 2;
+        const ax = pk.x + (Math.abs(Math.cos(theta)) > 0.5 ? wpx + k : wpx * 0.3), ay = pk.y - hh / 2;
         // lying down, the aerial snapped off in the fall
         const tipY = ay - (Math.abs(c.rot || 0) > 0.6 ? 3 : 22) * k;
         line(f, Math.round(ax), Math.round(ay), Math.round(ax + 1.5 * k), Math.round(tipY), R.steel[3]);
@@ -1605,8 +1605,8 @@ function makeBellows() {
         blob(f, gg.x, gg.y, 1.9 * k, 1.9 * k, flat(rgba(236, 232, 214, 255)));
         for (let a = 3.6; a < 6.2; a += 0.45) px(f, Math.round(gg.x + Math.cos(a) * 1.6 * k), Math.round(gg.y + Math.sin(a) * 1.6 * k), a > 5.4 ? rgba(210, 30, 30, 255) : R.dark[1]);
         line(f, Math.round(gg.x), Math.round(gg.y), Math.round(gg.x + 1.3 * k), Math.round(gg.y - 0.8 * k), rgba(200, 20, 20, 255));
-        // WARNING stencil across the gut
-        const wz = surf(c, 0, hipY + 7);
+        // the fire team motto, across the chest
+        const wz = surf(c, 0, ch.shoulderY - 2.6);
         stencil(f, Math.round(wz.x - 12), Math.round(wz.y - 2), 'NO FUN', rgba(190, 40, 30, 255), 0.85);
       }
       // scorch on the suit: fine soot, heavier toward the gut and the cuffs
@@ -2342,11 +2342,12 @@ function paintWasp(D, F, mode) {
     for (let q = -1; q <= 1; q++) g.cap(hx, 16, hx + q * 1.3, 18.2, 0.5, 0.35, R.dark, { shift: 1 });
   }
   // under-slung twin bolt emitters
-  if (!side || true) {
+  {
     const bx = side ? (sd > 0 ? 1 : -1) * 3 : 0;
-    g.cap(bx - 2, 5.2, bx - 2, 7.4, 0.9, 0.8, R.dark, { ...E });
-    g.cap(bx + 2, 5.2, bx + 2, 7.4, 0.9, 0.8, R.dark, { ...E });
-    if (mode === 'fire') { g.glow(bx - 2, 8.2, 3.2, rgba(180, 230, 255, 255), { halo: 1, seed: 646, base: rgba(40, 60, 90, 255) }); g.glow(bx + 2, 8.2, 3.2, rgba(180, 230, 255, 255), { halo: 1, seed: 647, base: rgba(40, 60, 90, 255) }); }
+    for (const s2 of [-2, 2]) {
+      g.cap(bx + s2, 5.2, bx + s2, 7.4, 0.9, 0.8, R.dark, { ...E });
+      if (mode === 'fire') g.glow(bx + s2, 8.2, 3.2, rgba(180, 230, 255, 255), { halo: 1, seed: 646 + s2, base: rgba(40, 60, 90, 255) });
+    }
   }
   // hull: a horizontal lozenge, lit like a cylinder lying on its side (shading
   // must vary with y here, not with x, or the body ends up striped)
@@ -4636,7 +4637,7 @@ function makeGorger() {
       }
     },
     gear(c) {
-      const { f, add, P, R: RM, ch, pose, theta, k, mask } = c;
+      const { f, add, P, R: RM, ch, pose, theta, k } = c;
       const fw = Math.cos(theta);
       const burst = pose.burst || 0;
       const near = fw >= 0 ? 12 : -12;
@@ -4759,7 +4760,6 @@ function makeGorger() {
           }
         }
       });
-      void mask;
     },
     prep(pose, mode, F, t) {
       pose.funnel = mode === 'fire' ? 1 : (mode === 'aim' ? 0.45 : 0);
