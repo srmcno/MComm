@@ -17,8 +17,8 @@
 // inside of a mouth all darken on their own), screen-space cast shadows (the
 // shades shadow the cheeks, the cigar shadows the chin), warm subsurface light
 // in the skin's terminator, a hot rim light from the burning bunker on one
-// side and a cool one on the other. Everything is supersampled 2x and filtered
-// down, then sharpened, so small features stay crisp at HUD size.
+// side and a cool one on the other. Everything is supersampled 1.5x and
+// filtered down, then sharpened, so small features stay crisp at HUD size.
 //
 // Determinism: every bit of noise comes from hash2/fbm with fixed seeds.
 
@@ -119,22 +119,22 @@ mat(M_ASH, 0.05, 4, 0, 0, 0.6);
 const POOL = new Map();
 
 /** Let the pooled studio buffers go (a couple of MB) once nothing more will be painted. */
-export function releaseStudios() { POOL.clear(); }
+export function releaseStudios() { POOL.clear(); TURN.key = ''; TURN.S = null; }
 
 /**
  * w,h canvas pixels; k canvas px per model unit; (ox,oy) canvas position of
  * model (0,0). A roll (setRoll) rotates model space about a pivot, used for a
  * head knocked sideways without re-authoring it.
  */
-function makeStudio(w, h, k, ox, oy) {
+function makeStudio(w, h, k, ox, oy, slot = 0) {
   const n = w * h;
-  let B = POOL.get(n);
+  let B = POOL.get(n * 4 + slot);
   if (!B) {
     B = {
       z: new Float32Array(n), m: new Uint8Array(n), col: new Uint32Array(n),
       gl: new Float32Array(n), em: new Float32Array(n), t0: new Float32Array(n), t1: new Float32Array(n),
     };
-    POOL.set(n, B);
+    POOL.set(n * 4 + slot, B);
   } else {
     B.z.fill(0); B.m.fill(0); B.col.fill(0); B.gl.fill(0); B.em.fill(0);
   }
@@ -582,19 +582,29 @@ function render(S, rig) {
 // post: filter down, sharpen, grade
 // ---------------------------------------------------------------------------
 
-/** 2x2 box filter. A pixel survives if at least two of its four samples do. */
-function downsample2(f) {
-  const w = f.w >> 1, h = f.h >> 1;
-  const o = makeFrame(w, h);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let r = 0, g = 0, b = 0, n = 0;
-      for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) {
-        const c = f.data[(y * 2 + j) * f.w + x * 2 + i];
-        if (!(c >>> 24)) continue;
-        r += c & 255; g += (c >>> 8) & 255; b += (c >>> 16) & 255; n++;
+/**
+ * Area-weighted box filter down to (ow, oh), for ratios that are not whole
+ * numbers. A pixel survives if at least half of what it covers was painted.
+ */
+function downsampleTo(f, ow, oh) {
+  const o = makeFrame(ow, oh);
+  const sx = f.w / ow, sy = f.h / oh;
+  for (let y = 0; y < oh; y++) {
+    const y0 = y * sy, y1 = y0 + sy;
+    for (let x = 0; x < ow; x++) {
+      const x0 = x * sx, x1 = x0 + sx;
+      let r = 0, g = 0, b = 0, wsum = 0, cov = 0;
+      for (let j = floor(y0); j < y1; j++) {
+        const wy = min(y1, j + 1) - max(y0, j);
+        for (let i = floor(x0); i < x1; i++) {
+          const w = (min(x1, i + 1) - max(x0, i)) * wy;
+          cov += w;
+          const c = f.data[j * f.w + i];
+          if (!(c >>> 24)) continue;
+          r += (c & 255) * w; g += ((c >>> 8) & 255) * w; b += ((c >>> 16) & 255) * w; wsum += w;
+        }
       }
-      if (n >= 2) o.data[y * w + x] = rgba(r / n, g / n, b / n, 255);
+      if (wsum >= cov * 0.5) o.data[y * ow + x] = rgba(r / wsum, g / wsum, b / wsum, 255);
     }
   }
   return o;
@@ -778,10 +788,12 @@ function brickMouth(S, cx, cy, Q, C = BR) {
       if (S.m[i] !== M_SKIN) return;
       const u = (mx - cx) / hw;
       if (u <= -1 || u >= 1) return;
-      const a = yU(u), b = yL(u);
+      // the lip curves, inline: this runs for every pixel of the mouth box
+      const mid = cy - (smile * u * u * 6 + skew * u * 3);
+      const o = open * pow(1 - u * u, sqr);
+      const a = mid - o * 0.30, b = mid + o * 0.70;
       if (my <= a || my >= b) return;
       const depth = (my - a) / max(0.01, b - a);
-      const mid = cy - lift(u);
       // tooth index across the arch; a gap tooth is just more dark
       const tIdx = Math.round((mx - cx) / 3.4);
       const toothX = (mx - cx) / 3.4 - tIdx;
@@ -829,9 +841,18 @@ function brickMouth(S, cx, cy, Q, C = BR) {
   for (const sx of [-1, 1]) {
     const x0 = cx + sx * hw, y0 = cy - lift(sx);
     const up = (smile + skew * sx * 0.5) > 0.15 ? -1 : 1;
-    stroke(S, [[x0, y0], [x0 + sx * 2.2, y0 + up * 2.2], [x0 + sx * 2.6, y0 + up * 4]], 0.7, 0.4, C.sh, 0.6, { only: M_SKIN });
+    stroke(S, [[x0, y0], [x0 + sx * 2.2, y0 + up * 2.2], [x0 + sx * 2.6, y0 + up * 4]], 0.7, 0.4, C.sh,
+      0.6 * (Q.creases === undefined ? 1 : Q.creases), { only: M_SKIN });
   }
   if (Q.dimple) dab(S, cx + hw + 3.5, cy - lift(1) - 1.5, 1.4, C.sh, 0.6, { only: M_SKIN, dz: -0.6 });
+  if (Q.sparkle) {
+    // *ting*: the toothpaste-commercial glint on a winning smile
+    const gx = cx - hw * 0.28, gy = yU(-0.28) + 1.2;
+    dab(S, gx, gy, 1.3, rgb(255, 255, 255), 1, { em: 1, hard: 0.4 });
+    for (const [dx, dy, L] of [[1, 0, 4.5], [-1, 0, 4.5], [0, 1, 3.5], [0, -1, 3.5]]) {
+      stroke(S, [[gx, gy], [gx + dx * L, gy + dy * L]], 0.5, 0.1, rgb(255, 255, 240), 1, { em: 1 });
+    }
+  }
   if (Q.split) {
     stroke(S, [[cx - hw * 0.35, lowY(-0.35) + 0.5], [cx - hw * 0.38, lowY(-0.35) + 3.2]], 0.7, 0.5, C.blood, 0.95, { gl: 0.9 });
     dab(S, cx - hw * 0.36, lowY(-0.35) + 1.6, 1.3, C.blood, 0.8, { gl: 0.9, dz: 0.3 });
@@ -1475,7 +1496,7 @@ const MOUTHS = {
   talk: { w: 26, open: 7.5, smile: 0.1, skew: 0.4, teethU: 1, teethL: 0.3, tongue: 1 },
   shout: { w: 30, open: 14, smile: -0.1, teethU: 1, teethL: 1, tongue: 1 },
   grit: { w: 32, open: 5.5, smile: 0.05, skew: 0.3, clench: 1 },
-  grin: { w: 44, open: 10.5, smile: 1.1, skew: 0.3, clench: 1 },
+  grin: { w: 44, open: 10.5, smile: 1.1, skew: 0.3, clench: 1, sparkle: 1 },
   laugh: { w: 36, open: 14, smile: 0.8, teethU: 1, teethL: 0.6, tongue: 1 },
   roar: { w: 36, open: 18, smile: -0.4, teethU: 1, teethL: 1, tongue: 1, square: 1 },
   slack: { w: 24, open: 7, smile: -0.45, skew: -0.4, teethU: 0.6, tongueOut: 1 },
@@ -1622,35 +1643,105 @@ const BRICK_PORTRAITS = [
 // public builders
 // ---------------------------------------------------------------------------
 
+// The status face is painted at 1.5x and filtered down. It is drawn at about
+// 1:1 behind a CRT, and 2x cost a third more boot time for detail nobody sees.
+const FACE_SS = 1.5;
+
+// How far a feature slides when he glances sideways, per unit of height above
+// the neck: the nose and the cigar travel furthest, the ears barely move.
+const TURN_K = 4.2;
+function turnShift(z, k, look) { return look * TURN_K * clamp((z / k - 16) / 20, 0, 1.6) * k; }
+
 /**
- * HUD status face, 64x72: supersampled on a 128x144 studio with the head
+ * Glance left or right by re-projecting an already painted head: every pixel
+ * slides sideways in proportion to how far it stands proud of the neck, the
+ * higher surface wins where two land on one spot, and anything uncovered
+ * inside the old silhouette borrows its neighbour. Then it is lit afresh. The
+ * three glances of a health tier thereby cost one sculpt, not three.
+ */
+function turnStudio(S, look, slot) {
+  const T = makeStudio(S.w, S.h, S.k, S.ox, S.oy, slot);
+  const { w, h } = S;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (!S.m[i]) continue;
+      const x2 = Math.round(x + turnShift(S.z[i], S.k, look));
+      if (x2 < 0 || x2 >= w) continue;
+      const j = y * w + x2;
+      if (T.m[j] && T.z[j] >= S.z[i]) continue;
+      T.z[j] = S.z[i]; T.m[j] = S.m[i]; T.col[j] = S.col[i]; T.gl[j] = S.gl[i]; T.em[j] = S.em[i];
+    }
+    // fill the seams the slide opened, from the side the head moved away from
+    const dir = look > 0 ? -1 : 1;
+    for (let pass = 0; pass < 3; pass++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (T.m[i] || !S.m[i]) continue;
+        const xn = x + dir;
+        if (xn < 0 || xn >= w) continue;
+        const j = y * w + xn;
+        if (!T.m[j]) continue;
+        T.z[i] = T.z[j]; T.m[i] = T.m[j]; T.col[i] = T.col[j]; T.gl[i] = T.gl[j]; T.em[i] = T.em[j];
+      }
+    }
+  }
+  return T;
+}
+
+// The last sculpted tier, kept so its other two glances can be re-projected.
+const TURN = { key: '', S: null, tip: null, tipZ: 0 };
+
+/**
+ * HUD status face, 64x72: supersampled on a 96x108 studio with the head
  * filling the frame. `f.ember` carries the cigar tip in frame pixels (or null)
  * so the HUD can keep the smoke rising off it.
  */
 export function buildBrickFace(o = {}) {
-  const k = 1.26;
-  const S = makeStudio(128, 144, k, 64 - 64 * k, 4 - 5 * k);
-  const { tip } = paintBrick(S, brickFaceParams(o));
-  const f = downsample2(render(S, RIG_BRICK));
+  const k = 1.26 * FACE_SS / 2;
+  const w = 64 * FACE_SS, h = 72 * FACE_SS, ox = 32 * FACE_SS - 64 * k, oy = 2 * FACE_SS - 5 * k;
+  const look = o.mode ? 0 : (o.look || 0);
+  let S, tip;
+  if (o.mode) {
+    S = makeStudio(w, h, k, ox, oy);
+    tip = paintBrick(S, brickFaceParams(o)).tip;
+  } else {
+    // sculpt the tier facing front once, into its own slot, then turn it
+    const key = 'tier' + (o.tier === undefined ? 4 : o.tier);
+    if (TURN.key !== key || !TURN.S) {
+      const F = makeStudio(w, h, k, ox, oy, 1);
+      const t = paintBrick(F, brickFaceParams({ tier: o.tier, look: 0 })).tip;
+      TURN.key = key; TURN.S = F; TURN.tip = t;
+      TURN.tipZ = t ? F.z[clamp(t[1] | 0, 0, h - 1) * w + clamp(t[0] | 0, 0, w - 1)] : 0;
+    }
+    S = look ? turnStudio(TURN.S, look, 2) : TURN.S;
+    tip = TURN.tip && [TURN.tip[0] + turnShift(TURN.tipZ, k, look), TURN.tip[1], TURN.tip[2]];
+  }
+  const f = downsampleTo(render(S, RIG_BRICK), 64, 72);
   grade(f, 0.6, 0.16, 1.14);
   outline(f, rgba(10, 8, 10, 255));
-  f.ember = tip && tip[2] ? [tip[0] / 2, tip[1] / 2] : null;
+  f.ember = tip && tip[2] ? [tip[0] / FACE_SS, tip[1] / FACE_SS] : null;
   return f;
 }
 
+// Radio portraits are 128 px, painted at 1.5x. They show at about 1:1 on the
+// radio and get blown up on the title screen, where extra supersampling of the
+// source buys nothing.
+const PW = 128, PORT_SS = 1.5;
+
 /** Radio portrait, 128x128, chest up on a transparent surround. */
 export function buildBrickPortrait(idx) {
-  const S = makeStudio(256, 256, 2, 0, 0);
+  const S = makeStudio(PW * PORT_SS, PW * PORT_SS, PORT_SS, 0, 0);
   const P = Object.assign({ yaw: 0, scar: true, shades: { mode: 'on', glint: 1 }, dmg: {} }, BRICK_PORTRAITS[idx] || BRICK_PORTRAITS[0]);
   const { tip } = paintBrick(S, P);
-  const f = downsample2(render(S, RIG_BRICK));
+  const f = downsampleTo(render(S, RIG_BRICK), PW, PW);
   grade(f, 0.5, 0.14, 1.1);
   outline(f, rgba(12, 10, 14, 255));
   if (tip && tip[2]) {
-    smokeWisp(f, tip[0] / 2 + 1, tip[1] / 2 - 2, 46, 9100 + idx * 7, { maxX: 121, minY: 7 });
-    smokeWisp(f, tip[0] / 2 + 2, tip[1] / 2 - 4, 30, 9150 + idx * 7, { maxX: 121, minY: 7, alpha: 0.22, width: 1.2 });
+    smokeWisp(f, tip[0] / PORT_SS + 1, tip[1] / PORT_SS - 2, 46, 9100 + idx * 7, { maxX: 121, minY: 7 });
+    smokeWisp(f, tip[0] / PORT_SS + 2, tip[1] / PORT_SS - 4, 30, 9150 + idx * 7, { maxX: 121, minY: 7, alpha: 0.22, width: 1.2 });
   }
-  f.ember = tip && tip[2] ? [tip[0] / 2, tip[1] / 2] : null;
+  f.ember = tip && tip[2] ? [tip[0] / PORT_SS, tip[1] / PORT_SS] : null;
   return f;
 }
 
@@ -1807,6 +1898,10 @@ function paintIlsa(S, P) {
     const cheeks = pow(max(0, 1 - hyp((abs(mx - 64) - 14) / 9, (my - 67) / 6)), 1.5) * 0.35;
     const nose = pow(max(0, 1 - hyp((mx - 64) / 5, (my - 68) / 5)), 2) * 0.18;
     c = mixc(c, C.blush, cheeks + nose);
+    // fine hairs at the hairline, so it fades in instead of being cut out
+    const dx = mx - 64;
+    const hl = 38 + dx * dx * 0.012 + (abs(dx) > 14 ? (abs(dx) - 14) * 0.9 : 0);
+    if (my < hl + 2.6 && hash2((mx * 3) | 0, (my * 3) | 0, 823) < 0.55) c = mixc(c, C.hairSh, (1 - (my - hl) / 2.6) * 0.5);
     return c;
   };
   const hairF = () => {
@@ -1825,19 +1920,27 @@ function paintIlsa(S, P) {
   ell(S, 64, 61, 23, 28.5, 26, M_SKIN, 0, { shader: skinF, taper: 0.42, mode: 'over', only: [M_HAIR] });
   ell(S, 64, 61, 23, 28.5, 26, M_SKIN, 0, { shader: skinF, taper: 0.42 });
   // hairline: centre parting, hair swept back off the forehead
-  sculpt(S, 38, 26, 90, 56, M_HAIR, () => {
+  sculpt(S, 36, 12, 92, 56, M_HAIR, () => {
     const mx = FP[0], my = FP[1];
     const dx = mx - 64;
     const line = 38 + dx * dx * 0.012 + (abs(dx) > 14 ? (abs(dx) - 14) * 0.9 : 0);
-    if (my > line || abs(dx) > 25) return -1;
-    return 29.5 - dx * dx * 0.008 - max(0, 30 - my) * 0.12 - smoothstep(line - 3, line, my) * 3.2;
+    const e = (dx / 27) * (dx / 27) + ((my - 46) / 33) * ((my - 46) / 33);
+    if (my > line || e > 1) return -1;
+    // a dome over the skull, easing down into the hairline
+    return 23 + 8.5 * sqrt(1 - e) - smoothstep(line - 3, line, my) * 2.6
+      + (fbm(819, mx / 1.4, my / 5, 2) - 0.5) * 0.8;
   }, () => {
     const mx = FP[0], my = FP[1];
     const dx = mx - 64;
-    const part = abs(dx) < 0.8 ? 0.55 : 0;
-    const strand = 0.5 + 0.5 * sin(dx * 1.6 + my * 0.25 * (dx < 0 ? -1 : 1) + fbm(817, mx / 3, my / 6, 2) * 4);
-    let c = mixc(C.hairSh, C.hair, 0.45 + strand * 0.45);
-    c = mixc(c, C.hairHi, pow(strand, 4) * 0.5);
+    const part = abs(dx) < 0.7 ? 0.6 : 0;
+    // strands sweep up and back from the hairline, fanning away from the part
+    const a = atan2(my - 74, abs(dx) + 0.5);
+    const strand = 0.5 + 0.5 * sin(a * 46 + fbm(817, mx / 2.5, my / 5, 2) * 5);
+    let c = mixc(C.hairSh, C.hair, 0.4 + strand * 0.45);
+    c = mixc(c, C.hairHi, pow(strand, 4) * 0.45);
+    // the sheen: one soft band where the crown turns toward the light
+    const sheen = exp(-pow((my - 33 - dx * dx * 0.01) / 2.6, 2)) * (dx < 0 ? 0.55 : 0.3);
+    c = mixc(c, C.hairHi, sheen * (0.5 + strand * 0.5));
     return mixc(c, C.hairSh, part);
   });
   bump(S, 64, 83, 11, 7, 2.6, { only: M_SKIN });                               // chin
@@ -1922,7 +2025,7 @@ function paintIlsa(S, P) {
   }
   cap(S, 61.8, ey - 1.2, 66.2, ey - 1.2, 0.6, 0.6, 28, M_METAL, C.wire, { zk: 0.5 });
   // mouth
-  brickMouth(S, 64, 80, Object.assign({ lips: 0.25 }, P.mouth), C);
+  brickMouth(S, 64, 80, Object.assign({ lips: 0.25, creases: 0.3 }, P.mouth), C);
   // lipstick: the lips as shapes, a cupid's bow on top and a fuller lower lip
   const Q = P.mouth, hw = Q.w / 2;
   const lift = (u) => (Q.smile || 0) * u * u * 6 + (Q.skew || 0) * u * 3;
@@ -2004,10 +2107,10 @@ function paintIlsa(S, P) {
 
 /** Radio portrait, 128x128, on a transparent surround, behind a CRT. */
 export function buildIlsaPortrait(idx) {
-  const S = makeStudio(256, 256, 2, 0, 0);
+  const S = makeStudio(PW * PORT_SS, PW * PORT_SS, PORT_SS, 0, 0);
   const P = ILSA_PORTRAITS[idx] || ILSA_PORTRAITS[0];
   paintIlsa(S, P);
-  const f = downsample2(render(S, RIG_ILSA));
+  const f = downsampleTo(render(S, RIG_ILSA), PW, PW);
   grade(f, 0.5, 0.2, 1.12);
   outline(f, rgba(10, 14, 14, 255));
   crtPass(f, 9301 + idx);

@@ -767,6 +767,16 @@ export class Hud {
       size: Math.round(9 * s), color: col, track: Math.round(3 * s), alpha: a,
       glow: 0.5 * a, glowColor: col,
     });
+    // A little level meter after the name while the line is being spoken, so
+    // the portrait reads as live even between mouth frames.
+    if (m.t < m.life - 0.5) {
+      const mx0 = tx + this.text.measure(sp.name, { size: Math.round(9 * s), track: Math.round(3 * s) }).w + 8 * s;
+      for (let i = 0; i < 6; i++) {
+        const lv = 0.25 + 0.75 * Math.abs(Math.sin(this.tick * (9 + i * 2.3) + i * 1.7) * Math.sin(this.tick * 4.1 + i));
+        const bh = Math.max(1, lv * 8 * s);
+        fillRectBuf(buf, W, H, mx0 + i * 3 * s, y + 10 * s - bh, 2 * s, bh, col, 0.8 * a);
+      }
+    }
     // Word-wrapped line, so long dialogue never runs off the screen.
     const maxW = plateW - 8 * s;
     const words = String(m.text || '').split(' ');
