@@ -164,12 +164,13 @@ async function benchSfx(n) {
       const oc = new OfflineAudioContext(2, 44100, 44100);
       const s = new Sound();
       await s.init(oc);
-      // Build cost per call including its own teardown: panic every 12 so the
-      // pool always has room and every call really allocates. (Hammering a full
-      // pool measures the refusal path, which is ~1 us and proves nothing.)
-      for (let i = 0; i < 240; i++) { s.sfx(nm); if (i % 12 === 11) s.panic(); }
+      // Build cost per call including its own teardown: panic every 3 so the
+      // pool, and the three live copies one sound may have, always have room
+      // and every call really allocates. (Hammering a full pool measures the
+      // refusal path, which is ~1 us and proves nothing.)
+      for (let i = 0; i < 240; i++) { s.sfx(nm); if (i % 3 === 2) s.panic(); }
       const t0 = performance.now();
-      for (let i = 0; i < n; i++) { s.sfx(nm); if (i % 12 === 11) s.panic(); }
+      for (let i = 0; i < n; i++) { s.sfx(nm); if (i % 3 === 2) s.panic(); }
       out[group][nm] = (performance.now() - t0) / n;
       s.panic();
     }
