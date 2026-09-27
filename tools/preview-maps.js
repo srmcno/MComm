@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { writePng } from './png.js';
-import { MAPS, LEGEND, parseLevel, validateAll } from '../src/game/maps.js';
+import { MAPS, LEGEND, parseLevel, validateAll, TEXTURE_VARIANTS, DECOR } from '../src/game/maps.js';
 
 const OUT = process.env.MAP_OUT
   || '/tmp/claude-0/-home-user-MComm/1d9ae501-9927-5c9d-832d-0ee312d588ac/scratchpad';
@@ -191,8 +191,72 @@ function renderPng(def, file) {
       }
     }
   }
+  // Dressing overlay: a notch on every dressed wall (bright for a feature,
+  // dim for a subtle one), and the props: solid ones boxed, loose ones dotted.
+  const featureSet = new Set();
+  const familyOf = {};
+  for (const [fam, list] of Object.entries(TEXTURE_VARIANTS)) {
+    for (const [t, , feat] of list) { familyOf[t] = fam; if (feat) featureSet.add(t); }
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const t = lv.wallTexName[y * w + x];
+      if (!t || !familyOf[t]) continue;
+      box(x, y, 4, 4, CELL - 5, CELL - 5, featureSet.has(t) ? rgb(255, 236, 90) : rgb(60, 60, 70));
+    }
+  }
+  for (const d of lv.decor || []) {
+    const cx = Math.round(d.x * CELL), cy = Math.round(d.y * CELL);
+    const c = d.fixture ? rgb(200, 90, 255) : d.solid ? rgb(255, 150, 40) : rgb(80, 220, 240);
+    const r = d.solid ? 3 : 1;
+    for (let yy = -r; yy <= r; yy++) for (let xx = -r; xx <= r; xx++) {
+      if (d.solid && Math.abs(xx) < r && Math.abs(yy) < r) continue;
+      px(cx + xx, cy + yy, c);
+    }
+  }
   writePng(file, W, H, img);
   return file;
+}
+
+/**
+ * The copy-paste index: walk every straight run of exposed wall face and find
+ * the longest stretch of cells wearing the identical texture. A corridor of
+ * one material used to score its full length; dressed, it should rarely pass 4.
+ */
+function repetition(lv) {
+  const { w, h, wall, wallTexName } = lv;
+  const open = (x, y) => x >= 0 && y >= 0 && x < w && y < h && !wall[y * w + x];
+  let worst = 0, sum = 0, runs = 0;
+  const scan = (cells) => {
+    let prev = null, len = 0;
+    const flush = () => { if (len) { worst = Math.max(worst, len); sum += len; runs++; } };
+    for (const c of cells) {
+      if (c === null) { flush(); prev = null; len = 0; continue; }
+      if (c === prev) len++; else { flush(); prev = c; len = 1; }
+    }
+    flush();
+  };
+  for (const [dx, dy] of [[0, -1], [0, 1]]) {
+    for (let y = 0; y < h; y++) {
+      const cells = [];
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        cells.push(wall[i] && open(x + dx, y + dy) ? wallTexName[i] : null);
+      }
+      scan(cells);
+    }
+  }
+  for (const [dx, dy] of [[-1, 0], [1, 0]]) {
+    for (let x = 0; x < w; x++) {
+      const cells = [];
+      for (let y = 0; y < h; y++) {
+        const i = y * w + x;
+        cells.push(wall[i] && open(x + dx, y + dy) ? wallTexName[i] : null);
+      }
+      scan(cells);
+    }
+  }
+  return { worst, mean: runs ? sum / runs : 0 };
 }
 
 // --- stats -----------------------------------------------------------------
@@ -215,6 +279,14 @@ function stats(def) {
   console.log(`  enemies ${enemies}: ${fmt(enemyKinds)}`);
   console.log(`  items: ${fmt(itemKinds)}`);
   console.log(`  par ${lv.par}s   waves ${lv.siege.waves.length}   music ${lv.music}   weapons [${(def.weapons || []).join(', ')}]`);
+  const dc = {};
+  for (const d of lv.decor || []) dc[d.kind] = (dc[d.kind] || 0) + 1;
+  const used = new Set([...lv.wallTexName, ...lv.floorTexName, ...lv.ceilTexName].filter(Boolean));
+  const rep = repetition(lv);
+  console.log(`  dressing: ${used.size} surfaces, longest identical wall run ${rep.worst}, mean ${rep.mean.toFixed(2)}, ` +
+    `${(lv.fixtureLights || []).length} fixture lights, tint [${(lv.lightTint || [1, 1, 1]).join(', ')}]`);
+  console.log(`  props ${(lv.decor || []).length}: ${Object.entries(dc).map(([k, n]) => `${k} ${n}`).join('  ')}`);
+  void DECOR;
 }
 
 // --- main ------------------------------------------------------------------

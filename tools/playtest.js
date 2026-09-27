@@ -8,8 +8,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
-const OUT = '/tmp/claude-0/-home-user-MComm/1d9ae501-9927-5c9d-832d-0ee312d588ac/scratchpad/shots';
-const PORT = 8141;
+const OUT = process.env.SHOT_OUT || '/tmp/claude-0/-home-user-MComm/1d9ae501-9927-5c9d-832d-0ee312d588ac/scratchpad/shots';
+const PORT = Number(process.env.TOOL_PORT || 8141);
 fs.mkdirSync(OUT, { recursive: true });
 
 const server = spawn('python3', ['-m', 'http.server', String(PORT), '--bind', '127.0.0.1'],
@@ -1394,6 +1394,310 @@ check("a queued line is captioned with its own words, not the voice it waited be
     f.buttons.includes('TRY SAFE MODE') && f.buttons.includes('COPY DETAILS'),
     f.buttons.join(' / '));
 }
+
+// ======================================================= gore and physics
+// A stage for these: an indoor run of open floor with a wall at the end, the
+// floor emptied of its own staff, and targets placed by hand.
+await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  window.GORE = {
+    arena() {
+      g.newGame(1); g.loadLevel(1); g.setState('play'); g._god = true;
+      g.enemies.length = 0;
+      const lv = g.level;
+      let best = null, bestOpen = -1;
+      for (let y = 3; y < lv.H - 3; y++) for (let x = 3; x < lv.W - 9; x++) {
+        const i = y * lv.W + x;
+        if (lv.wall[i] || lv.sky[i] || lv.propBlock[i]) continue;
+        let run = 0;
+        while (run < 8 && !lv.wall[i + run + 1] && !lv.propBlock[i + run + 1]) run++;
+        if (run < 5 || run > 7) continue;
+        let open = 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = 0; dx <= run; dx++) {
+          const j = i + dy * lv.W + dx;
+          if (!lv.wall[j] && !lv.propBlock[j]) open++;
+        }
+        if (open > bestOpen) { bestOpen = open; best = { x: x + 0.5, y: y + 0.5, run }; }
+      }
+      const p = g.player;
+      p.x = best.x; p.y = best.y; p.ang = 0; p.pitch = 0; p.vx = 0; p.vy = 0;
+      return best;
+    },
+    async spawn(kind, dx, dy) {
+      const { Enemy } = await import('./src/game/entities.js');
+      const e = new Enemy(kind, g.player.x + dx, g.player.y + dy);
+      e.ang = Math.PI;             // facing the player
+      g.enemies.push(e);
+      return e;
+    },
+    aimAt(x, y, z) {
+      const p = g.player;
+      p.ang = Math.atan2(y - p.y, x - p.x);
+      p.pitch = ((z - p.z) / Math.hypot(x - p.x, y - p.y)) * g.rc.projY;
+    },
+    step(sec) { for (let i = 0; i < Math.round(sec * 60); i++) g.update(1 / 60, g.input); },
+  };
+});
+
+// ----------------- 50. a nail to the left leg takes the left leg, which falls
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  G.arena();
+  const e = await G.spawn('wrencher', 3, 0);
+  e.hp = e.maxHp = 500;
+  g.player.owned.nailer = true; g.player.weapon = 'nailer'; g.player.ammo.nail = 200;
+  // Facing the player down -x, its left is +y: the player's right.
+  let shots = 0;
+  while (!e.maim && shots < 40) {
+    e.x = g.player.x + 3; e.y = g.player.y; e.ang = Math.PI;
+    e.state = 5; e.stateT = -99;   // held in a flinch so it stands still for the shot
+    G.aimAt(e.x, e.y + 0.14, e.z + e.height * 0.16);
+    g.player.cooldown = 0; g.tryFire(); shots++;
+    G.step(1 / 60);
+  }
+  const maim = e.maim;
+  const part = g.gore.parts[g.gore.parts.length - 1];
+  const spawned = !!part && part.part === 'leg';
+  const z0 = part ? part.z : 0;
+  let peak = z0;
+  for (let i = 0; i < 20; i++) { G.step(1 / 60); if (part) peak = Math.max(peak, part.z); }
+  G.step(3);
+  const lv = g.level;
+  return {
+    shots, maim, spawned, alive: e.alive, hop: e.hop, mobility: e.mobility,
+    z0: part ? +z0.toFixed(2) : -1, peak: part ? +peak.toFixed(2) : -1,
+    rest: part ? +part.z.toFixed(3) : -1, rad: part ? +part.rad.toFixed(3) : -1,
+    settled: part ? part.settled : false,
+    inWall: part ? lv.blocked(part.x, part.y) : true,
+  };
+});
+check('a nail to the left leg takes the left leg off, and the rest keeps coming on one',
+  s.maim === 16 && s.alive && s.hop && s.mobility === 0.5,
+  `mask ${s.maim} after ${s.shots} nails, alive ${s.alive}, mobility ${s.mobility}`);
+check('the severed leg is a physics object: it pops up, falls, and comes to rest on the floor',
+  s.spawned && s.peak > s.z0 && s.settled && Math.abs(s.rest - s.rad) < 0.01 && !s.inWall,
+  `z ${s.z0} -> peak ${s.peak} -> rest ${s.rest} (radius ${s.rad}), settled ${s.settled}`);
+
+// ------------- 51. a head comes off: the body runs for a while, then drops
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  G.arena();
+  const e = await G.spawn('sparker', 3, 0);
+  const kills = g.player.kills;
+  // A flak burst right at head height, the Widow's party trick.
+  const { WEAPONS } = await import('./src/game/weapons.js');
+  let n = 0;
+  while (!(e.maim & 1) && n < 30) {
+    e.hp = e.maxHp;
+    g.gore.blast(e, e.x - 0.5, e.y, e.z + e.height * 0.95, 20, WEAPONS.pistol.gore, false);
+    n++;
+  }
+  const t0 = e.headlessT;
+  const x0 = e.x, y0 = e.y;
+  G.step(1.0);
+  const mid = { state: e.state, headless: e.headlessT, moved: Math.hypot(e.x - x0, e.y - y0) };
+  G.step(3.2);
+  return { tries: n, maim: e.maim, t0, mid, end: e.state, killed: g.player.kills - kills };
+});
+check('a head-height burst pops the head, and the kill is counted at once',
+  (s.maim & 1) && s.killed === 1, `mask ${s.maim} in ${s.tries} bursts, kills +${s.killed}`);
+check('the headless body runs about for 1.5-3s before it drops',
+  s.t0 >= 1.5 && s.t0 <= 3 && s.mid.state === 6 && s.mid.headless > 0 && s.mid.moved > 0.8 && s.end === 7,
+  `ran ${s.t0.toFixed(2)}s, moved ${s.mid.moved.toFixed(2)} in the first second, ends in state ${s.end}`);
+
+// ---------- 52. a pipe bomb takes a body apart and throws what is left
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  G.arena();
+  const e = await G.spawn('wrencher', 3.2, 0);
+  const { WEAPONS } = await import('./src/game/weapons.js');
+  const parts0 = g.gore.parts.length, gibs0 = g.gore.gibs.length;
+  const x0 = e.x, y0 = e.y;
+  g.detonateBomb({ x: e.x - 0.4, y: e.y, z: 0.25, spec: WEAPONS.pipebomb });
+  let air = 0, roll = 0, far = 0;
+  for (let i = 0; i < 60; i++) {
+    G.step(1 / 60);
+    air = Math.max(air, e.z); roll = Math.max(roll, Math.abs(e.roll));
+    far = Math.max(far, Math.hypot(e.x - x0, e.y - y0));
+  }
+  G.step(3);
+  let bits = 0;
+  for (let b = e.maim; b; b >>= 1) bits += b & 1;
+  return { bits, parts: g.gore.parts.length - parts0, gibs: g.gore.gibs.length - gibs0,
+    air: +air.toFixed(2), roll: +roll.toFixed(2), flew: +far.toFixed(2),
+    landed: +e.z.toFixed(3), state: e.state };
+});
+check('a pipe bomb at a body\'s feet takes several parts off and scatters gibs',
+  s.bits >= 2 && s.parts >= 2 && s.gibs >= 2, `${s.bits} parts off, ${s.parts} part objects, ${s.gibs} gibs`);
+check('the body is thrown: it leaves the floor, turns over, travels, and lands',
+  s.air > 0.2 && s.roll > 0.3 && s.flew > 1 && s.landed === 0 && s.state === 7,
+  `peak ${s.air}, roll ${s.roll} rad, travelled ${s.flew}, rests at z ${s.landed}`);
+
+// ---------------- 53. legless: it crawls, lower and slower, and still comes
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  G.arena();
+  const e = await G.spawn('wrencher', 4.5, 0);
+  e.hp = e.maxHp = 500;
+  g.gore.sever(e, 8, 0, 1, 3);
+  g.gore.sever(e, 16, 0, -1, 3);
+  e.state = 2; e.cooldown = 99;
+  const d0 = Math.hypot(e.x - g.player.x, e.y - g.player.y);
+  G.step(1.5);
+  const d1 = Math.hypot(e.x - g.player.x, e.y - g.player.y);
+  return { crawl: e.crawl, mob: e.mobility, zOff: +e.zOff.toFixed(3), alive: e.alive, closed: +(d0 - d1).toFixed(2) };
+});
+check('a legless enemy crawls on the floor at a fraction of the speed, still closing',
+  s.crawl && s.mob < 0.4 && s.zOff < -0.2 && s.alive && s.closed > 0.2 && s.closed < 2.55 * 1.5 * 0.6,
+  `zOff ${s.zOff}, closed ${s.closed} in 1.5s, alive ${s.alive}`);
+
+// -------------- 54. the Boot punts a severed head the length of the room
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  const a = G.arena();
+  const e = await G.spawn('wrencher', 1.2, 0);
+  g.gore.sever(e, 1, 1, 0, 1, { vx: 0.1, vy: 0, vz: 0.5, noRun: true });
+  g.enemies.length = 0;
+  G.step(1.5);
+  const h = g.gore.parts.find((c) => c.head);
+  const p = g.player;
+  p.x = h.x - 0.8; p.y = h.y; p.ang = 0; p.pitch = 0; p.kickCooldown = 0;
+  const x0 = h.x;
+  g.tryKick();
+  const v = Math.hypot(h.vx, h.vy);
+  let went = 0;
+  for (let i = 0; i < 240; i++) { G.step(1 / 60); went = Math.max(went, h.x - x0); }
+  return { v: +v.toFixed(1), went: +went.toFixed(2), run: a.run, settled: h.settled,
+    punts: g.gore.stats.punts };
+});
+check('the Boot punts a severed head: it flies, bounces and comes to rest down the room',
+  s.v > 8 && s.went > 2.5 && s.settled && s.punts >= 1,
+  `launched at ${s.v}, travelled ${s.went} in a ${s.run}-cell run`);
+
+// --------------- 55. a stomp takes the head, and the head goes downfield
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  G.arena();
+  const e = await G.spawn('wrencher', 1.4, 0);
+  e.state = 2;
+  e.hp = Math.floor(e.maxHp * 0.2);
+  g.player.kickCooldown = 0; g.player.ang = 0;
+  g.tryKick();
+  const h = g.gore.parts.find((c) => c.head);
+  return { maim: e.maim, dead: !e.alive, head: !!h, punted: !!(h && h.punted), vx: h ? +h.vx.toFixed(1) : 0 };
+});
+check('a curb stomp takes the head and sends it downfield',
+  (s.maim & 1) && s.dead && s.head && s.punted && s.vx > 8, `mask ${s.maim}, head vx ${s.vx}`);
+
+// ------------------ 56. brass hits the deck, bounces, and stays a while
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  G.arena();
+  g.player.owned.nailer = true; g.player.weapon = 'nailer'; g.player.ammo.nail = 200;
+  const c0 = g.gore.casings.length;
+  for (let i = 0; i < 6; i++) { g.player.cooldown = 0; g.tryFire(); G.step(0.1); }
+  G.step(2.5);
+  const fresh = g.gore.casings.slice(c0);
+  return { n: fresh.length, settled: fresh.filter((c) => c.settled).length,
+    onFloor: fresh.filter((c) => Math.abs(c.z - c.rad) < 0.005).length };
+});
+check('spent casings drop to the deck, bounce and settle there',
+  s.n === 6 && s.settled === 6 && s.onFloor === 6, `${s.n} casings, ${s.settled} settled, ${s.onFloor} on the floor`);
+
+// -------- 57. a floor full of limbs is capped, and the frame does not care
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  G.arena();
+  const e = await G.spawn('wrencher', 3, 0);
+  e.alive = false; e.state = 7;
+  // Median of short batches: the machine running this is rarely quiet, and
+  // one stall should not decide the verdict.
+  const time = (n) => {
+    const batches = [];
+    for (let b = 0; b < 5; b++) {
+      const t0 = performance.now();
+      for (let i = 0; i < n / 5; i++) { g.update(1 / 60, g.input); window.NUKEHAUS.renderOnce(); }
+      batches.push((performance.now() - t0) / (n / 5));
+    }
+    batches.sort((x, y) => x - y);
+    return batches[2];
+  };
+  time(10);
+  const base = time(40);
+  for (let i = 0; i < 60; i++) {
+    const a = i * 2.39996;
+    g.gore.spawnPart(e, ['head', 'arm', 'leg'][i % 3], e.x + Math.cos(a) * 1.4, e.y + Math.sin(a) * 1.4, 0.7,
+      Math.cos(a) * 2.5, Math.sin(a) * 2.5, 2.5);
+  }
+  const flying = time(40);
+  G.step(3);
+  const resting = time(40);
+  const settled = g.gore.parts.filter((c) => c.settled).length;
+  for (let i = 0; i < 60; i++) g.gore.spawnPart(e, 'arm', e.x, e.y, 0.5, 0, 0, 1);
+  const capped = g.gore.parts.length;
+  let nan = false;
+  for (const c of g.gore.parts) if (!Number.isFinite(c.x + c.y + c.z)) nan = true;
+  return { base: +base.toFixed(2), flying: +flying.toFixed(2), resting: +resting.toFixed(2), settled, capped, nan };
+});
+check('sixty severed parts cost little frame time, and the pile is capped',
+  s.flying < Math.max(s.base * 1.8, s.base + 8) && s.resting < Math.max(s.base * 1.5, s.base + 5) &&
+  s.capped <= 80 && s.settled >= 50 && !s.nan,
+  `frame ${s.base}ms bare, ${s.flying}ms with 60 flying, ${s.resting}ms at rest; ${s.capped} kept of 120`);
+
+// ------ 58. thrown into a wall: it hurts, it bleeds on the wall, it comes off
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  const a = G.arena();
+  // Stand it a body's width off the end wall and throw it at the wall.
+  const e = await G.spawn('wrencher', a.run - 0.5, 0);
+  e.state = 5; e.stateT = -99;
+  const before = e.hp;
+  const wallX = Math.floor(g.player.x) + a.run + 1;
+  g.particles.clear();
+  e.shove(1, 0, 40);
+  G.step(0.1);
+  const pinned = g.particles.live.filter((q) => q.vx === 0 && q.vy === 0 && Math.abs(q.x - wallX) < 0.1 && q.z > 0.1).length;
+  const bounced = e.kvx < 0 || e.x < wallX - e.radius - 0.02;
+  return { hurt: before - e.hp, pinned, bounced };
+});
+check('a body thrown into the end wall is hurt by it and leaves blood up the wall',
+  s.hurt > 0 && s.pinned >= 10, `hurt ${s.hurt}, ${s.pinned} drops on the wall`);
+
+// ------- 59. loose meat is still physics: blasts re-throw it, nails hop it,
+// and a thrown body bowls over whoever is standing behind it
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  G.arena();
+  const p = g.player;
+  const a = await G.spawn('wrencher', 2.2, 0);
+  const b = await G.spawn('sparker', 3.4, 0);
+  b.hp = b.maxHp = 300; b.state = 5; b.stateT = -99;
+  a.hp = 1; a.hurt(10, g, p.x, p.y);
+  g.gore.launch(a, 1, 0, 16, 3);
+  const bhp = b.hp, bx = b.x;
+  G.step(1);
+  const out = { bowled: Math.round(bhp - b.hp), pushed: +(b.x - bx).toFixed(2) };
+  g.enemies.length = 0;
+  const h = g.gore.spawnPart(a, 'head', p.x + 1.6, p.y, 0.3, 0, 0, 0);
+  G.step(1.5);
+  const x0 = h.x;
+  g.explodeAt(h.x - 0.8, h.y, 0.2, 3.4, 20);
+  G.step(0.3);
+  out.blown = +(h.x - x0).toFixed(2);
+  G.step(3);
+  p.owned.nailer = true; p.weapon = 'nailer'; p.ammo.nail = 100;
+  let hop = 0;
+  for (let k = 0; k < 4; k++) {
+    G.aimAt(h.x, h.y, h.z);
+    p.cooldown = 0; g.tryFire();
+    for (let i = 0; i < 8; i++) { G.step(1 / 60); hop = Math.max(hop, h.z - h.rad); }
+  }
+  out.hop = +hop.toFixed(2);
+  return out;
+});
+check('a thrown body bowls over the one behind it, a blast re-throws a lying head, a nail makes it hop',
+  s.bowled > 10 && s.pushed > 0.3 && s.blown > 1 && s.hop > 0.08,
+  `pin took ${s.bowled} and slid ${s.pushed}; head blown ${s.blown}, hopped ${s.hop}`);
 
 // ------------------------------------------------------------- report
 console.log('');

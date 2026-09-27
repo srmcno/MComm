@@ -27,7 +27,7 @@ const chromium = await (async () => {
 })();
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = path.join(ROOT, 'tools', 'render');
+const OUT = process.env.RENDER_OUT || path.join(ROOT, 'tools', 'render');
 const SECONDS = Number(process.argv[2]) || 20;
 const SR = 44100;
 

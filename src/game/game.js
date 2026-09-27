@@ -7,6 +7,7 @@ import { Level } from './level.js';
 import { Player, EYE_HEIGHT, FUSE_MIN, FUSE_MAX } from './player.js';
 import { Enemy, Bolt, PipeBomb, Acid, ENEMY_TYPES, ST } from './entities.js';
 import { Particles } from './particles.js';
+import { Gore, HEAD, ARM_R, ARM_L, EXPLOSION_GORE, SLAM_GORE } from './gore.js';
 import { SkyWar, City, WARHEAD_TYPES, CITY_MAX_HP } from './sky.js';
 import { WEAPONS, WEAPON_ORDER, AMMO_FLAK, AMMO_NAIL, AMMO_CHARGE, AMMO_BOMB, BOOT, weaponBySlot } from './weapons.js';
 import { Hud } from '../ui/hud.js';
@@ -91,16 +92,32 @@ function safeSound(s) {
   return wrap;
 }
 
+/**
+ * Caption text: {Word|PHONES} shows the word, and a phones-only {PHONES} group
+ * (the synthesiser's business) shows nothing. Same rules as speech.js.
+ */
+function plainText(s) {
+  return String(s == null ? '' : s).replace(/\{([^{}|]*)\|[^{}]*\}/g, '$1').replace(/\{[^{}]*\}/g, ' ')
+    .replace(/%s/g, '').replace(/\s+([,.;:!?])/g, '$1').replace(/([,;:])(?=[,;:.!?])/g, '')
+    .replace(/\s{2,}/g, ' ').trim();
+}
+
 function safeVox(v) {
   const noop = () => 0;
-  if (!v) return { say: noop, sayLine: noop, cancel: () => {}, setVolume: () => {}, busy: false, LINES: {} };
+  if (!v) {
+    return { say: noop, sayLine: noop, cancel: () => {}, setVolume: () => {}, setMode: () => {},
+      busy: false, engine: 'none', LINES: {} };
+  }
   return {
     say: (...a) => { try { return v.say(...a) || 0; } catch { return 0; } },
     sayLine: (...a) => { try { return (v.sayLine ? v.sayLine(...a) : v.say(...a)) || 0; } catch { return 0; } },
     cancel: () => { try { v.cancel && v.cancel(); } catch { /* ignore */ } },
     setVolume: (x) => { try { v.setVolume && v.setVolume(x); } catch { /* ignore */ } },
-    get busy() { return !!v.busy; },
+    setMode: (m) => { try { v.setMode && v.setMode(m); } catch { /* ignore */ } },
+    get busy() { try { return !!v.busy; } catch { return false; } },
+    get engine() { try { return v.engine || 'robot'; } catch { return 'none'; } },
     get lastLine() { return v.lastLine; },
+    get lastRequested() { return v.lastRequested; },
     get lastVoice() { return v.lastVoice; },
   };
 }
@@ -125,6 +142,7 @@ export class Game {
     this.radio = new Radio(this);
     this.player = new Player();
     this.particles = new Particles();
+    this.gore = new Gore(this);
     this.sky = new SkyWar(this);
     this.skyDome = new Sky(art.vm);
     this.enemies = [];
@@ -207,6 +225,7 @@ export class Game {
     this.skyDome.rebuild(this.sky.cities);
     this.lights.resize(this.level.W, this.level.H);
     this.particles.clear();
+    this.gore.clear();
     this.enemies.length = 0;
     this.items.length = 0;
     this.bolts.length = 0;
@@ -332,6 +351,11 @@ export class Game {
   setState(s) {
     this.state = s;
     if (s === STATE.PAUSE) { this.pauseSel = 0; this.pausePage = 'menu'; this.pauseOptSel = 0; this.pauseT = 0; }
+    // The browser speaks on its own clock, so the hard stops stop it too. A
+    // pause keeps the radio line to replay; game over, the floor card and the
+    // walk back to the title drop it.
+    if (s === STATE.PAUSE) this.radio.hold();
+    else if (s === STATE.GAMEOVER || s === STATE.INTERMISSION || s === STATE.TITLE) this.radio.reset();
     if (s === STATE.PLAY) {
       this.sound.music(this.sky.active ? 'siege' : this.corridorTrack(),
         { fadeIn: 1.2, intensity: this.sky.intensity });
@@ -461,22 +485,29 @@ export class Game {
    * the voice characterisation; this passes through the fallback text so the
    * subtitle is right even before a line exists.
    */
-  speakAs(voice, key, fallbackText, args) {
+  speakAs(voice, key, fallbackText, args, pick) {
     const lines = this.voxLines;
     let text = fallbackText || '';
     // A null key means "say exactly this": scripted exchanges, where a random
-    // pick from the pool would break the joke.
+    // pick from the pool would break the joke. A `pick` index is for pools
+    // whose variants are tied to game state, like one ex per city.
     const entry = key ? lines[key] : null;
-    if (entry) text = Array.isArray(entry) ? entry[(this.rng() * entry.length) | 0] : entry;
+    const fixed = Number.isFinite(pick);
+    if (entry) {
+      text = !Array.isArray(entry) ? entry
+        : entry[fixed ? ((pick % entry.length) + entry.length) % entry.length : (this.rng() * entry.length) | 0];
+    }
     if (args) for (const a of args) text = text.replace('%s', a);
-    this.sound.duck(0.45, 1.8);
     let dur = 0;
-    if (key) { try { dur = this.vox.sayLine(key, { voice, args }) || 0; } catch { dur = 0; } }
+    if (key) {
+      try { dur = this.vox.sayLine(key, fixed ? { voice, args, pick } : { voice, args }) || 0; } catch { dur = 0; }
+    }
     // The announcer chose a variant; caption that one, not another roll.
     let spoken = dur ? (this.vox.lastRequested || this.vox.lastLine || text) : text;
     if (!dur && text) { try { dur = this.vox.say(text, { voice }) || 0; } catch { dur = 0; } }
     if (args && spoken) for (const a of args) spoken = spoken.replace('%s', a);
-    const caption = String(spoken || '').replace(/\{[^}]*\}/g, (m) => m.slice(1, -1).replace(/[0-9]/g, '').toLowerCase());
+    const caption = plainText(spoken);
+    this.duckForVoice(voice, dur, 0.45);
     this.lastSpoken = { voice, text: caption };
     if (this.subtitlesOn && caption) this.hud.say(caption, Math.max(2.6, dur || 3.2));
     return dur;
@@ -498,13 +529,29 @@ export class Game {
     if (opts.args) {
       for (const a of opts.args) text = text.replace('%s', a);
     }
-    this.sound.duck(0.4, 1.6);
-    const dur = this.vox.sayLine ? this.vox.sayLine(key, opts) : 0;
+    let dur = this.vox.sayLine ? this.vox.sayLine(key, opts) : 0;
     let spoken = dur ? (this.vox.lastRequested || this.vox.lastLine || text) : text;
-    if (!dur && text) this.vox.say(text, opts);
+    if (!dur && text) dur = this.vox.say(text, opts) || 0;
+    this.duckForVoice(opts.voice || 'mutter', dur, 0.4);
     if (opts.args && spoken) for (const a of opts.args) spoken = String(spoken).replace('%s', a);
-    const caption = String(spoken || '').replace(/\{[^}]*\}/g, (m) => m.slice(1, -1).replace(/[0-9]/g, '').toLowerCase());
+    const caption = plainText(spoken);
     if (this.subtitlesOn && caption) this.hud.say(caption, Math.max(2.6, (dur || 3.2)));
+  }
+
+  /**
+   * Make room in the score for a line. Ilsa's radio is plot and gets the
+   * music held down for all of it; everyone else gets a hard dip on the first
+   * words, where a line is won or lost, then only a light one, so a long
+   * MUTTER aside does not sit on the siege track for ten seconds.
+   */
+  duckForVoice(voice, dur, depth) {
+    if (!(dur > 0)) return;
+    this.duckTok = (this.duckTok || 0) + 1;
+    if (voice === 'ilsa' || dur <= 2.2) { this.sound.duck(depth, Math.min(12, Math.max(1.6, dur))); return; }
+    const tok = this.duckTok;
+    this.sound.duck(depth, 1.3);
+    // A newer line owns the duck by then; do not undercut its hard dip.
+    this.after(1.3, () => { if (this.duckTok === tok) this.sound.duck(0.22, Math.min(8, dur - 1.3)); });
   }
 
   // ---------------------------------------------------------------- update
@@ -731,6 +778,7 @@ export class Game {
     }
 
     for (const e of this.enemies) e.update(dt, this);
+    this.gore.update(dt);
     for (let i = this.bolts.length - 1; i >= 0; i--) {
       this.bolts[i].update(dt, this);
       if (!this.bolts[i].alive) this.bolts.splice(i, 1);
@@ -762,7 +810,9 @@ export class Game {
     this.idleTaunt -= dt;
     if (this.idleTaunt <= 0 && !this.sky.active && !this.vox.busy && !this.radio.current) {
       this.idleTaunt = randRange(this.rng, 55, 95);
-      this.speak('idle_taunt', {}, 'Productivity is within tolerance.');
+      // Brick fills a silence about as often as MUTTER does, and worse.
+      if (this.rng() < 0.45) this.brick('brick_idle', "It's quiet. Brick doesn't love quiet.");
+      else this.speak('idle_taunt', {}, 'Productivity is within tolerance.');
     }
 
     if (p.dead) {
@@ -1268,11 +1318,21 @@ export class Game {
       // which is the whole reason to walk up to something instead of shooting.
       const cap = Math.max(best.maxHp || 0, best.hp);
       const stomp = !best.def.boss && !best.def.miniboss && best.hp <= cap * 0.3;
-      best.shove(best.x - p.x, best.y - p.y, BOOT.knockback, BOOT.liftKick);
+      // A stomp takes the head clean off and sends it downfield; what is left
+      // of the body stumbles back a step and then, often, goes for a run.
+      const popHead = stomp && this.gore.canMaim(best) && !(best.maim & HEAD);
+      best.shove(best.x - p.x, best.y - p.y, popHead ? BOOT.knockback * 0.25 : BOOT.knockback,
+        popHead ? 0 : BOOT.liftKick);
+      if (popHead) { best.launched = false; best._headPop = true; }
       this._bootKill = true;
       const died = best.hurt(stomp ? best.hp + 999 : BOOT.damage, this, p.x, p.y);
       this._bootKill = false;
       if (died && stomp) {
+        if (popHead) {
+          const up = randRange(this.rng, 5.5, 7.5), sp = randRange(this.rng, 11, 14);
+          this.gore.sever(best, HEAD, ca, sa, sp, { vx: ca * sp, vy: sa * sp, vz: up, punted: true });
+          this.sound.sfx('head_punt', { pan: this.panOf(best) });
+        }
         this.gib(best);
         this.addDecal(best.x, best.y, best.def.mutant ? 'gore' : 'blood');
         this.hitStop = Math.max(this.hitStop, 0.16);
@@ -1286,6 +1346,12 @@ export class Game {
       }
       this.sound.sfx(died ? 'punt' : 'kick_hit', { pan: this.panOf(best) });
       this.particles.blood(best.x, best.y, best.z + best.height * 0.55, died ? 14 : 6, ca, sa);
+      // A good boot to the body can take an arm with it, and a fatal one
+      // sends the rest of it cartwheeling.
+      if (this.rng() < (died ? 0.4 : 0.2)) {
+        this.gore.sever(best, this.rng() < 0.5 ? ARM_R : ARM_L, ca, sa, 9);
+      }
+      if (died) this.gore.launch(best, ca, sa, BOOT.knockback * 0.6, BOOT.liftKick * 1.4);
       this.particles.effect({
         x: p.x + ca * 1.2, y: p.y + sa * 1.2, z: p.z - 0.1,
         keys: ['kick_impact0', 'kick_impact1', 'kick_impact2'], fps: 18, size: 1.4, alpha: 0.85,
@@ -1296,6 +1362,45 @@ export class Game {
         size: died ? 15 : 12, life: 1.1, color: rgba(255, 208, 72, 255),
       });
       if (died) { this.player.score += 250; this.brick('brick_kick', 'Stay down. Stay very down.'); }
+      return;
+    }
+
+    // Nothing alive in reach. Loose parts come next: heads are footballs.
+    const part = this.gore.kickable(p.x, p.y, ca, sa, BOOT.range - 0.35, BOOT.arc + 0.2);
+    if (part) {
+      this.gore.punt(part, ca, sa, p.pitch / (this.rc.projY || 300));
+      this.hitStop = Math.max(this.hitStop, 0.04);
+      this.input.rumble(0.6, 0.35, 110);
+      if (part.head) this.hud.popup('PUNT', { size: 12, life: 0.9, color: rgba(255, 208, 72, 255) });
+      return;
+    }
+    // Then the dead, who slide.
+    let corpse = null, cBest = Infinity;
+    for (const e of this.enemies) {
+      if (e.alive || e.def.boss || e.def.miniboss) continue;
+      const dx = e.x - p.x, dy = e.y - p.y;
+      const d = Math.hypot(dx, dy);
+      if (d > BOOT.range + e.radius) continue;
+      const cosA = (dx * ca + dy * sa) / (d || 1);
+      if (cosA < Math.cos(BOOT.arc)) continue;
+      if (!this.level.lineOfSight(p.x, p.y, e.x, e.y)) continue;
+      if (d < cBest) { cBest = d; corpse = e; }
+    }
+    if (corpse) {
+      corpse.shove(ca, sa, BOOT.knockback * 0.9, 0);
+      corpse.launched = true;
+      corpse.vz = Math.max(corpse.vz, randRange(this.rng, 1.8, 3));
+      corpse.rollV = (this.rng() < 0.5 ? -1 : 1) * randRange(this.rng, 3, 7);
+      this.sound.sfx('kick_hit', { pan: this.panOf(corpse), rate: 0.85 });
+      this.sound.sfx('meat_thud', { pan: this.panOf(corpse) });
+      this.particles.blood(corpse.x, corpse.y, corpse.z + 0.2, 8, ca, sa);
+      if (corpse.headlessT > 0) {
+        // Kicking the headless runner is the one time it stops running.
+        corpse.headlessT = 0; corpse.deathFrame = 0;
+        this.hud.popup('SIT DOWN', { size: 12, life: 1, color: rgba(255, 208, 72, 255) });
+      }
+      this.hitStop = Math.max(this.hitStop, 0.04);
+      this.input.rumble(0.5, 0.3, 100);
       return;
     }
 
@@ -1354,7 +1459,7 @@ export class Game {
   detonateBomb(b) {
     const spec = b.spec;
     this.sound.sfx('pipebomb_blow', { pan: this.panAt(b.x, b.y) });
-    this.explodeAt(b.x, b.y, Math.max(0.25, b.z), spec.blastRadius, spec.damage);
+    this.explodeAt(b.x, b.y, Math.max(0.25, b.z), spec.blastRadius, spec.damage, spec.gore || EXPLOSION_GORE);
     this.particles.airburst(b.x, b.y, Math.max(0.4, b.z), spec.blastRadius * 0.7, 0);
     this.particles.smoke(b.x, b.y, b.z + 0.2, 12, 0.8);
     this.shake = Math.max(this.shake, 3.4);
@@ -1376,11 +1481,23 @@ export class Game {
       this.hud.setFace('face_grin', 2.0);
       this.brick('brick_secret', BRICK_LINES.secret);
       this.radio.say('mutter', 'secret_found', 'You found the room I was saving.', { priority: 0, delay: 0.5 });
+      // Half the time the chief engineer has an opinion about walls she did not build.
+      if (this.rng() < 0.5) {
+        this.radio.say('ilsa', 'ilsa_secret', 'That wall is not on any plan I signed.', { priority: 0, delay: 0.4 });
+      }
     });
+    if (r === 'relieve' || r === 'dry') {
+      // The Duke rule: a working toilet is a medkit with a flush.
+      const got = r === 'relieve' ? p.heal(10) : 0;
+      this.sound.sfx(got ? 'pickup_health' : 'dryfire', { vol: 0.6 });
+      this.hud.popup(r === 'dry' ? 'NOTHING LEFT IN THE TANK' : got ? 'AAAHHH.  +10 VITALS' : 'LIGHTER, IF NOT HEALTHIER',
+        { size: 12, life: 1.6, color: rgba(255, 220, 90, 255) });
+      return;
+    }
     if (r === 'opened') this.sound.sfx('door_open');
     else if (r === 'locked') {
       this.sound.sfx('door_locked');
-      this.hud.popup('LOCKED — KEYCARD REQUIRED', { size: 11, life: 1.4, color: rgba(255, 74, 62, 255) });
+      this.hud.popup('LOCKED: KEYCARD REQUIRED', { size: 11, life: 1.4, color: rgba(255, 74, 62, 255) });
     }
   }
 
@@ -1404,7 +1521,15 @@ export class Game {
       return;
     }
     const spec = p.spec;
+    const before = p.ammo[spec.ammo];
     p.ammo[spec.ammo] -= spec.cost;
+    // Crossing into the last few shots of flak gets a remark, at most once a
+    // minute, because MUTTER is keeping count and wants you to know it.
+    if (spec.ammo === AMMO_FLAK && before > 20 && p.ammo[spec.ammo] <= 20
+      && this.time - (this._lowAmmoAt || -99) > 60) {
+      this._lowAmmoAt = this.time;
+      this.radio.say('mutter', 'low_ammo', 'You are low on flak. Consider harsh language.', { priority: 0 });
+    }
     p.cooldown = spec.refire;
     p.kick = spec.kick;
     p.kickVel = 0;
@@ -1437,7 +1562,7 @@ export class Game {
     }
     p.recoilPitch += spec.kick * 0.9;
     this.alertNearby(p.x, p.y, spec.kind === 'kinetic' ? 9 : 15);
-    if (spec.kind !== 'nuke') this.particles.casing(muzzle.x, muzzle.y, p.z - 0.12, p.ang);
+    if (spec.kind !== 'nuke') this.gore.casing(muzzle.x, muzzle.y, p.z - 0.12, p.ang, spec.kind);
   }
 
   fireFlak(spec, a, m) {
@@ -1509,11 +1634,20 @@ export class Game {
     // Instant trace with a visible tracer: nails are fast enough to be hitscan.
     const hit = this.traceHit(m.x, m.y, m.z, dx / L, dy / L, dz / L, spec.range);
     this.particles.trailPuff(m.x + a.x, m.y + a.y, m.z + a.z, [255, 214, 140], 0.05, 0.07);
+    // Loose parts on the floor are targets too; shoot a head and it hops.
+    const hitT = Math.hypot(hit.x - m.x, hit.y - m.y, hit.z - m.z) || spec.range;
+    this.gore.shootThrough(m.x, m.y, m.z, dx / L, dy / L, dz / L, hitT, 4.5);
     if (hit.enemy) {
-      const killed = hit.enemy.hurt(spec.damage, this, p.x, p.y);
+      const e = hit.enemy;
+      const killed = e.hurt(spec.damage, this, p.x, p.y);
       this.hud.hitMark(killed);
       this.particles.blood(hit.x, hit.y, hit.z, 6, a.x, a.y);
       this.sound.sfx('hit_flesh', { pan: this.panAt(hit.x, hit.y) });
+      // Where it went in decides what comes off.
+      const g = spec.gore;
+      this.gore.hitscan(e, hit.x, hit.y, hit.z, dx, dy, spec.damage, g, killed);
+      if (g && g.knock) e.shove(dx, dy, g.knock * (killed ? 3 : 1), 0);
+      if (killed) this.gore.launch(e, dx, dy, (g && g.knock ? g.knock : 1) * 4, 1.2);
     } else if (hit.item) {
       this.damageProp(hit.item, spec.damage);
     } else if (hit.wall) {
@@ -1556,7 +1690,9 @@ export class Game {
       for (const e of this.enemies) {
         if (!e.alive || e.state === ST.DYING || e.state === ST.DEAD) continue;
         const dxy = Math.hypot(px - e.x, py - e.y);
-        if (dxy < e.radius + 0.1 && pz > e.z && pz < e.z + e.height) {
+        // A legless crawler is drawn on the floor; shoot where it is drawn.
+        const ez = e.z + (e.zOff < 0 ? e.zOff : 0);
+        if (dxy < e.radius + 0.1 && pz > ez && pz < ez + e.height) {
           return { wall: false, enemy: e, item: null, x: px, y: py, z: pz };
         }
       }
@@ -1580,20 +1716,35 @@ export class Game {
     }
   }
 
-  explodeAt(x, y, z, radius, damage) {
+  explodeAt(x, y, z, radius, damage, gore = EXPLOSION_GORE) {
     this.particles.airburst(x, y, z, radius * 0.8, 0);
     this.particles.smoke(x, y, z, 10, radius * 0.3);
+    if (z < 1) this.addDecal(x, y, 'scorch');
     this.shake = Math.max(this.shake, 2.4);
+    this.gore.impulse(x, y, z, radius, (gore.knock || 12) * 0.8);
     for (const e of this.enemies) {
-      if (!e.alive) continue;
       const d = dist(x, y, e.x, e.y);
-      if (d < radius) e.hurt(damage * (1 - d / radius), this, x, y);
+      if (d >= radius) continue;
+      const force = damage * (1 - d / radius);
+      if (e.alive) {
+        const killed = e.hurt(force, this, x, y);
+        if (e.def.boss) continue;
+        this.gore.blast(e, x, y, z, force, gore, killed);
+        // It moves you whether or not it kills you.
+        if (!killed && e.alive) {
+          const L = d || 1;
+          e.shove(d > 0.05 ? (e.x - x) / L : 1, d > 0.05 ? (e.y - y) / L : 0,
+            (gore.knock || 0) * (1 - d / radius) * 0.8, 2);
+        }
+      } else if (!e.def.boss && !e.def.miniboss) {
+        this.blastCorpse(e, x, y, z, force, gore);
+      }
     }
     for (const it of this.items) {
       if (it.solid && !it.taken && it.kind === 'barrel' && dist(x, y, it.x, it.y) < radius) {
         // Chained barrels: give the next one a beat so it reads as a chain.
-        const lvl = this.level;
-        setTimeout(() => { if (this.level === lvl && !it.taken) this.damageProp(it, 999); }, 90);
+        // Game time, so a pause does not let the chain finish behind the menu.
+        this.after(0.09, () => { if (!it.taken) this.damageProp(it, 999); });
       }
     }
     const p = this.player;
@@ -1604,6 +1755,21 @@ export class Game {
       p.hurt(damage * 0.5 * (1 - dp / radius) * (this.diff.enemyDamage || 1), this, 'own-explosion');
       this.hud.damageFrom(Math.atan2(y - p.y, x - p.x));
     }
+  }
+
+  /**
+   * A blast finding a body already on the floor. The dead get thrown about
+   * and taken apart like anyone else; that is half of what a barrel is for.
+   */
+  blastCorpse(e, x, y, z, force, gore) {
+    if (force < 6) return;
+    const d = dist(x, y, e.x, e.y);
+    const L = d || 1;
+    const dx = d > 0.05 ? (e.x - x) / L : 1, dy = d > 0.05 ? (e.y - y) / L : 0;
+    // Corpses do not get a death roll, so give them a better chance of losing bits.
+    // blast() throws the body too, since as far as it is concerned this was a kill.
+    this.gore.blast(e, x, y, z, force * 1.4, gore, true);
+    if (force > 25) this.particles.blood(e.x, e.y, e.z + 0.2, 8, dx, dy);
   }
 
   alertNearby(x, y, r) {
@@ -1661,7 +1827,7 @@ export class Game {
   onShieldBreak(w) {
     this.sound.sfx('ricochet', { pan: this.panAt(w.x, w.y) });
     this.particles.sparks(w.x, w.y, w.z, 14, 2.4, [200, 160, 255], 7);
-    this.hud.popup('BLESSED — SHIELD BROKEN', { size: 11, life: 1.4, color: rgba(200, 110, 255, 255) });
+    this.hud.popup('BLESSED: SHIELD BROKEN', { size: 11, life: 1.4, color: rgba(200, 110, 255, 255) });
   }
 
   onFlakBurst(b, f) {
@@ -1693,13 +1859,21 @@ export class Game {
     // Ground blast: flak that bursts low hurts what's standing there.
     if (b.z < 2.4) {
       const gd = spec ? (spec.groundDamage || 24) : 24;
+      const gore = (spec && spec.gore) || EXPLOSION_GORE;
+      this.gore.impulse(b.x, b.y, b.z, b.maxR, (gore.knock || 6) * 0.7);
       for (const e of this.enemies) {
-        if (!e.alive) continue;
         const d = dist(b.x, b.y, e.x, e.y);
-        if (d < b.maxR) {
-          if (e.hurt(gd * (1 - d / b.maxR), this, b.x, b.y)) this.hud.hitMark(true);
-          e.shove(e.x - b.x, e.y - b.y, 5 * (1 - d / b.maxR));
+        if (d >= b.maxR) continue;
+        const force = gd * (1 - d / b.maxR);
+        if (!e.alive) {
+          if (!e.def.boss && !e.def.miniboss) this.blastCorpse(e, b.x, b.y, b.z, force, gore);
+          continue;
         }
+        const killed = e.hurt(force, this, b.x, b.y);
+        if (killed) this.hud.hitMark(true);
+        if (e.def.boss) continue;
+        this.gore.blast(e, b.x, b.y, b.z, force, gore, killed);
+        if (!killed) e.shove(e.x - b.x, e.y - b.y, Math.max(5, gore.knock || 5) * (1 - d / b.maxR));
       }
       for (const it of this.items) {
         if (it.solid && !it.taken && dist(b.x, b.y, it.x, it.y) < b.maxR) this.damageProp(it, 999);
@@ -1761,7 +1935,10 @@ export class Game {
       if (Math.abs(e.z - b.z) > b.r + 1) continue;
       if (dist(b.x, b.y, e.x, e.y) > b.r) continue;
       b.hit.add('e' + e.id);
-      e.hurt(b.deadman ? 999 : 42, this, b.x, b.y);
+      const killed = e.hurt(b.deadman ? 999 : 42, this, b.x, b.y);
+      // The Deadman kills everything; taking it apart as well would bury the
+      // floor in limbs nobody is there to see.
+      if (!b.deadman && !e.def.boss) this.gore.blast(e, b.x, b.y, b.z, 42, EXPLOSION_GORE, killed);
     }
   }
 
@@ -1841,8 +2018,12 @@ export class Game {
   exFile(city, delay = 0) {
     const ex = EXES[city.index];
     if (!ex) return;
+    // The pool is one line per city in city order, so the ex named is the one
+    // who lives in the city that just got hit, and the %s is its name.
+    const town = ex.city.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
     this.radio.say('mutter', 'mutter_ex_file',
-      `${ex.city} is where ${ex.name} lives. ${ex.note}`, { priority: 0, delay, once: true });
+      `${ex.city} is where ${ex.name} lives. ${ex.note}`,
+      { priority: 0, delay, once: true, args: [town], pick: city.index });
   }
 
 
@@ -1896,11 +2077,13 @@ export class Game {
         });
       }
     }
-    this.sound.sfx(e.def.die || (e.def.boss ? 'boss_death' : 'enemy_die'), { pan: this.panOf(e) });
+    // A body that has just lost its head has nothing left to scream with.
+    if (!e._headPop) this.sound.sfx(e.def.die || (e.def.boss ? 'boss_death' : 'enemy_die'), { pan: this.panOf(e) });
     this.particles.blood(e.x, e.y, e.z + e.height * 0.5, e.def.gib * 3, 0, 0);
     this.addDecal(e.x, e.y, e.def.mutant ? 'gore' : 'blood');
     if (e.def.gib >= 5) this.gib(e);
-    if (this.rng() < 0.30) {
+    // The gore lines are funnier than the generic ones; leave them the room.
+    if (this.rng() < 0.30 && !e._headPop && !e.maim) {
       this.brick(e.def.mutant ? 'brick_kill_mutant' : 'brick_kill',
         e.def.mutant ? BRICK_LINES.kill_mutant : BRICK_LINES.kill);
     }
@@ -1928,7 +2111,7 @@ export class Game {
     if (e.def.boss) {
       this.bossKilled = true;
       this.rescuePending = true;
-      this.hud.showBanner('MUTTER IS SILENT', 'THE CORE IS OPEN — GET HER OUT', 5, rgba(126, 232, 128, 255));
+      this.hud.showBanner('MUTTER IS SILENT', 'THE CORE IS OPEN. GET HER OUT', 5, rgba(126, 232, 128, 255));
       this.speak('boss_death', {}, 'Oh. Oh, that is not... that is not covered by...');
       this.post.flash = 1.1;
       this.shake = 8;
@@ -1985,12 +2168,18 @@ export class Game {
     const i = lv.idx(x, y);
     if (i < 0 || i >= lv.decal.length || lv.wall[i]) return;
     const names = this.art.decalNames;
-    let pool;
-    if (kind === 'gore') pool = names.filter((n) => n.startsWith('gore_pool'));
-    else if (kind === 'scorch') pool = names.filter((n) => n === 'scorch');
-    else if (kind === 'acid') pool = names.filter((n) => n.startsWith('acid'));
-    else pool = names.filter((n) => n.startsWith('blood'));
-    if (!pool.length) pool = names;
+    // Every landing chunk stains the floor now, so sort the atlas into pools
+    // once instead of filtering it per splash.
+    const pools = this._decalPools || (this._decalPools = {});
+    let pool = pools[kind];
+    if (!pool) {
+      if (kind === 'gore') pool = names.filter((n) => n.startsWith('gore_pool'));
+      else if (kind === 'scorch') pool = names.filter((n) => n === 'scorch');
+      else if (kind === 'acid') pool = names.filter((n) => n.startsWith('acid'));
+      else pool = names.filter((n) => n.startsWith('blood'));
+      if (!pool.length) pool = names;
+      pools[kind] = pool;
+    }
     const pick = pool[(this.rng() * pool.length) | 0];
     const idx = this.art.decalIndex.get(pick);
     if (idx === undefined) return;
@@ -2001,16 +2190,83 @@ export class Game {
     lv.decalAge[i] = 0;
   }
 
-  onEnemySlammed(e, speed) {
+  onEnemySlammed(e, speed, dx = 0, dy = 0) {
     // Thrown into a wall hard enough to matter.
-    const extra = clamp((speed - 9) * 9, 8, 70);
-    this.sound.sfx('splat', { pan: this.panOf(e) });
-    this.particles.blood(e.x, e.y, e.z + e.height * 0.5, 16, 0, 0);
+    const pan = this.panOf(e);
+    const vol = this.gore.volAt(e.x, e.y, clamp(speed / 12, 0.4, 1));
+    this.sound.sfx('body_slam', { pan, vol, rate: randRange(this.rng, 0.9, 1.1) });
+    this.sound.sfx('splat', { pan, vol: vol * 0.8 });
+    this.particles.blood(e.x, e.y, e.z + e.height * 0.5, 16, -dx, -dy);
     this.addDecal(e.x, e.y, 'gore');
-    const died = e.hurt(extra, this, e.x, e.y);
-    if (died) {
-      this.player.score += 300;
-      this.hud.popup('WALL', { size: 13, life: 1.1, color: rgba(255, 132, 46, 255) });
+    // Paint the wall it hit, at the height it hit it.
+    const W = this._wallPt || (this._wallPt = { x: 0, y: 0 });
+    if ((dx || dy) && this.gore.wallPoint(e.x, e.y, dx, dy, W)) {
+      this.gore.smear(W.x, W.y, e.z + e.height * 0.55, e.height * 0.7, true, dx, dy);
+      if (speed > 11) this.gore.smear(W.x, W.y, e.z + e.height * 0.25, e.height * 0.45, false, dx, dy);
+    }
+    this.shake = Math.max(this.shake, clamp(speed / 8, 0.6, 2.2));
+    if (e.alive) {
+      const extra = clamp((speed - 9) * 9, 8, 70);
+      const died = e.hurt(extra, this, e.x, e.y);
+      // Something usually gives.
+      if (speed > 11) this.gore.blast(e, e.x + dx, e.y + dy, e.z + e.height * 0.5, extra, SLAM_GORE, died);
+      if (died) {
+        this.player.score += 300;
+        this.hud.popup('WALL', { size: 13, life: 1.1, color: rgba(255, 132, 46, 255) });
+      }
+    } else if (speed > 10 && this.rng() < 0.5) {
+      this.gore.blast(e, e.x + dx, e.y + dy, e.z + e.height * 0.5, 40, SLAM_GORE, true);
+    }
+  }
+
+  /** A thrown body coming down. */
+  onCorpseLanded(e, vi) {
+    const pan = this.panOf(e);
+    if (vi > 2) {
+      this.sound.sfx('body_slam', { pan, vol: this.gore.volAt(e.x, e.y, clamp(vi / 9, 0.25, 0.9)), rate: randRange(this.rng, 0.85, 1.05) });
+      this.particles.blood(e.x, e.y, e.z + 0.1, clamp(vi * 2, 4, 14) | 0, e.kvx * 0.1, e.kvy * 0.1);
+      this.addDecal(e.x, e.y, e.def.mutant ? 'gore' : 'blood');
+      this.shake = Math.max(this.shake, clamp(vi / 10, 0.2, 1));
+    } else {
+      this.sound.sfx('meat_thud', { pan, vol: this.gore.volAt(e.x, e.y, 0.4) });
+    }
+  }
+
+  /** The headless sprinter found a wall. */
+  onHeadlessBump(e) {
+    if (this.time < (e._bumpAt || 0)) return;
+    e._bumpAt = this.time + 0.3;
+    this.sound.sfx('meat_thud', { pan: this.panOf(e), vol: this.gore.volAt(e.x, e.y, 0.7), rate: 0.9 });
+    this.particles.blood(e.x, e.y, e.z + e.height * 0.6, 6, 0, 0);
+    const W = this._wallPt || (this._wallPt = { x: 0, y: 0 });
+    // It bounced back off the wall it was running at; paint that one.
+    const bx = Math.cos(e.ang + Math.PI), by = Math.sin(e.ang + Math.PI);
+    if (this.gore.wallPoint(e.x, e.y, bx, by, W)) this.gore.smear(W.x, W.y, e.z + e.height * 0.6, e.height * 0.4, false, bx, by);
+  }
+
+  /** ...and finally got the memo. */
+  onHeadlessCollapse(e) {
+    this.sound.sfx('body_slam', { pan: this.panOf(e), vol: this.gore.volAt(e.x, e.y, 0.8) });
+    this.particles.blood(e.x, e.y, e.z + 0.3, 10, 0, 0);
+    this.addDecal(e.x, e.y, 'gore');
+  }
+
+  /**
+   * Brick has something to say about what just came off. Rate-limited so the
+   * gore lines stay a punchline, and each pool degrades to the kill lines if
+   * the script has not caught up.
+   */
+  goreQuip(kind, chance = 0.4) {
+    if (this.time < (this._goreQuipAt || 0) || this.rng() > chance) return;
+    this._goreQuipAt = this.time + 7;
+    const L = BRICK_LINES;
+    switch (kind) {
+      case 'dismember': this.brick('brick_dismember', L.dismember || L.kill); break;
+      case 'headshot': this.brick('brick_headshot', L.headshot || L.kill); break;
+      case 'crawler': this.brick('brick_crawler', L.crawler || L.kill); break;
+      case 'punt': this.brick('brick_punt', L.punt || L.kill); break;
+      case 'headless': this.brick('brick_headless', L.headless || L.kill); break;
+      default: break;
     }
   }
 
@@ -2171,6 +2427,15 @@ export class Game {
 
   /** Body comes apart. Gore is the point. */
   gib(e) {
+    // Real chunks with weight: they bounce, stick to walls and stay a while.
+    const chunks = Math.min(9, 2 + (e.def.gib >> 1));
+    for (let i = 0; i < chunks; i++) {
+      const a = this.rng() * TAU;
+      const sp = randRange(this.rng, 2, 7);
+      this.gore.spawnGib(e.x, e.y, e.z + e.height * randRange(this.rng, 0.3, 0.8),
+        Math.cos(a) * sp + e.kvx * 0.3, Math.sin(a) * sp + e.kvy * 0.3, randRange(this.rng, 2.5, 6.5),
+        (this.rng() * 8) | 0, randRange(this.rng, 0.11, 0.2) * clamp(e.height, 0.6, 1.6));
+    }
     const n = Math.min(16, 4 + e.def.gib);
     for (let i = 0; i < n; i++) {
       const a = this.rng() * TAU;

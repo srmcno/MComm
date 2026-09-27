@@ -1,8 +1,8 @@
 import { chromium } from 'playwright-core';
 import { chromePath } from './chrome-path.js';
 import { spawn } from 'node:child_process';
-const PORT = 8139;
-const server = spawn('python3', ['-m','http.server',String(PORT),'--bind','127.0.0.1'], { cwd: '/home/user/MComm', stdio:'ignore' });
+const PORT = Number(process.env.TOOL_PORT || 8139);
+const server = spawn('python3', ['-m','http.server',String(PORT),'--bind','127.0.0.1'], { cwd: new URL('..', import.meta.url).pathname, stdio:'ignore' });
 const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
 await sleep(600);
 const b = await chromium.launch({ ...(chromePath() ? { executablePath: chromePath() } : {}),

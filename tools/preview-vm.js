@@ -21,7 +21,7 @@ const buildMs = Date.now() - t0;
 const WEAPONS = ['pistol', 'splitter', 'nailer', 'halo', 'deadman', 'boot', 'pipebomb'];
 const POSES = ['idle', 'fire0', 'fire1', 'fire2', 'reload0', 'reload1'];
 const EXPECT = {};
-for (const w of WEAPONS) for (const p of POSES) EXPECT[`${w}_${p}`] = [200, 150];
+for (const w of WEAPONS) for (const p of POSES) EXPECT[`${w}_${p}`] = [384, 192];
 for (const k of ['flash_small', 'flash_medium', 'flash_large', 'flash_ring', 'flash_plume']) EXPECT[k] = [128, 128];
 for (let i = 0; i < 8; i++) EXPECT['boom' + i] = [128, 128];
 for (let i = 0; i < 10; i++) EXPECT['nuke' + i] = [192, 192];
@@ -31,6 +31,7 @@ for (let i = 0; i < 4; i++) EXPECT['debris' + i] = [12, 12];
 for (let i = 0; i < 4; i++) EXPECT['shockring' + i] = [160, 160];
 for (let n = 0; n <= 4; n++) for (let m = 0; m <= 2; m++) EXPECT[`face_h${n}_${m}`] = [64, 72];
 for (const k of ['face_hurt', 'face_dead', 'face_grin', 'face_key']) EXPECT[k] = [64, 72];
+for (const k of ['face_rage', 'face_ecstatic']) EXPECT[k] = [64, 72];   // HUD moods: sustained fire, multi-kill
 for (let i = 0; i < 6; i++) {
   EXPECT['city' + i] = [240, 96];
   EXPECT[`city${i}_hit`] = [240, 96];
@@ -216,7 +217,7 @@ sheet('vm-nuke.png', pick([...Array(10)].map((_, i) => 'nuke' + i)),
   { cols: 5, scale: 1, pad: 4, bg: BG });
 sheet('vm-faces.png', pick([
   ...[4, 3, 2, 1, 0].flatMap((n) => [0, 1, 2].map((m) => `face_h${n}_${m}`)),
-  'face_hurt', 'face_dead', 'face_grin', 'face_key',
+  'face_hurt', 'face_dead', 'face_grin', 'face_key', 'face_rage', 'face_ecstatic',
 ]), { cols: 3, scale: 3, pad: 5, bg: BG });
 sheet('vm-cities.png', pick([
   ...[0, 1, 2, 3, 4, 5].flatMap((i) => [`city${i}`, `city${i}_hit`, `city${i}_dead`]),

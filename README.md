@@ -18,11 +18,12 @@ tell you which of your exes lives in whichever city is currently on fire.
 
 Every pixel, every sound and every note of music in this game is generated from
 code at load time. There are no image files. There are no audio files. The
-announcer is a formant synthesiser.
+voices are your browser's own, cast per machine, with a formant synthesiser
+standing by for when it has none.
 
 ## Play it
 
-**<https://srmcno.github.io/MComm/>** — the single-file build, published from
+**<https://srmcno.github.io/MComm/>**: the single-file build, published from
 `main` on every push. Click once to wake the audio, then take the mouse.
 
 ## If it will not start
@@ -53,8 +54,8 @@ Then open <http://localhost:8080>. Click once to wake the audio, and go.
 npm install && node tools/bundle.js
 ```
 
-writes `dist/nukehaus.html`: the entire game — engine, art, levels, music,
-voice — in a single ~865 KB HTML file that makes no external requests. Open it
+writes `dist/nukehaus.html`: the entire game (engine, art, levels, music,
+voice) in a single ~1.7 MB HTML file that makes no external requests. Open it
 directly, mail it to someone, put it anywhere.
 
 Mouse look uses pointer lock where the browser allows it. Where it doesn't (an
@@ -72,11 +73,11 @@ shot into a three-axis problem instead of a two-axis one:
 | Axis | Mouse | Controller |
 |---|---|---|
 | Azimuth, elevation | Mouse | Right stick |
-| **Range — the fuse** | Wheel, or `Z` / `X` | D-pad up/down |
+| **Range: the fuse** | Wheel, or `Z` / `X` | D-pad up/down |
 
 The ring around your crosshair *is* the armed range. Dial out and it grows. When
 a warhead is in your sights the ranger paints a lock bracket on the **intercept
-point** — not on the warhead, on where it is going to be — with the true range
+point** (not on the warhead, on where it is going to be) with the true range
 above it. Match your fuse to that and you get an `AIRBURST` bonus worth double.
 
 A warhead caught in a burst cooks off its own payload, and that second burst is
@@ -103,7 +104,7 @@ sky is too busy to count.
 
 ### Controllers
 
-Plug in an Xbox or PlayStation pad and it is picked up on its own — the on-screen
+Plug in an Xbox or PlayStation pad and it is picked up on its own: the on-screen
 prompts switch to that pad's own glyphs.
 
 ```
@@ -130,19 +131,41 @@ rumble fires on shots, kicks, damage and explosions.
 
 Punting a live pipe bomb with the boot is available and inadvisable.
 
+The guns are built as real perspective geometry and held in real hands: the
+barrel runs away from you toward the crosshair, the slide kicks back, brass
+flips out, and the boot you kick with is your own boot, seen from above.
+
+## Taking them apart
+
+Parts come off where they are hit. A Widow round at the hat pops the head; a
+nail to the knee takes the leg; the Splitter at close range takes two or three
+things at once; a pipe bomb takes most of the rest and throws what is left.
+Losing a part does not have to be fatal, and it is rarely dignified:
+
+- **No head:** the body sprints a panicked zigzag with a fountain where the
+  head was, bumps into things, and falls over two or three seconds later.
+- **One leg:** it hops. **No legs:** it crawls, and it is still coming.
+- **No arms:** it has to improvise, and it does.
+
+Everything that comes off is a physics object. Heads, arms and legs fly,
+spin, bounce off walls, roll and settle in their own blood, and stay there.
+The boot punts them (a long punt of a head is scored accordingly). Bodies
+launched by blasts tumble, slam into walls, leave a smear, and bowl over the
+ones behind them. Spent brass bounces on the deck.
+
 ## What is down there
 
 The bunker's staff are still on shift, after a fashion. Four of them are no
-longer staff, and they are not in the map data — they come through the walls on a
+longer staff, and they are not in the map data. They come through the walls on a
 per-floor schedule, always out of your line of sight, and the mix worsens as you
 descend.
 
-- **GHOUL** — the day shift, on all fours now, jaw unhinged. Rears up to strike.
-- **STALKER** — a bear trap with a gallop. It lunges, and it is faster than you.
-- **HOWLER** — mandibles that peel open around an acid gullet. Lobs on an arc.
-- **GORGER** — a translucent sac of something boiling. It bursts when it dies and
+- **GHOUL**: the day shift, on all fours now, jaw unhinged. Rears up to strike.
+- **STALKER**: a bear trap with a gallop. It lunges, and it is faster than you.
+- **HOWLER**: mandibles that peel open around an acid gullet. Lobs on an arc.
+- **GORGER**: a translucent sac of something boiling. It bursts when it dies and
   leaves a cloud that eats whatever is standing in it.
-- **MAW** — a wall of fused screaming bodies. One per deep floor.
+- **MAW**: a wall of fused screaming bodies. One per deep floor.
 
 ## The bunker
 
@@ -151,8 +174,8 @@ and **MUTTER**. Each is a Wolfenstein-shaped maze of keycards, blast doors and
 pushwall secrets, opening onto **silo decks** where the roof grinds back and the
 sky fills up.
 
-The six cities on the horizon — VERITY, ASHGROVE, LOW SABBATH, CANDLEMARK,
-HOLLOW BAY, SAINT ERROL — persist across the whole game. Each takes two hits:
+The six cities on the horizon (VERITY, ASHGROVE, LOW SABBATH, CANDLEMARK,
+HOLLOW BAY, SAINT ERROL) persist across the whole game. Each takes two hits:
 the first leaves it burning and still worth defending, the second finishes it.
 Lose all six and the run is over regardless of your health.
 
@@ -164,6 +187,14 @@ between a hard game and a hopeless one.
 Not everything in the sky is aimed at a city. About a quarter of the arsenal is
 coming for the complex you are standing on.
 
+No two stretches of wall are the same. Every wall, floor and ceiling cell picks
+from a set of variants (stains, bullet holes, graffiti, posters, fuse boxes,
+screens showing radar, error dialogs and a fish tank), each floor has its own
+palette, tint and columns, and the rooms are dressed with what a bunker staff
+leaves behind: desks and office chairs, lockers, vending machines, a water
+cooler, a pinball machine, pews and candles, and the staff themselves. The
+toilets work, in the Duke tradition.
+
 ## How it is built
 
 ```
@@ -171,7 +202,7 @@ src/core/       pixel format, maths, input
 src/engine/     raycaster, WebGL post chain, sky dome, procedural textures,
                 sprites, weapon viewmodels, asset loader
 src/game/       level runtime, player, weapons, enemies, the sky war, particles
-src/audio/      Web Audio music + SFX synthesiser, formant announcer
+src/audio/      Web Audio music + SFX synthesiser, voice casting, formant voice
 src/ui/         title screen, HUD, text rasteriser
 ```
 
@@ -202,11 +233,13 @@ modest hardware and sharpens up when it can.
 ## Tests
 
 ```
-node tools/playtest.js            # 40 gameplay assertions in a real browser
+node tools/playtest.js            # 79 gameplay assertions in a real browser
 node tools/audio-integration.js   # static coverage + live audio graph measurement
+node tools/speech-check.js        # voice casting, captions, timing, fallback (mocked browsers)
 node tools/campaign.js [0|1|2]    # a bot plays the whole game and reports balance
 node tools/smoke.js               # boots, drives the UI, screenshots, frame cost
 node tools/beauty.js              # composes specific scenes and photographs them
+node tools/gore-shots.js          # stages dismemberment and physics scenes and photographs them
 node tools/verify-bundle.js       # boots dist/nukehaus.html and plays it
 node tools/preview-textures.js / preview-sprites.js / preview-vm.js / preview-maps.js
 ```
@@ -232,13 +265,38 @@ is how the flak collision bug was found: shells were bursting on the map
 boundary, so the intercept rate was under half what it should have been and the
 game was quietly unwinnable.
 
+## The soundtrack
+
+Original 90s shooter metal, played by a synthesized band: double-tracked
+rhythm guitars through a modelled amp and cabinet, a lead guitar with bends,
+vibrato and pinch harmonics, a picked bass locked to the kick, and a full kit
+with double-kick runs. Tempos run from 136 BPM on the title to 186 in the boss
+fight, and the siege track thickens as the barrage does.
+
 ## The voices
 
-All three characters are the same formant synthesiser wearing different vocal
+The cast speaks through the browser's own speech engine (`src/audio/speech.js`),
+which on any desktop or phone is far easier to follow mid-firefight than
+anything synthesised in a few kilobytes. Each character is cast from whatever
+voices the machine offers, by language, apparent gender and quality: Hardigan
+gets the deepest American man available (Edge's Davis or Guy, SAPI David, the
+Mac's Alex), Vance gets a German voice reading the English script, which is the
+cheapest real accent there is, and MUTTER gets a measured British man pitched
+into the basement, with the old formant synthesiser murmuring underneath. No
+two characters share a voice while there is an alternative. Durations are
+estimated from syllables and rate, because `onend` is not to be trusted.
+
+**CALIBRATION > VOICE** switches between NATURAL, ROBOT (the formant
+synthesiser for everything) and OFF, and is remembered. Where the browser has
+no voices (headless, some Linux builds, a frame that refuses speech) the game
+falls back to ROBOT on its own and says so on that page.
+
+The robot voice is the original: all three characters are the same formant
+synthesiser wearing different vocal
 tracts. Each voice scales the formant targets rather than just the pitch, which
 is what actually separates a register: Hardigan's tract is ~12% longer and his
-F2 sits near 340/1664 Hz on an /eh/, MUTTER sits at 492/1875, and Vance — heard
-over a radio, band-limited to 400 Hz–3.2 kHz with squelch at each end — sits at
+F2 sits near 340/1664 Hz on an /eh/, MUTTER sits at 492/1875, and Vance (heard
+over a radio, band-limited to 400 Hz to 3.2 kHz with squelch at each end) sits at
 715/2332. Measured spectral centroids in the live graph: 538, 945 and 1546 Hz.
 
 ## Records

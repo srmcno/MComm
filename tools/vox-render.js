@@ -1,7 +1,7 @@
 // vox-render.js — render MUTTER through a real OfflineAudioContext in Chromium,
 // dump WAVs, and draw spectrograms you can actually look at.
 //
-//   PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node tools/vox-render.js
+//   node tools/vox-render.js
 //   ... --out /tmp/vox   --sr 24000   --only boot,city_lost
 //
 // Asserts: peak < 0.99, rendered duration within 15% of say()'s return value,
@@ -10,7 +10,8 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
+import { chromium } from 'playwright-core';
+import { chromePath } from './chrome-path.js';
 import { writeSpectrogram, writeWav } from './vox-spectro.js';
 
 function fftInPlace(re, im) {
@@ -157,7 +158,10 @@ window.__ready = true;
 fs.writeFileSync(path.join(OUT, '_page.html'), PAGE);
 fs.writeFileSync(path.join(ROOT, 'tools', '_vox-page.html'), PAGE);
 
-const browser = await chromium.launch({ args: ['--no-sandbox'] });
+const browser = await chromium.launch({
+  ...(chromePath() ? { executablePath: chromePath() } : {}),
+  args: ['--no-sandbox'],
+});
 const page = await browser.newPage();
 page.on('pageerror', (e) => console.error('PAGE ERROR:', e.message));
 page.on('console', (m) => { if (m.type() === 'error') console.error('console:', m.text()); });
