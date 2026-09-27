@@ -262,6 +262,29 @@ export class Radio {
   }
 
   /**
+   * The game paused mid-line. The browser's speech engine runs on its own
+   * clock, not the game's, so it has to be stopped outright; the line goes
+   * back on the front of the queue so it is heard whole on resume, unless it
+   * was nearly finished anyway.
+   */
+  hold() {
+    const m = this.current;
+    this.current = null;
+    if (m && m.t < m.life * 0.7) {
+      this.queue.unshift({ speaker: m.speaker, key: m.key, text: m.text, priority: m.priority,
+        args: null, delay: 0.3, exact: true });
+      if (this.queue.length > 3) this.queue.length = 3;
+    }
+    this.cancelVoice();
+  }
+
+  /** Whether the voice engine is still audibly on the line. */
+  voiceBusy() {
+    const v = this.game && this.game.vox;
+    try { return !!(v && v.busy); } catch { return false; }
+  }
+
+  /**
    * @param {string} speaker  brick | ilsa | mutter
    * @param {string} key      announcer line key
    * @param {string} text     fallback text, also the subtitle
@@ -319,12 +342,42 @@ export class Radio {
     if (this.current) {
       this.current.t += dt;
       if (this.current.t >= this.current.life) {
+        // The caption's clock is an estimate and the voice is the truth: a
+        // natural voice can run long, and the next speaker must not start
+        // over the end of it. Hold the floor while it talks, within reason.
+        if (this.current.t < this.current.life + 4 && this.voiceBusy()) return;
+        if (this.current.natural && !this.current.closed) this.game.sound.sfx('radio_close', { vol: 0.42 });
         this.current = null;
         this.cooldown = 0.28;
+        return;
+      }
+      // A browser voice is studio-clean, and Ilsa is on a radio in a reactor
+      // core. A little crackle now and then puts her back there.
+      const c = this.current;
+      // She keys off when she stops talking, not when the caption's estimate
+      // runs out. Only for a browser voice: the formant Ilsa carries her own
+      // squelch tail, and with the voice OFF a click after a silent caption is
+      // just a click.
+      if (c.natural && !c.closed && c.t > 0.6 && !this.voiceBusy()) {
+        c.closed = true;
+        this.game.sound.sfx('radio_close', { vol: 0.42 });
+      }
+      if (c.crackleAt !== undefined && !c.closed && c.t >= c.crackleAt && c.t < c.life - 0.5) {
+        this.game.sound.sfx('radio_static', { vol: 0.13 });
+        c.crackleAt += 1.6 + this.game.rng() * 1.8;
       }
       return;
     }
     if (this.cooldown > 0 || !this.queue.length) return;
+    // Somebody (MUTTER on the tannoy, usually) still has the floor. Wait for
+    // it so the caption and the voice arrive together, but not forever, and
+    // not at all for anything urgent: a stuck engine must not gag the plot.
+    const urgent = this.queue.some((q) => (q.priority || 0) >= 5);
+    if (!urgent && (this.floorWait || 0) < 6 && this.voiceBusy()) {
+      this.floorWait = (this.floorWait || 0) + dt;
+      return;
+    }
+    this.floorWait = 0;
     const m = this.queue.shift();
     if (m.delay > 0) { m.delay = 0; this.cooldown = 0.3; this.queue.unshift(m); return; }
     const g = this.game;
@@ -333,9 +386,14 @@ export class Radio {
     const dur = g.speakAs(sp.voice, m.exact ? null : m.key, m.text, m.args);
     // Show the line the announcer actually chose, not the fallback we queued.
     const said = (g.lastSpoken && g.lastSpoken.text) || m.text;
+    const natural = m.speaker === 'ilsa' && dur > 0 && !!g.vox && g.vox.engine === 'natural';
     this.current = {
-      ...m, text: said, t: 0, life: Math.max(2.4, Math.min(7.5, dur || estimate(said))),
+      // A long transmission is allowed its length; the old 7.5 s cap cut the
+      // caption (and the portrait's mouth) off while the voice went on.
+      ...m, text: said, t: 0, life: Math.max(2.4, Math.min(14, dur || estimate(said))),
       speakerDef: sp,
+      natural,
+      crackleAt: natural ? 0.8 + g.rng() * 1.2 : undefined,
     };
   }
 
@@ -351,7 +409,7 @@ export class Radio {
   }
 }
 
-function estimate(text) { return Math.max(2.2, Math.min(7, (text || '').length * 0.055 + 1.1)); }
+function estimate(text) { return Math.max(2.2, Math.min(9, (text || '').length * 0.055 + 1.1)); }
 
 function shuffled(n, rng) {
   const a = [];

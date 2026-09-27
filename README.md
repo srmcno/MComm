@@ -18,7 +18,8 @@ tell you which of your exes lives in whichever city is currently on fire.
 
 Every pixel, every sound and every note of music in this game is generated from
 code at load time. There are no image files. There are no audio files. The
-announcer is a formant synthesiser.
+voices are your browser's own, cast per machine, with a formant synthesiser
+standing by for when it has none.
 
 ## Play it
 
@@ -171,7 +172,7 @@ src/core/       pixel format, maths, input
 src/engine/     raycaster, WebGL post chain, sky dome, procedural textures,
                 sprites, weapon viewmodels, asset loader
 src/game/       level runtime, player, weapons, enemies, the sky war, particles
-src/audio/      Web Audio music + SFX synthesiser, formant announcer
+src/audio/      Web Audio music + SFX synthesiser, voice casting, formant voice
 src/ui/         title screen, HUD, text rasteriser
 ```
 
@@ -204,6 +205,7 @@ modest hardware and sharpens up when it can.
 ```
 node tools/playtest.js            # 40 gameplay assertions in a real browser
 node tools/audio-integration.js   # static coverage + live audio graph measurement
+node tools/speech-check.js        # voice casting, captions, timing, fallback (mocked browsers)
 node tools/campaign.js [0|1|2]    # a bot plays the whole game and reports balance
 node tools/smoke.js               # boots, drives the UI, screenshots, frame cost
 node tools/beauty.js              # composes specific scenes and photographs them
@@ -234,7 +236,24 @@ game was quietly unwinnable.
 
 ## The voices
 
-All three characters are the same formant synthesiser wearing different vocal
+The cast speaks through the browser's own speech engine (`src/audio/speech.js`),
+which on any desktop or phone is far easier to follow mid-firefight than
+anything synthesised in a few kilobytes. Each character is cast from whatever
+voices the machine offers, by language, apparent gender and quality: Hardigan
+gets the deepest American man available (Edge's Davis or Guy, SAPI David, the
+Mac's Alex), Vance gets a German voice reading the English script, which is the
+cheapest real accent there is, and MUTTER gets a measured British man pitched
+into the basement, with the old formant synthesiser murmuring underneath. No
+two characters share a voice while there is an alternative. Durations are
+estimated from syllables and rate, because `onend` is not to be trusted.
+
+**CALIBRATION > VOICE** switches between NATURAL, ROBOT (the formant
+synthesiser for everything) and OFF, and is remembered. Where the browser has
+no voices (headless, some Linux builds, a frame that refuses speech) the game
+falls back to ROBOT on its own and says so on that page.
+
+The robot voice is the original: all three characters are the same formant
+synthesiser wearing different vocal
 tracts. Each voice scales the formant targets rather than just the pitch, which
 is what actually separates a register: Hardigan's tract is ~12% longer and his
 F2 sits near 340/1664 Hz on an /eh/, MUTTER sits at 492/1875, and Vance — heard

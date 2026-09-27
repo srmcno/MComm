@@ -10,6 +10,10 @@
 // limiting, slapback + concrete reverb, and a bit-crush/dropout glitch stage.
 //
 // No speechSynthesis. No samples. No network. No libraries.
+//
+// Since the cast moved to the browser's own voices (speech.js), this is the
+// ROBOT setting, the fallback wherever the browser has no voices, and the
+// quiet machine undertone under MUTTER's natural voice.
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /* small utilities                                                            */
@@ -828,7 +832,8 @@ export function g2pWord(word) {
 /**
  * Full text → phone list.
  * Returns [{p, st, wb, pause}] where `pause` marks silence (seconds) and `wb`
- * flags the first phone of a word. `{A B C}` spans are taken literally.
+ * flags the first phone of a word. `{A B C}` spans are taken literally, and so
+ * is the part after the pipe in `{Word|A B C}` (the word is for captions).
  */
 export function textToPhonemes(text) {
   const src = String(text == null ? '' : text).replace(/[\u2018\u2019\u02bc]/g, "'");
@@ -854,7 +859,12 @@ export function textToPhonemes(text) {
   for (const part of parts) {
     if (!part) continue;
     if (part[0] === '{' && part[part.length - 1] === '}') {
-      pushWord(part.slice(1, -1).trim().toUpperCase().split(/\s+/).filter(Boolean));
+      // {Word|PHONES} carries the written word for captions and TTS; the
+      // synthesiser only wants what comes after the pipe.
+      const inner = part.slice(1, -1);
+      const bar = inner.lastIndexOf('|');
+      const phones = bar >= 0 ? inner.slice(bar + 1) : inner;
+      pushWord(phones.trim().toUpperCase().split(/\s+/).filter(Boolean));
       continue;
     }
     const toks = part.match(/[A-Za-z][A-Za-z']*|\d+|[.,;:!?—–-]+|\s+/g);
