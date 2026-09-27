@@ -485,16 +485,23 @@ export class Game {
    * the voice characterisation; this passes through the fallback text so the
    * subtitle is right even before a line exists.
    */
-  speakAs(voice, key, fallbackText, args) {
+  speakAs(voice, key, fallbackText, args, pick) {
     const lines = this.voxLines;
     let text = fallbackText || '';
     // A null key means "say exactly this": scripted exchanges, where a random
-    // pick from the pool would break the joke.
+    // pick from the pool would break the joke. A `pick` index is for pools
+    // whose variants are tied to game state, like one ex per city.
     const entry = key ? lines[key] : null;
-    if (entry) text = Array.isArray(entry) ? entry[(this.rng() * entry.length) | 0] : entry;
+    const fixed = Number.isFinite(pick);
+    if (entry) {
+      text = !Array.isArray(entry) ? entry
+        : entry[fixed ? ((pick % entry.length) + entry.length) % entry.length : (this.rng() * entry.length) | 0];
+    }
     if (args) for (const a of args) text = text.replace('%s', a);
     let dur = 0;
-    if (key) { try { dur = this.vox.sayLine(key, { voice, args }) || 0; } catch { dur = 0; } }
+    if (key) {
+      try { dur = this.vox.sayLine(key, fixed ? { voice, args, pick } : { voice, args }) || 0; } catch { dur = 0; }
+    }
     // The announcer chose a variant; caption that one, not another roll.
     let spoken = dur ? (this.vox.lastRequested || this.vox.lastLine || text) : text;
     if (!dur && text) { try { dur = this.vox.say(text, { voice }) || 0; } catch { dur = 0; } }
@@ -803,7 +810,9 @@ export class Game {
     this.idleTaunt -= dt;
     if (this.idleTaunt <= 0 && !this.sky.active && !this.vox.busy && !this.radio.current) {
       this.idleTaunt = randRange(this.rng, 55, 95);
-      this.speak('idle_taunt', {}, 'Productivity is within tolerance.');
+      // Brick fills a silence about as often as MUTTER does, and worse.
+      if (this.rng() < 0.45) this.brick('brick_idle', "It's quiet. Brick doesn't love quiet.");
+      else this.speak('idle_taunt', {}, 'Productivity is within tolerance.');
     }
 
     if (p.dead) {
@@ -1472,6 +1481,10 @@ export class Game {
       this.hud.setFace('face_grin', 2.0);
       this.brick('brick_secret', BRICK_LINES.secret);
       this.radio.say('mutter', 'secret_found', 'You found the room I was saving.', { priority: 0, delay: 0.5 });
+      // Half the time the chief engineer has an opinion about walls she did not build.
+      if (this.rng() < 0.5) {
+        this.radio.say('ilsa', 'ilsa_secret', 'That wall is not on any plan I signed.', { priority: 0, delay: 0.4 });
+      }
     });
     if (r === 'relieve' || r === 'dry') {
       // The Duke rule: a working toilet is a medkit with a flush.
@@ -1484,7 +1497,7 @@ export class Game {
     if (r === 'opened') this.sound.sfx('door_open');
     else if (r === 'locked') {
       this.sound.sfx('door_locked');
-      this.hud.popup('LOCKED — KEYCARD REQUIRED', { size: 11, life: 1.4, color: rgba(255, 74, 62, 255) });
+      this.hud.popup('LOCKED: KEYCARD REQUIRED', { size: 11, life: 1.4, color: rgba(255, 74, 62, 255) });
     }
   }
 
@@ -1508,7 +1521,15 @@ export class Game {
       return;
     }
     const spec = p.spec;
+    const before = p.ammo[spec.ammo];
     p.ammo[spec.ammo] -= spec.cost;
+    // Crossing into the last few shots of flak gets a remark, at most once a
+    // minute, because MUTTER is keeping count and wants you to know it.
+    if (spec.ammo === AMMO_FLAK && before > 20 && p.ammo[spec.ammo] <= 20
+      && this.time - (this._lowAmmoAt || -99) > 60) {
+      this._lowAmmoAt = this.time;
+      this.radio.say('mutter', 'low_ammo', 'You are low on flak. Consider harsh language.', { priority: 0 });
+    }
     p.cooldown = spec.refire;
     p.kick = spec.kick;
     p.kickVel = 0;
@@ -1806,7 +1827,7 @@ export class Game {
   onShieldBreak(w) {
     this.sound.sfx('ricochet', { pan: this.panAt(w.x, w.y) });
     this.particles.sparks(w.x, w.y, w.z, 14, 2.4, [200, 160, 255], 7);
-    this.hud.popup('BLESSED — SHIELD BROKEN', { size: 11, life: 1.4, color: rgba(200, 110, 255, 255) });
+    this.hud.popup('BLESSED: SHIELD BROKEN', { size: 11, life: 1.4, color: rgba(200, 110, 255, 255) });
   }
 
   onFlakBurst(b, f) {
@@ -1997,8 +2018,12 @@ export class Game {
   exFile(city, delay = 0) {
     const ex = EXES[city.index];
     if (!ex) return;
+    // The pool is one line per city in city order, so the ex named is the one
+    // who lives in the city that just got hit, and the %s is its name.
+    const town = ex.city.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
     this.radio.say('mutter', 'mutter_ex_file',
-      `${ex.city} is where ${ex.name} lives. ${ex.note}`, { priority: 0, delay, once: true });
+      `${ex.city} is where ${ex.name} lives. ${ex.note}`,
+      { priority: 0, delay, once: true, args: [town], pick: city.index });
   }
 
 
@@ -2086,7 +2111,7 @@ export class Game {
     if (e.def.boss) {
       this.bossKilled = true;
       this.rescuePending = true;
-      this.hud.showBanner('MUTTER IS SILENT', 'THE CORE IS OPEN — GET HER OUT', 5, rgba(126, 232, 128, 255));
+      this.hud.showBanner('MUTTER IS SILENT', 'THE CORE IS OPEN. GET HER OUT', 5, rgba(126, 232, 128, 255));
       this.speak('boss_death', {}, 'Oh. Oh, that is not... that is not covered by...');
       this.post.flash = 1.1;
       this.shake = 8;

@@ -935,7 +935,7 @@ export class Hud {
     lineBuf(buf, W, H, px + ca * 6, py + sa * 6, px + (-ca * 0.4 + sa * 0.6) * 6, py + (-sa * 0.4 - ca * 0.6) * 6, GREEN, 1, true);
 
     this.text.draw(buf, W, H, W / 2, oy - 16 * s,
-      `${game.level.name}  —  ${game.level.def.subtitle || ''}`, {
+      `${game.level.name}  /  ${game.level.def.subtitle || ''}`, {
       size: Math.round(10 * s), color: AMBER, align: 'center', track: 3,
     });
     this.text.draw(buf, W, H, W / 2, oy + mh + 20 * s,

@@ -559,7 +559,7 @@ export class TitleScreen {
 
     const lines = pad ? [
       ['STICKS', 'Left moves. Right looks.'],
-      [`${G.rt}`, 'Fire. Contact does nothing — only the airburst kills.'],
+      [`${G.rt}`, 'Fire. Contact does nothing: only the airburst kills.'],
       [`${G.lt}`, 'Fine aim. Halves your look speed for threading a fuse.'],
       ['D-PAD ↑↓', 'THE FUSE. How far the shell flies before it bursts.'],
       ['', 'The ring around your crosshair IS that distance.'],
@@ -620,14 +620,14 @@ export class TitleScreen {
     const T = game.text;
     const p = this.drawPanel(buf, W, H, s, 'PERSONNEL FILE', game);
     const lines = [
-      'WARDEN B. HARDIGAN — a man out of his decade and delighted about it.',
-      'DR. ILSA VANCE — chief engineer. Built the guns. Sealed in the core.',
-      'MUTTER — launch control. Has read his file. Enjoys reading it aloud.',
+      'WARDEN B. HARDIGAN: a man out of his decade and delighted about it.',
+      'DR. ILSA VANCE: chief engineer. Built the guns. Sealed in the core.',
+      'MUTTER: launch control. Has read his file. Enjoys reading it aloud.',
       '',
       'NUKEHAUS runs on nothing but arithmetic. Every wall, every fang, every',
       'warhead and every note of music is generated at load time from code.',
-      'There are no image files. There are no sound files. All three voices',
-      'are the same formant synthesiser wearing different vocal tracts.',
+      'There are no image files. There are no sound files. The cast speaks',
+      'in your browser\'s own voices, with a formant synthesiser as backup.',
       '',
       'Raycast renderer, WebGL post chain, procedural texture and sprite',
       'painters, Web Audio sequencer and voice, all built for this cabinet.',

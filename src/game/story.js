@@ -677,7 +677,7 @@ export class Radio {
       this.cancelVoice();
     }
     if (this.queue.length > 2) this.queue.shift();
-    this.queue.push({ speaker, key, text, priority: pr, args: opts.args, delay: opts.delay || 0, exact: !!opts.exact });
+    this.queue.push({ speaker, key, text, priority: pr, args: opts.args, pick: opts.pick, delay: opts.delay || 0, exact: !!opts.exact });
     return true;
   }
 
@@ -753,7 +753,7 @@ export class Radio {
     const g = this.game;
     const sp = SPEAKERS[m.speaker] || SPEAKERS.mutter;
     if (m.speaker === 'ilsa') g.sound.sfx('radio_open', { vol: 0.5 });
-    const dur = g.speakAs(sp.voice, m.exact ? null : m.key, m.text, m.args);
+    const dur = g.speakAs(sp.voice, m.exact ? null : m.key, m.text, m.args, m.pick);
     // Show the line the announcer actually chose, not the fallback we queued.
     const said = (g.lastSpoken && g.lastSpoken.text) || m.text;
     const natural = m.speaker === 'ilsa' && dur > 0 && !!g.vox && g.vox.engine === 'natural';
