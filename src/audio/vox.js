@@ -1480,6 +1480,8 @@ export class Vox {
    *                                  waiter is displaced, or this one is
    *                                  dropped outright. A backlog of stale
    *                                  announcements is worse than silence.
+   * A queued line still returns its duration; `opts.onStart` says when it
+   * actually starts (see lineStarted).
    * Never throws, even with no audio context, empty text or hostile options.
    */
   say(text, opts = {}) {
@@ -1752,7 +1754,9 @@ export class Vox {
     u.osc.onended = () => this._reap(u);
     this._live.add(u);
     this._active = u;
-    return +(total + 0.09 + pre + post).toFixed(4);
+    const dur = +(total + 0.09 + pre + post).toFixed(4);
+    lineStarted(o, dur);
+    return dur;
   }
 
   /** Build the fixed ~26-node source chain for one utterance. */
@@ -2900,6 +2904,18 @@ export const VOICE_OF = Object.freeze(
     k.startsWith('brick_') ? 'brick' : k.startsWith('ilsa_') ? 'ilsa' : 'mutter',
   ]))
 );
+
+/**
+ * A line has the floor: tell whoever asked for it, through `opts.onStart`
+ * (called with the line's length in seconds). say() returns a duration for a
+ * line that only queued, too, so this is how a caller knows when to caption
+ * it and duck the music: when it is heard, not when it was asked for. A line
+ * that is dropped from the queue never calls it. Never throws.
+ */
+export function lineStarted(o, seconds) {
+  if (!o || typeof o.onStart !== 'function') return;
+  try { o.onStart(seconds); } catch (e) { /* the caller's hook is not the engine's problem */ }
+}
 
 /** Voice for a line key, including keys not in LINES (same prefix rule). */
 export function voiceOf(key) {

@@ -17,6 +17,7 @@ import { clamp, damp, lerp, dist, dist3, wrapAngle, makeRng, randRange, commas, 
 import { rgba } from '../core/pixels.js';
 import { recordRun, bestFor } from '../core/scores.js';
 import { Radio, LEVEL_STORY, BRICK_LINES, EXES, MUTTER_MUTANT, MUTTER_BRICK_FILE, SPEAKERS } from './story.js';
+import { plainText } from '../audio/speech.js';
 
 export const STATE = {
   TITLE: 'title', BRIEF: 'brief', PLAY: 'play', PAUSE: 'pause',
@@ -93,14 +94,17 @@ function safeSound(s) {
 }
 
 /**
- * Caption text: {Word|PHONES} shows the word, and a phones-only {PHONES} group
- * (the synthesiser's business) shows nothing. Same rules as speech.js.
+ * MUTTER lines that are news, not colour, and their priority in the voice
+ * engines, where a higher one takes the floor and an equal one waits its turn.
+ * Warnings (3) cut in over chatter instead of arriving after it has finished.
+ * The end cards match the radio line they share the moment with: game over
+ * (5) follows Brick's last words, and victory (9) is heard before Ilsa's reply.
+ * Everything else is 0; radio lines bring their own.
  */
-function plainText(s) {
-  return String(s == null ? '' : s).replace(/\{([^{}|]*)\|[^{}]*\}/g, '$1').replace(/\{[^{}]*\}/g, ' ')
-    .replace(/%s/g, '').replace(/\s+([,.;:!?])/g, '$1').replace(/([,;:])(?=[,;:.!?])/g, '')
-    .replace(/\s{2,}/g, ' ').trim();
-}
+const LINE_PRIORITY = Object.freeze({
+  mirv_warning: 3, smart_warning: 3, buster_warning: 3, city_burning: 3,
+  city_lost: 3, city_lost_last: 3, all_cities_lost: 5, game_over: 5, victory: 9,
+});
 
 function safeVox(v) {
   const noop = () => 0;
@@ -352,10 +356,12 @@ export class Game {
     this.state = s;
     if (s === STATE.PAUSE) { this.pauseSel = 0; this.pausePage = 'menu'; this.pauseOptSel = 0; this.pauseT = 0; }
     // The browser speaks on its own clock, so the hard stops stop it too. A
-    // pause keeps the radio line to replay; game over, the floor card and the
-    // walk back to the title drop it.
+    // pause keeps the radio line to replay; the floor card and the walk back
+    // to the title drop it. Game over keeps the death exchange (Brick's last
+    // words and Ilsa's answer) and drops the rest.
     if (s === STATE.PAUSE) this.radio.hold();
-    else if (s === STATE.GAMEOVER || s === STATE.INTERMISSION || s === STATE.TITLE) this.radio.reset();
+    else if (s === STATE.GAMEOVER) this.radio.keepAbove(5);
+    else if (s === STATE.INTERMISSION || s === STATE.TITLE) this.radio.reset();
     if (s === STATE.PLAY) {
       this.sound.music(this.sky.active ? 'siege' : this.corridorTrack(),
         { fadeIn: 1.2, intensity: this.sky.intensity });
@@ -483,9 +489,10 @@ export class Game {
   /**
    * Speak as a named character. The announcer module owns the written lines and
    * the voice characterisation; this passes through the fallback text so the
-   * subtitle is right even before a line exists.
+   * subtitle is right even before a line exists. `priority` is the radio's:
+   * a higher one takes the floor from whoever is talking, anything else waits.
    */
-  speakAs(voice, key, fallbackText, args, pick) {
+  speakAs(voice, key, fallbackText, args, pick, priority) {
     const lines = this.voxLines;
     let text = fallbackText || '';
     // A null key means "say exactly this": scripted exchanges, where a random
@@ -498,19 +505,64 @@ export class Game {
         : entry[fixed ? ((pick % entry.length) + entry.length) % entry.length : (this.rng() * entry.length) | 0];
     }
     if (args) for (const a of args) text = text.replace('%s', a);
+    // Below zero is only the radio's own pecking order; to the voice engines
+    // Brick's chatter is ordinary talk, and MUTTER's asides must not cut it off.
+    const job = this.voiceJob(voice, 0.45, Math.max(0, priority || 0));
     let dur = 0;
     if (key) {
-      try { dur = this.vox.sayLine(key, fixed ? { voice, args, pick } : { voice, args }) || 0; } catch { dur = 0; }
+      const o = fixed ? { voice, args, pick } : { voice, args };
+      o.priority = job.priority; o.onStart = job.start;
+      try { dur = this.vox.sayLine(key, o) || 0; } catch { dur = 0; }
     }
     // The announcer chose a variant; caption that one, not another roll.
     let spoken = dur ? (this.vox.lastRequested || this.vox.lastLine || text) : text;
-    if (!dur && text) { try { dur = this.vox.say(text, { voice }) || 0; } catch { dur = 0; } }
+    if (!dur && text) {
+      try { dur = this.vox.say(text, { voice, priority: job.priority, onStart: job.start }) || 0; } catch { dur = 0; }
+    }
     if (args && spoken) for (const a of args) spoken = spoken.replace('%s', a);
     const caption = plainText(spoken);
-    this.duckForVoice(voice, dur, 0.45);
     this.lastSpoken = { voice, text: caption };
-    if (this.subtitlesOn && caption) this.hud.say(caption, Math.max(2.6, dur || 3.2));
+    this.lastVoiceJob = job;
+    this.voiceReady(job, caption, dur);
     return dur;
+  }
+
+  /**
+   * One line on its way to the speaker. The engines return a duration for a
+   * line that only queued behind somebody else, so the caption and the duck
+   * wait for `start`, which the engine calls when the line is really heard.
+   * Until then the HUD keeps the words of the voice that is audible, and a
+   * line that is dropped from the queue is never captioned at all.
+   */
+  voiceJob(voice, depth, priority) {
+    const job = { voice, depth, priority, caption: '', dur: 0, ready: false, fired: false, start: null };
+    job.start = (d) => {
+      if (job.fired) return;             // a replay on the fallback engine is the same line
+      job.fired = true;
+      if (d > 0) job.dur = d;
+      if (job.ready) this.voiceOn(job);
+    };
+    return job;
+  }
+
+  voiceReady(job, caption, dur) {
+    job.caption = caption;
+    if (!(job.dur > 0)) job.dur = dur;
+    job.ready = true;
+    if (job.fired) { this.voiceOn(job); return; }
+    // Nothing will be said (VOICE: OFF, no line): the caption is all there is.
+    // An engine that took the line and is not busy is playing it, whatever it
+    // reported. Otherwise it is waiting its turn, and start() will say when.
+    let busy = false;
+    if (dur > 0) { try { busy = !!this.vox.busy; } catch { busy = false; } }
+    if (job.fired) return;               // asking was enough to start it, and start() captioned it
+    if (!busy) { job.fired = true; this.voiceOn(job); }
+  }
+
+  voiceOn(job) {
+    if (job.dur > 0) { this.voxFloor = job.priority; this.voxJob = job; }
+    this.duckForVoice(job.voice, job.dur, job.depth);
+    if (this.subtitlesOn && job.caption) this.hud.say(job.caption, Math.max(2.6, job.dur || 3.2));
   }
 
   /** Brick, talking to himself, which he does constantly. */
@@ -529,13 +581,20 @@ export class Game {
     if (opts.args) {
       for (const a of opts.args) text = text.replace('%s', a);
     }
-    let dur = this.vox.sayLine ? this.vox.sayLine(key, opts) : 0;
+    const prio = Number.isFinite(opts.priority) ? opts.priority : LINE_PRIORITY[key] || 0;
+    const job = this.voiceJob(opts.voice || 'mutter', 0.4, prio);
+    const o = { ...opts, priority: prio, onStart: job.start };
+    let dur = this.vox.sayLine ? this.vox.sayLine(key, o) : 0;
     let spoken = dur ? (this.vox.lastRequested || this.vox.lastLine || text) : text;
-    if (!dur && text) dur = this.vox.say(text, opts) || 0;
-    this.duckForVoice(opts.voice || 'mutter', dur, 0.4);
+    if (!dur && text) dur = this.vox.say(text, o) || 0;
     if (opts.args && spoken) for (const a of opts.args) spoken = String(spoken).replace('%s', a);
-    const caption = plainText(spoken);
-    if (this.subtitlesOn && caption) this.hud.say(caption, Math.max(2.6, (dur || 3.2)));
+    this.voiceReady(job, plainText(spoken), dur);
+    // A warning that took the floor from the radio took the radio's line with
+    // it: the portrait goes too, and a line cut early is said again after.
+    const r = this.radio.current;
+    if (job.fired && dur > 0 && r && r.job && r.job.fired && prio > Math.max(0, r.priority || 0)) {
+      this.radio.yieldFloor();
+    }
   }
 
   /**
@@ -546,6 +605,8 @@ export class Game {
    */
   duckForVoice(voice, dur, depth) {
     if (!(dur > 0)) return;
+    // With the voices turned right down there is nothing to make room for.
+    if (clamp(this.volVox, 0, 1) * clamp(this.volMaster, 0, 1) < 0.02) return;
     this.duckTok = (this.duckTok || 0) + 1;
     if (voice === 'ilsa' || dur <= 2.2) { this.sound.duck(depth, Math.min(12, Math.max(1.6, dur))); return; }
     const tok = this.duckTok;
@@ -682,6 +743,7 @@ export class Game {
   updateGameOver(dt, input) {
     this.overT += dt;
     this.particles.update(dt, this.level);
+    this.radio.update(dt);
     if (this.overT > 2.2 && input.anyPressed()) this.pendingState = 'title';
   }
 
@@ -2144,19 +2206,25 @@ export class Game {
     this.player.streak = 0;
     this.input.rumble(0.55, 0.4, 160);
     if (how === 'melee' || how === 'chomp' || how === 'lunge') this.hud.splatter(3);
-    if (this.rng() < 0.16) this.brick('brick_hurt', BRICK_LINES.hurt);
+    const dead = this.player.dead;
+    if (!dead && this.rng() < 0.16) this.brick('brick_hurt', BRICK_LINES.hurt);
     if (src) this.hud.damageFrom(Math.atan2(src.y - this.player.y, src.x - this.player.x));
     this.hud.setFace('face_hurt', 0.9);
     this.shake = Math.max(this.shake, 1.1);
-    if (this.player.health < 25 && !this._hurtSaid) {
+    if (!dead && this.player.health < 25 && !this._hurtSaid) {
       this._hurtSaid = true;
       this.radio.say('brick', 'brick_low_health', this.radio.pick('lowhp', BRICK_LINES.low_health), { priority: 1 });
       this.radio.say('ilsa', 'ilsa_low_health',
         "Hardigan, your vitals are a mess. There is a medical cache on this floor. Use it.", { priority: 1, delay: 0.3 });
       setTimeout(() => { this._hurtSaid = false; }, 26000);
     }
-    if (this.player.dead) {
+    // Enemies keep swinging at the body until the card comes up; he dies once.
+    const r = this.radio;
+    if (dead && !((r.current && r.current.key === 'brick_death') || r.queue.some((q) => q.key === 'brick_death'))) {
       this.sound.sfx('player_die');
+      // His last words are the only words: nothing queued earlier (a health
+      // nag, a quip) gets to go first, or to play in their place.
+      this.radio.keepAbove(5);
       this.radio.say('brick', 'brick_death', this.radio.pick('death', BRICK_LINES.death), { priority: 5 });
       this.radio.say('ilsa', 'ilsa_death', "Brick? Brick. Answer me. ...Damn it.", { priority: 5, delay: 0.4 });
     }
