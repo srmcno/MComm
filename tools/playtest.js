@@ -1699,6 +1699,228 @@ check('a thrown body bowls over the one behind it, a blast re-throws a lying hea
   s.bowled > 10 && s.pushed > 0.3 && s.blown > 1 && s.hop > 0.08,
   `pin took ${s.bowled} and slid ${s.pushed}; head blown ${s.blown}, hopped ${s.hop}`);
 
+// ------ 60. the Boot still finds the bomb, the barrel and the door when the
+// floor in front of it is covered in limbs, gibs and the dead
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  const { Enemy } = await import('./src/game/entities.js');
+  const out = {};
+  G.arena();
+  const p = g.player;
+  const x0 = p.x, y0 = p.y;
+  // The floor's own drums would take the kick first, which is right but not this test.
+  for (const it of g.items) if (it.kind === 'barrel') it.taken = true;
+  let popup = null;
+  const oPop = g.hud.popup.bind(g.hud);
+  g.hud.popup = (t, o) => { popup = popup || t; return oPop(t, o); };
+  // A settled pipe bomb with a corpse and a loose arm lying beside it.
+  p.owned.pipebomb = true; p.ammo.bomb = 5; g.bombs.length = 0;
+  p.pitch = g.rc.projY * -0.6;
+  g.tryBomb();
+  G.step(1.5);
+  const b = g.bombs[0];
+  if (b) {
+    const e = new Enemy('wrencher', b.x + 0.4, b.y - 0.3);
+    e.alive = false; e.state = 7;
+    g.enemies.push(e);
+    g.gore.spawnPart(e, 'arm', b.x - 0.5, b.y + 0.1, 0.2, 0, 0, 0);
+    G.step(0.3);
+    p.x = b.x - 1.2; p.y = b.y; p.ang = 0; p.pitch = 0; p.kickCooldown = 0;
+    popup = null;
+    g.tryKick();
+    out.bomb = { settledBefore: true, vx: +b.vx.toFixed(1), popup };
+    g.blowBombs(); G.step(0.5);
+  }
+  // A barrel with a gib on the floor between the boot and the drum.
+  g.enemies.length = 0; g.gore.clear();
+  p.x = x0; p.y = y0; p.ang = 0; p.pitch = 0; p.kickCooldown = 0;
+  const bar = { kind: 'barrel', x: x0 + 1.3, y: y0, z: 0, prop: true, taken: false, solid: true, hp: 20 };
+  g.items.push(bar);
+  g.gore.spawnGib(x0 + 0.6, y0, 0.1, 0, 0, 0, 2, 0.15);
+  G.step(0.3);
+  g.tryKick();
+  out.barrel = bar.taken;
+  G.step(1);
+  // A shut door with a gib at its foot.
+  g.gore.clear();
+  const lv = g.level;
+  let door = null;
+  for (let i = 0; i < lv.wall.length && !door; i++) {
+    if (lv.wall[i] !== 2) continue;
+    const dx0 = i % lv.W, dy0 = (i / lv.W) | 0;
+    for (const [sx, sy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const j = (dy0 + sy) * lv.W + dx0 + sx;
+      if (!lv.wall[j] && !lv.propBlock[j]) { door = { i, x: dx0 + sx + 0.5, y: dy0 + sy + 0.5, ang: Math.atan2(-sy, -sx) }; break; }
+    }
+  }
+  if (door) {
+    lv.doorState[door.i] = 0; lv.doorOpen[door.i] = 0;
+    p.keys = [true, true, true];
+    p.x = door.x; p.y = door.y; p.ang = door.ang; p.kickCooldown = 0;
+    g.gore.spawnGib(p.x + Math.cos(door.ang) * 0.35, p.y + Math.sin(door.ang) * 0.35, 0.1, 0, 0, 0, 3, 0.15);
+    G.step(0.2);
+    p.kickCooldown = 0;
+    g.tryKick();
+    out.door = lv.doorState[door.i];
+  }
+  g.hud.popup = oPop;
+  return out;
+});
+check('the Boot punts a live bomb, bursts a barrel and opens a door past the limbs, gibs and corpses at its feet',
+  !!s.bomb && s.bomb.vx > 5 && s.bomb.popup === 'BOMB PUNTED' && s.barrel === true && s.door === 1,
+  `bomb vx ${s.bomb && s.bomb.vx} (${s.bomb && s.bomb.popup}), barrel ${s.barrel ? 'blown' : 'intact'}, door state ${s.door}`);
+
+// ------ 61. a waist-high prop stops bodies, not the nails fired over it
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  G.arena();
+  const p = g.player, lv = g.level;
+  // A sandbag pile two cells out, a wrencher behind it.
+  const pi = lv.idx(p.x + 2, p.y);
+  const oldB = lv.propBlock[pi], oldH = lv.propH[pi];
+  lv.propBlock[pi] = 1; lv.propH[pi] = 0.4;
+  const e = await G.spawn('wrencher', 3.6, 0);
+  e.hp = e.maxHp = 999; e.state = 5; e.stateT = -99;
+  p.z = 0.5;
+  const chest = e.z + e.height * 0.7;
+  G.aimAt(e.x, e.y, chest);
+  p.owned.nailer = true; p.weapon = 'nailer'; p.pendingWeapon = null; p.ammo.nail = 100;
+  let hits = 0;
+  for (let k = 0; k < 6; k++) {
+    const hp = e.hp;
+    e.x = p.x + 3.6; e.y = p.y; e.state = 5; e.stateT = -99;
+    p.cooldown = 0; g.tryFire(); G.step(1 / 60);
+    if (e.hp < hp) hits++;
+  }
+  // Straight into the bags: the pile takes it and the wrencher does not.
+  const dx = 2.5, dz = 0.2 - p.z, L = Math.hypot(dx, dz);
+  const low = g.traceHit(p.x, p.y, p.z, dx / L, 0, dz / L, 26);
+  const walk = lv.blocked(p.x + 2, p.y);
+  const pil = g.items.find((it) => it.kind === 'pillar');
+  const pillar = pil ? lv.blockedAt(pil.x, pil.y, 0.9) : true;
+  lv.propBlock[pi] = oldB; lv.propH[pi] = oldH;
+  return { hits, lowWall: low.wall, lowEnemy: !!low.enemy, lowX: +(low.x - p.x).toFixed(2), walk, pillar };
+});
+check('a nail fired over a sandbag pile hits the wrencher behind it; one fired into the pile stops there',
+  s.hits >= 5 && s.lowWall && !s.lowEnemy && s.lowX < 2.2 && s.walk && s.pillar,
+  `${s.hits}/6 over the top hit; low shot stopped at ${s.lowX} (wall ${s.lowWall}); bags block walking ${s.walk}, pillar blocks at 0.9 ${s.pillar}`);
+
+// ------ 62. a body comes apart once: repeat blasts over a corpse, or a kill
+// that asks for gib() twice, do not double the chunks and the sound
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  G.arena();
+  const p = g.player;
+  const sfx = g.sound.sfx.bind(g.sound);
+  let gibSounds = 0;
+  g.sound.sfx = (n, o) => { if (n === 'gib') gibSounds++; return sfx(n, o); };
+  const spec = { blastRadius: 6.2, damage: 130, gore: { sever: 0.9, head: 0.5, parts: 4, knock: 18, gib: 70, lift: 5 } };
+  const w = await G.spawn('wasp', 3, 0);
+  w.state = 1; w.hurt(999, g, p.x, p.y);
+  G.step(1.5);
+  const wasp = [];
+  for (let k = 0; k < 3; k++) {
+    const s0 = gibSounds, c0 = g.gore.gibs.length;
+    g.detonateBomb({ x: w.x + 0.6, y: w.y + 0.3, z: 0.3, spec });
+    wasp.push([gibSounds - s0, g.gore.gibs.length - c0]);
+    G.step(1);
+  }
+  g.enemies.length = 0;
+  const gh = await G.spawn('ghoul', 3, 0);
+  gh.state = 1;
+  const s1 = gibSounds;
+  g.detonateBomb({ x: gh.x + 0.3, y: gh.y, z: 0.3, spec });
+  const ghoul = gibSounds - s1;
+  g.sound.sfx = sfx;
+  return { wasp, ghoul, ghoulDead: !gh.alive };
+});
+check('gib() runs once per body: later blasts over a dead wasp add nothing, a gib-force kill plays one gib',
+  s.wasp[0][0] <= 1 && s.wasp[1][0] === 0 && s.wasp[2][0] === 0 && s.wasp[1][1] === 0 && s.wasp[2][1] === 0
+    && s.ghoulDead && s.ghoul === 1,
+  `wasp per bomb [sounds, chunks] ${JSON.stringify(s.wasp)}; ghoul kill gib sounds ${s.ghoul}`);
+
+// ------ 63. a flak blast sweeping over a body takes it apart the way the
+// weapon that fired it does, not with the generic explosion spec
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  const { WEAPONS } = await import('./src/game/weapons.js');
+  const { EXPLOSION_GORE } = await import('./src/game/gore.js');
+  G.arena();
+  const p = g.player;
+  // Only the sweep's calls count; the ground pass has always used the weapon spec.
+  for (const it of g.items) if (it.kind === 'barrel') it.taken = true;
+  const specs = [];
+  let inSweep = false;
+  const blast = g.gore.blast.bind(g.gore), sweep = g.onBlastSweep.bind(g);
+  g.onBlastSweep = (b) => { inSweep = true; try { sweep(b); } finally { inSweep = false; } };
+  g.gore.blast = (e, x, y, z, f, spec, k) => {
+    if (inSweep) specs.push(spec === WEAPONS.pistol.gore ? 'pistol' : spec === EXPLOSION_GORE ? 'explosion' : 'other');
+    return blast(e, x, y, z, f, spec, k);
+  };
+  const e = await G.spawn('wrencher', 4, 0);
+  e.hp = e.maxHp = 999; e.state = 5; e.stateT = -99;
+  p.owned.pistol = true; p.weapon = 'pistol'; p.pendingWeapon = null; p.ammo.flak = 100;
+  G.aimAt(e.x, e.y, e.z + e.height * 0.6);
+  p.fuse = Math.hypot(e.x - p.x, e.y - p.y); p.autoFuse = false;
+  p.cooldown = 0; g.tryFire();
+  G.step(0.8);
+  delete g.gore.blast; delete g.onBlastSweep;
+  return { specs: [...new Set(specs)], n: specs.length };
+});
+check('a Widow burst sweeping over a wrencher uses the Widow gore spec, not EXPLOSION_GORE',
+  s.n >= 1 && s.specs.length === 1 && s.specs[0] === 'pistol', `${s.n} sweep gore.blast calls, specs ${s.specs.join(',')}`);
+
+// ------ 64. the pipe bomb leaves the hand, from any weapon, and an empty or
+// detonator hand is drawn when there is no bomb to hold
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  const R = await import('./src/game/render.js');
+  G.arena();
+  const p = g.player;
+  const vm = g.art.vm;
+  let last = null;
+  const spy = new Proxy(vm, { get(t, k) { if (typeof k === 'string' && /_(idle|fire\d|reload\d)$/.test(k) && !last) last = k; return t[k]; } });
+  const buf = new Uint32Array(320 * 200);
+  const key = () => { last = null; g.art.vm = spy; try { R.drawViewmodel(g, buf, 320, 200); } finally { g.art.vm = vm; } return last; };
+  const seq = (n) => { const out = []; for (let i = 0; i < n; i++) { const k = key(); if (out[out.length - 1] !== k) out.push(k); G.step(1 / 60); } return out; };
+  p.owned.pipebomb = true; p.ammo.bomb = 5; g.bombs.length = 0;
+  p.weapon = 'pipebomb'; p.pendingWeapon = null; p.cooldown = 0; p.kickAnim = 0;
+  const idle = key();
+  g.tryFire();
+  const thrown = seq(40);
+  const waiting = key();
+  p.cooldown = 0; g.tryFire();          // detonate
+  G.step(1);
+  p.ammo.bomb = 0;
+  const empty = key();
+  p.ammo.bomb = 5; p.weapon = 'pistol'; p.cooldown = 0;
+  g.tryBomb();
+  const fromPistol = seq(40);
+  g.blowBombs(); G.step(0.5);
+  return { idle, thrown, waiting, empty, fromPistol };
+});
+check('a pipe bomb throw plays the throw frames from any weapon; no bomb in hand while one is out or the bag is empty',
+  s.idle === 'pipebomb_idle' && s.thrown[0] === 'pipebomb_fire0' && s.thrown.includes('pipebomb_fire1')
+    && s.waiting === 'pipebomb_fire2' && s.empty === 'pipebomb_fire2'
+    && s.fromPistol[0] === 'pipebomb_fire0' && s.fromPistol[s.fromPistol.length - 1] === 'pistol_idle',
+  `thrown ${s.thrown.join('>')}; bomb out ${s.waiting}; empty ${s.empty}; from the Widow ${s.fromPistol.join('>')}`);
+
+// ------ 65. the canvas fills the window through resizes and on ultrawide
+{
+  const sizes = [];
+  for (const [w, h] of [[1600, 900], [2560, 1080], [800, 1000], [1024, 640]]) {
+    await page.setViewportSize({ width: w, height: h });
+    await sleep(400);
+    sizes.push(await page.evaluate(() => {
+      const c = document.getElementById('screen'), r = c.getBoundingClientRect();
+      return [innerWidth, innerHeight, Math.round(r.width), Math.round(r.height), Math.round(r.top)];
+    }));
+  }
+  check('the canvas tracks the window through resizes, including 2560x1080',
+    sizes.every((v) => v[0] === v[2] && v[1] === v[3] && v[4] === 0),
+    sizes.map((v) => `${v[0]}x${v[1]} -> ${v[2]}x${v[3]}`).join(', '));
+}
+
 // ------------------------------------------------------------- report
 console.log('');
 if (errors.length) {
