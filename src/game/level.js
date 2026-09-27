@@ -3,6 +3,7 @@
 // and the roof panels that grind open when a siege starts.
 
 import { clamp, damp } from '../core/math.js';
+import { ensureTextures } from '../engine/textures.js';
 
 export const CELL_EMPTY = 0;
 export const CELL_SOLID = 1;
@@ -84,12 +85,49 @@ export class Level {
 
     // The roof over a silo deck starts shut. Sieges open it; that grinding sound
     // and the widening slot of sky is the game's best moment.
-    this.deckCeilTex = tex('CEIL_CONCRETE');
+    // Two patterns of roof leaf, alternated so a closed deck is not one tile.
+    this.deckCeilTex = tex('CEIL_ROOF', tex('CEIL_CONCRETE'));
+    const roofB = tex('CEIL_ROOF_B', this.deckCeilTex);
+    this.deckCeil = new Int16Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = i % W, y = (i / W) | 0;
+      this.deckCeil[i] = ((x >> 1) + (y >> 1)) & 1 ? roofB : this.deckCeilTex;
+    }
     this.closeRoof();
 
     this.autoParapets();
     this.pushwalls = [];
     this.lights = [];
+
+    // Set dressing from the parser. Solid pieces stop bodies exactly like a
+    // pillar does; the parser has already checked none of them cuts a route.
+    this.decor = parsed.decor || [];
+    this.fixture = new Uint8Array(n);       // 1 toilet, 2 urinal: somewhere Brick can go
+    this.fixtureUsed = new Uint8Array(n);
+    for (const d of this.decor) {
+      const i = this.idx(d.x, d.y);
+      if (d.solid) this.propBlock[i] = 1;
+      if (d.fixture) this.fixture[i] = d.fixture === 'urinal' ? 2 : 1;
+    }
+    // Strip lights, furnace mouths and candles light the room without being
+    // entities; the renderer adds them to the light grid each frame.
+    this.fixtureLights = parsed.fixtureLights || [];
+    this.lightTint = parsed.lightTint || null;
+    this.pillarKey = parsed.pillarKey || null;
+
+    // Dressed surfaces are painted on first use; paint every one this floor
+    // shows now, while the briefing card is up, rather than mid-corridor.
+    try {
+      const used = new Set([this.doorJambTex, this.deckCeilTex, ...new Set(this.deckCeil)]);
+      for (let i = 0; i < n; i++) {
+        used.add(this.wallTex[i]); used.add(this.floorTex[i]);
+        if (this.ceilTex[i] >= 0) used.add(this.ceilTex[i]);
+      }
+      for (const name of ['SANDBAG', 'SANDBAG_TORN', 'SANDBAG_HELMET']) {
+        if (art.texIndex.has(name)) used.add(art.texIndex.get(name));
+      }
+      ensureTextures(art.texAtlas, used);
+    } catch (e) { /* a bare atlas slot draws black; never worth failing a level over */ }
   }
 
   isSolidRaw(x, y) {
@@ -115,9 +153,14 @@ export class Level {
         if (y < H - 1 && this.roofPanel[i + W]) touchesSky = true;
         if (touchesSky) {
           this.height[i] = PARAPET_H;
-          // Parapets get their own capping material so the silhouette reads.
-          const t = this.texIndex.get('SANDBAG');
-          if (t !== undefined && Math.abs((x * 7 + y * 13) % 5) < 2) this.wallTex[i] = t;
+          // Parapets get their own capping material so the silhouette reads,
+          // and not the same three bags every time.
+          if (Math.abs((x * 7 + y * 13) % 5) < 2) {
+            const pick = (x * 3 + y * 5) % 7;
+            const name = pick === 0 ? 'SANDBAG_TORN' : pick === 3 ? 'SANDBAG_HELMET' : 'SANDBAG';
+            const t = this.texIndex.has(name) ? this.texIndex.get(name) : this.texIndex.get('SANDBAG');
+            if (t !== undefined) this.wallTex[i] = t;
+          }
         }
       }
     }
@@ -127,7 +170,7 @@ export class Level {
   closeRoof() {
     this.roofTarget = 0; this.roofOpen = 0;
     for (let i = 0; i < this.sky.length; i++) {
-      if (this.roofPanel[i]) { this.sky[i] = 0; this.ceilTex[i] = this.deckCeilTex; }
+      if (this.roofPanel[i]) { this.sky[i] = 0; this.ceilTex[i] = this.deckCeil ? this.deckCeil[i] : this.deckCeilTex; }
     }
   }
 
@@ -160,7 +203,7 @@ export class Level {
         if (!this.roofPanel[i]) continue;
         const open = Math.hypot(x - dcx, y - dcy) <= reach;
         this.sky[i] = open ? 1 : 0;
-        this.ceilTex[i] = open ? -1 : this.deckCeilTex;
+        this.ceilTex[i] = open ? -1 : this.deckCeil[i];
       }
     }
     return true;
@@ -231,8 +274,8 @@ export class Level {
   }
 
   /**
-   * Try to open the door in front of `(x,y)` facing `ang`.
-   * @returns {'opened'|'locked'|'secret'|'none'}
+   * Try to open the door in front of `(x,y)` facing `ang`, or use the toilet.
+   * @returns {'opened'|'locked'|'secret'|'relieve'|'dry'|'none'}
    */
   tryUse(x, y, ang, keys, onSecret) {
     const dx = Math.cos(ang), dy = Math.sin(ang);
@@ -248,6 +291,12 @@ export class Level {
         }
         this.doorTimer[i] = DOOR_HOLD;
         return 'opened';
+      }
+      if (this.fixture && this.fixture[i]) {
+        // Duke would. Once per bowl; after that the tank is empty.
+        if (this.fixtureUsed[i]) return 'dry';
+        this.fixtureUsed[i] = 1;
+        return 'relieve';
       }
       if (this.wall[i] === CELL_SOLID && this.secret[i]) {
         if (this.startPush(cx, cy, dx, dy)) { onSecret && onSecret(cx, cy); return 'secret'; }

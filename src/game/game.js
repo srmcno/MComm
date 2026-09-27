@@ -1473,6 +1473,14 @@ export class Game {
       this.brick('brick_secret', BRICK_LINES.secret);
       this.radio.say('mutter', 'secret_found', 'You found the room I was saving.', { priority: 0, delay: 0.5 });
     });
+    if (r === 'relieve' || r === 'dry') {
+      // The Duke rule: a working toilet is a medkit with a flush.
+      const got = r === 'relieve' ? p.heal(10) : 0;
+      this.sound.sfx(got ? 'pickup_health' : 'dryfire', { vol: 0.6 });
+      this.hud.popup(r === 'dry' ? 'NOTHING LEFT IN THE TANK' : got ? 'AAAHHH.  +10 VITALS' : 'LIGHTER, IF NOT HEALTHIER',
+        { size: 12, life: 1.6, color: rgba(255, 220, 90, 255) });
+      return;
+    }
     if (r === 'opened') this.sound.sfx('door_open');
     else if (r === 'locked') {
       this.sound.sfx('door_locked');

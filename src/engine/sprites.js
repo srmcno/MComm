@@ -3491,6 +3491,606 @@ function paintWeapon(kind) {
   return finishProp(f);
 }
 
+// ---------------------------------------------------------------------------
+// set dressing: the furniture of a bunker that was an office until it was not
+// ---------------------------------------------------------------------------
+
+const DR = {
+  metal: mat(rgba(118, 124, 130, 255), { contrast: 1.15 }),
+  desk: mat(rgba(150, 142, 118, 255), { contrast: 1.1 }),
+  lam: mat(rgba(170, 132, 88, 255), { contrast: 1.05 }),
+  fabric: mat(rgba(52, 70, 120, 255), { contrast: 1.1 }),
+  olive: mat(rgba(92, 100, 78, 255), { contrast: 1.1 }),
+  locker: mat(rgba(78, 98, 110, 255), { contrast: 1.15 }),
+  cola: mat(rgba(196, 34, 36, 255), { contrast: 1.2 }),
+  porcelain: mat(rgba(226, 226, 220, 255), { contrast: 1.1 }),
+  bone: mat(rgba(214, 204, 176, 255), { contrast: 1.15 }),
+  burlap: mat(rgba(150, 132, 92, 255), { contrast: 1.05 }),
+  pine: mat(rgba(172, 128, 72, 255), { contrast: 1.05 }),
+  console: mat(rgba(96, 104, 92, 255), { contrast: 1.15 }),
+  terra: mat(rgba(164, 88, 54, 255), { contrast: 1.1 }),
+  dead: mat(rgba(122, 104, 58, 255), { contrast: 1.1 }),
+  yellow: mat(rgba(232, 196, 42, 255), { contrast: 1.2 }),
+  chain: mat(rgba(104, 100, 96, 255), { contrast: 1.35 }),
+  meat: mat(rgba(170, 70, 64, 255), { contrast: 1.2 }),
+  fat: mat(rgba(226, 200, 170, 255), { contrast: 1.05 }),
+  coat: mat(rgba(214, 214, 206, 255), { contrast: 1.05 }),
+  skin: mat(rgba(200, 150, 118, 255), { contrast: 1.05 }),
+  cone: mat(rgba(226, 226, 222, 255), { contrast: 1.15 }),
+  pewwood: mat(rgba(112, 70, 40, 255), { contrast: 1.1 }),
+  wax: mat(rgba(232, 222, 190, 255), { contrast: 1.0 }),
+  bottle: mat(rgba(96, 156, 214, 255), { contrast: 1.2 }),
+  cab: mat(rgba(40, 44, 70, 255), { contrast: 1.2 }),
+  bin: mat(rgba(100, 108, 104, 255), { contrast: 1.2 }),
+  blood: mat(rgba(130, 16, 20, 255), { contrast: 1.0 }),
+};
+const GLOW_GREEN = rgba(120, 255, 150, 255), CRT_DARK = rgba(8, 26, 14, 255);
+
+/**
+ * A block in oblique projection: front face, a lit top receding up and to the
+ * right, a shaded right side. The whole set is drawn this way so furniture
+ * reads as having depth even though it is a billboard.
+ */
+function slab(f, x, y, w, h, d, R, o = {}) {
+  const dx = Math.round(d * 0.7), dy = Math.round(d * 0.5);
+  fillPoly(f, [{ x, y }, { x: x + w, y }, { x: x + w + dx, y: y - dy }, { x: x + dx, y: y - dy }], R[o.topBand === undefined ? 4 : o.topBand]);
+  fillPoly(f, [{ x: x + w, y }, { x: x + w + dx, y: y - dy }, { x: x + w + dx, y: y - dy + h }, { x: x + w, y: y + h }], R[1]);
+  box(f, x, y, w, h, R, { grain: o.grain || 0.05, seed: o.seed || 17, shift: o.shift || 0 });
+  if (o.edge !== false) {
+    line(f, x, y, x + w, y, R[4]);
+    line(f, x + w, y, x + w + dx, y - dy, R[3]);
+  }
+}
+
+/** A flat screen face with a phosphor glow; lit from inside so it reads in the dark. */
+function screenFace(f, x, y, w, h, col, seed) {
+  fillRect(f, x, y, w, h, CRT_DARK);
+  for (let j = 1; j < h - 1; j += 2) {
+    for (let i = 1; i < w - 1; i++) {
+      if (hash2(x + i, y + j, seed) < 0.55) px(f, x + i, y + j, mix(CRT_DARK, col, 0.6));
+    }
+  }
+  px(f, x + 1, y + 1, mix(col, WARM, 0.5));
+}
+
+function paintDesk() {
+  const f = makeFrame(60, 40);
+  const top = 17, fy = 20;
+  slab(f, 4, fy, 46, 3, 8, DR.lam, { seed: 3101 });                  // laminate top
+  box(f, 6, fy + 3, 16, 17, DR.desk, { grain: 0.05, seed: 3102 });   // drawer pedestal
+  for (let k = 0; k < 3; k++) {
+    const yy = fy + 4 + k * 5;
+    fillRect(f, 7, yy + 4, 14, 1, DR.desk[0]);
+    fillRect(f, 11, yy + 1, 6, 1, DR.metal[4]);
+  }
+  box(f, 22, fy + 3, 25, 11, DR.desk, { shift: -1, seed: 3103 });   // modesty panel
+  box(f, 45, fy + 3, 3, 17, DR.desk, { seed: 3104 });                // far leg
+  fillRect(f, 22, fy + 14, 23, 6, 0);
+  // a CRT with the day's work still on it
+  slab(f, 25, top - 12, 15, 11, 7, DR.desk, { seed: 3105 });
+  screenFace(f, 27, top - 10, 11, 7, GLOW_GREEN, 3106);
+  fillRect(f, 30, top - 1, 5, 2, DR.desk[1]);
+  // coffee, going cold since 1994, and the paperwork
+  box(f, 11, top - 1, 4, 4, DR.porcelain, { seed: 3107 });
+  px(f, 15, top, DR.porcelain[1]); px(f, 15, top + 1, DR.porcelain[1]);
+  fillRect(f, 11, top - 1, 4, 1, rgba(70, 40, 20, 255));
+  for (let k = 0; k < 4; k++) fillRect(f, 43 - k, top + 1 - k, 8, 1, DR.coat[k % 2 ? 3 : 4]);
+  stencil(f, 8, fy + 6, 'IN', DR.desk[0], 0.7);
+  return finishProp(f);
+}
+
+function paintChair() {
+  const f = makeFrame(30, 38);
+  const cx = 15;
+  // backrest, seat
+  box(f, cx - 8, 4, 16, 14, DR.fabric, { grain: 0.08, seed: 3201 });
+  for (let k = 0; k < 3; k++) fillRect(f, cx - 7, 7 + k * 4, 14, 1, DR.fabric[1]);
+  capsule(f, cx, 18, cx, 21, 1.5, 1.5, DR.metal, {});
+  slab(f, cx - 9, 21, 18, 3, 6, DR.fabric, { seed: 3202 });
+  capsule(f, cx - 10, 16, cx - 10, 22, 1, 1, DR.metal, {});           // armrests
+  capsule(f, cx + 10, 16, cx + 10, 22, 1, 1, DR.metal, {});
+  fillRect(f, cx - 11, 15, 4, 2, DR.metal[2]); fillRect(f, cx + 8, 15, 4, 2, DR.metal[2]);
+  capsule(f, cx, 24, cx, 31, 1.4, 1.4, DR.metal, {});                // gas lift
+  for (const [ex, ey] of [[-10, 35], [10, 35], [-5, 36], [5, 36], [0, 34]]) {
+    line(f, cx, 31, cx + ex, ey, DR.metal[1]);
+    blob(f, cx + ex, ey, 1.6, 1.3, PR.dark, {});
+  }
+  return finishProp(f);
+}
+
+function paintFiling() {
+  const f = makeFrame(30, 46);
+  slab(f, 3, 7, 20, 38, 7, DR.metal, { seed: 3301 });
+  for (let k = 0; k < 4; k++) {
+    const y = 8 + k * 9;
+    fillRect(f, 4, y + 8, 18, 1, DR.metal[0]);
+    box(f, 9, y + 3, 8, 2, DR.metal, { shift: 1 });
+    fillRect(f, 11, y + 1, 4, 1, DR.coat[3]);                         // label holder
+  }
+  // the second drawer hangs open, stuffed with somebody's secrets
+  box(f, 2, 17, 22, 8, DR.metal, { shift: -1, seed: 3302 });
+  for (let k = 0; k < 7; k++) fillRect(f, 4 + k * 3, 14 + (k % 3), 2, 4, k % 2 ? rgba(214, 190, 120, 255) : DR.coat[3]);
+  fillRect(f, 3, 17, 20, 1, DR.metal[4]);
+  over(f, 16, 30, PR.dark[0], 0.6); over(f, 17, 31, PR.dark[0], 0.6); over(f, 16, 31, DR.metal[4], 0.5);  // kicked in
+  stencil(f, 5, 38, 'TOP SECRET'.slice(0, 3), PR.red[2], 0.8);
+  return finishProp(f);
+}
+
+function paintLocker() {
+  const f = makeFrame(26, 64);
+  slab(f, 2, 5, 18, 58, 6, DR.locker, { seed: 3401 });
+  line(f, 11, 6, 11, 62, DR.locker[0]);
+  for (const x0 of [3, 12]) {
+    for (let v = 0; v < 4; v++) fillRect(f, x0 + 2, 9 + v * 2, 5, 1, PR.dark[0]);
+    for (let v = 0; v < 4; v++) fillRect(f, x0 + 2, 52 + v * 2, 5, 1, PR.dark[0]);
+    fillRect(f, x0 + 6, 28, 1, 6, DR.metal[4]);
+  }
+  box(f, 4, 19, 6, 4, PR.brass, {}); stencil(f, 5, 19, '7', PR.dark[0], 0.8);
+  box(f, 13, 19, 6, 4, PR.brass, {}); stencil(f, 14, 19, '8', PR.dark[0], 0.8);
+  // a bumper sticker, because someone had to
+  fillRect(f, 13, 38, 7, 4, PR.hazard[3]); stencil(f, 13, 38, 'NUK', PR.dark[0], 0.9);
+  over(f, 6, 40, PR.dark[0], 0.6); over(f, 7, 41, PR.dark[0], 0.6); over(f, 6, 41, DR.locker[4], 0.5);
+  speckle(f, 2, 5, 18, 58, PR.rust[1], 0.04, 3402, 0.7);
+  return finishProp(f);
+}
+
+function paintVending() {
+  const f = makeFrame(44, 64);
+  slab(f, 2, 5, 34, 58, 8, DR.cola, { seed: 3501 });
+  // the glass: rows of cans, lit from inside
+  fillRect(f, 5, 9, 20, 40, rgba(30, 24, 28, 255));
+  const cans = [PR.red, PR.hazard, DR.bottle, PR.white, PR.olive];
+  for (let r = 0; r < 5; r++) {
+    for (let c = 0; c < 4; c++) {
+      const R = cans[(r * 2 + c) % cans.length];
+      box(f, 6 + c * 5, 11 + r * 8, 3, 5, R, {});
+      if ((r + c) % 3 === 0) fillRect(f, 6 + c * 5, 16 + r * 8, 3, 1, PR.dark[1]);
+    }
+    fillRect(f, 5, 17 + r * 8, 20, 1, DR.metal[1]);
+  }
+  for (let y = 9; y < 49; y++) over(f, 5 + ((y * 7) % 3), y, WARM, 0.25);            // glass sheen
+  // selection panel and slot
+  box(f, 27, 12, 7, 18, DR.metal, { seed: 3502 });
+  for (let k = 0; k < 6; k++) px(f, 29 + (k % 2) * 3, 14 + ((k / 2) | 0) * 4, PR.dark[0]);
+  fillRect(f, 28, 33, 5, 2, PR.dark[0]);
+  fillRect(f, 7, 52, 18, 6, PR.dark[0]);                             // the dispenser flap
+  fillRect(f, 7, 52, 18, 1, DR.metal[3]);
+  // the logo, the one thing still working
+  stencil(f, 27, 38, 'MEGA', PR.white[4], 1);
+  stencil(f, 27, 44, 'COLA', PR.white[4], 1);
+  glow(f, 15, 30, 12, rgba(255, 236, 200, 255), { halo: 0, tint: 0.2, seed: 3503 });
+  return finishProp(f);
+}
+
+function paintCooler() {
+  const f = makeFrame(24, 46);
+  const cx = 11;
+  // the bottle, upside down, one glug of water left
+  for (let y = 2; y < 17; y++) {
+    const r = y < 5 ? 3 + y : 8;
+    blob(f, cx, y, r, 1.2, DR.bottle, { mode: 'cyl', nyBias: -0.1 });
+  }
+  for (let y = 12; y < 17; y++) for (let x = cx - 7; x <= cx + 7; x++) if (getpx(f, x, y) >>> 24) over(f, x, y, rgba(120, 200, 255, 255), 0.4);
+  fillRect(f, cx - 7, 8, 14, 1, DR.bottle[4]);
+  slab(f, cx - 8, 18, 16, 27, 5, DR.porcelain, { seed: 3601 });
+  box(f, cx - 4, 22, 3, 2, PR.red, {}); box(f, cx + 1, 22, 3, 2, DR.bottle, {});
+  fillRect(f, cx - 5, 27, 10, 3, PR.dark[1]);
+  box(f, cx + 8, 26, 3, 7, DR.coat, {});                              // paper cups
+  return finishProp(f);
+}
+
+function paintToilet() {
+  // Three-quarter view: cistern against the wall, bowl coming toward us.
+  const f = makeFrame(30, 34);
+  const cx = 14;
+  slab(f, cx - 8, 5, 16, 11, 5, DR.porcelain, { seed: 3701 });        // cistern
+  box(f, cx - 9, 3, 18, 3, DR.porcelain, { shift: 1 });                // its lid
+  fillRect(f, cx + 5, 8, 3, 1, DR.metal[4]); px(f, cx + 5, 9, DR.metal[2]);   // flush lever
+  box(f, cx - 4, 15, 8, 4, DR.porcelain, { shift: -1 });               // neck down to the bowl
+  capsule(f, cx - 8, 17, cx + 8, 17, 1.4, 1.4, PR.dark, {});           // seat, flipped up, as left by men
+  blob(f, cx, 24, 9, 4.5, DR.porcelain, {});                           // bowl
+  blob(f, cx, 22.4, 7.4, 2.8, DR.porcelain, { shift: 1 });             // rim
+  blob(f, cx, 23, 5.4, 1.7, flat(rgba(118, 124, 92, 255)), {});        // the water, which is not blue
+  box(f, cx - 4, 27, 8, 6, DR.porcelain, { seed: 3702 });              // pedestal
+  blob(f, cx, 33, 6, 1.2, DR.porcelain, { shift: -1 });
+  over(f, cx - 3, 29, rgba(150, 120, 50, 255), 0.6); over(f, cx + 2, 30, rgba(150, 120, 50, 255), 0.5);
+  over(f, cx + 1, 21, WARM, 0.6);
+  return finishProp(f);
+}
+
+function paintUrinal() {
+  const f = makeFrame(22, 32);
+  const cx = 10;
+  capsule(f, cx, 1, cx, 6, 1, 1, DR.metal, {});                       // flush pipe
+  box(f, cx - 3, 5, 6, 2, DR.metal, {});
+  for (let y = 7; y < 29; y++) {
+    const t = (y - 7) / 22;
+    const r = 7 - Math.max(0, t - 0.6) * 10;
+    blob(f, cx, y, Math.max(2, r), 1.1, DR.porcelain, { mode: 'cyl', nyBias: -0.2 });
+  }
+  blob(f, cx, 18, 4.6, 5.5, flat(rgba(160, 160, 152, 255)), {});      // the scoop
+  blob(f, cx, 23, 2.6, 1.4, flat(rgba(250, 130, 180, 255)), {});      // the cake. pink. always pink.
+  over(f, cx - 1, 22, WARM, 0.5);
+  return finishProp(f);
+}
+
+function paintSkeleton() {
+  const f = makeFrame(34, 30);
+  const B = DR.bone;
+  // slumped against the wall: legs splayed toward us, skull lolling
+  capsule(f, 13, 22, 4, 27, 1.2, 1, B, {});
+  capsule(f, 4, 27, 1, 28, 1, 1, B, {});
+  capsule(f, 19, 22, 29, 26, 1.2, 1, B, {});
+  capsule(f, 29, 26, 32, 28, 1, 1, B, {});
+  blob(f, 16, 21, 5, 2.5, B, {});                                     // pelvis
+  capsule(f, 16, 20, 16, 11, 1, 1, B, {});                            // spine
+  for (let k = 0; k < 4; k++) {                                       // ribs
+    const y = 11 + k * 2.2;
+    line(f, 16, y, 11 + k * 0.5, y + 2, B[3]);
+    line(f, 16, y, 21 - k * 0.5, y + 2, B[3]);
+  }
+  capsule(f, 12, 11, 9, 19, 1, 1, B, {}); capsule(f, 9, 19, 12, 24, 0.9, 0.9, B, {});
+  capsule(f, 20, 11, 24, 18, 1, 1, B, {}); capsule(f, 24, 18, 22, 23, 0.9, 0.9, B, {});
+  blob(f, 18, 6, 4.2, 4.2, B, {});                                    // skull, tipped to one side
+  blob(f, 19, 9.5, 2.6, 1.5, B, { shift: -1 });
+  px(f, 16, 6, INK); px(f, 17, 6, INK); px(f, 20, 6, INK); px(f, 21, 6, INK);
+  px(f, 18, 8, INK);
+  // still wearing the hard hat: health and safety to the last
+  blob(f, 17, 3, 5, 2.4, PR.hazard, { shift: 1 });
+  fillRect(f, 11, 4, 13, 1, PR.hazard[1]);
+  return finishProp(f);
+}
+
+function paintSandbags() {
+  const f = makeFrame(44, 28);
+  const bag = (x, y, w) => {
+    blob(f, x + w / 2, y, w / 2, 3.6, DR.burlap, { grain: 0.12, seed: 3801 + x + y });
+    line(f, x + 2, y - 1, x + 3, y + 1, DR.burlap[0]);
+    line(f, x + w - 2, y - 1, x + w - 3, y + 1, DR.burlap[0]);
+  };
+  for (let k = 0; k < 4; k++) bag(2 + k * 10, 23, 10);
+  for (let k = 0; k < 3; k++) bag(7 + k * 10, 17, 10);
+  for (let k = 0; k < 2; k++) bag(12 + k * 10, 11, 10);
+  speckle(f, 0, 6, 44, 22, DR.burlap[0], 0.05, 3802, 0.6);
+  stencil(f, 16, 21, 'SAND', DR.burlap[0], 0.7);
+  return finishProp(f);
+}
+
+function crateAt(f, x, y, s, seed, words) {
+  slab(f, x, y, s, s, Math.round(s * 0.45), DR.pine, { grain: 0.12, seed });
+  const t = Math.max(2, Math.round(s / 9));
+  fillRect(f, x, y, t, s, DR.pine[1]); fillRect(f, x + s - t, y, t, s, DR.pine[1]);
+  fillRect(f, x, y, s, t, DR.pine[3]); fillRect(f, x, y + s - t, s, t, DR.pine[1]);
+  line(f, x + t, y + t, x + s - t, y + s - t, DR.pine[1]);          // the diagonal brace
+  line(f, x + t, y + t + 1, x + s - t - 1, y + s - t, DR.pine[3]);
+  let yy = y + Math.round(s * 0.3);
+  for (const wd of words || []) { stencil(f, x + 3, yy, wd, mix(PR.dark[1], DR.pine[1], 0.2), 0.85); yy += 6; }
+}
+function paintCrate() {
+  const f = makeFrame(40, 36);
+  crateAt(f, 3, 9, 26, 3901, ['SIEBEN', 'UP']);
+  return finishProp(f);
+}
+function paintCrates() {
+  const f = makeFrame(44, 62);
+  crateAt(f, 2, 32, 28, 3902, ['FRAG', 'ILE']);
+  crateAt(f, 6, 9, 20, 3903, ['MRE']);
+  return finishProp(f);
+}
+
+function paintConsole() {
+  const f = makeFrame(44, 46);
+  box(f, 3, 22, 34, 23, DR.console, { grain: 0.05, seed: 4001 });
+  // sloped desk
+  fillPoly(f, [{ x: 3, y: 22 }, { x: 37, y: 22 }, { x: 41, y: 14 }, { x: 7, y: 14 }], DR.console[3]);
+  line(f, 3, 22, 37, 22, DR.console[4]);
+  // riser with a screen
+  slab(f, 9, 1, 26, 13, 5, DR.console, { seed: 4002 });
+  screenFace(f, 12, 3, 20, 9, GLOW_GREEN, 4003);
+  stencil(f, 13, 6, 'ARMED', GLOW_GREEN, 0.9);
+  // buttons, one of them BIG
+  const cols = [PR.red, PR.hazard, DR.bottle, PR.olive];
+  for (let k = 0; k < 6; k++) box(f, 9 + k * 4, 17, 2, 2, cols[k % 4], {});
+  blob(f, 33, 17, 3, 2, PR.red, { shift: 1 });
+  capsule(f, 20, 30, 24, 25, 1, 1, DR.metal, {});                      // a lever, thrown
+  blob(f, 24, 24.5, 1.8, 1.8, PR.red, {});
+  for (let k = 0; k < 3; k++) fillRect(f, 6, 27 + k * 5, 10, 1, DR.console[1]);
+  return finishProp(f);
+}
+
+function paintPlant() {
+  const f = makeFrame(28, 44);
+  const cx = 13;
+  // the pot
+  for (let y = 30; y < 43; y++) blob(f, cx, y, 6 - (y - 30) * 0.18, 1, DR.terra, { mode: 'cyl', nyBias: -0.1 });
+  blob(f, cx, 30, 7, 1.8, DR.terra, { shift: 1 });
+  blob(f, cx, 30, 5.6, 1.1, flat(rgba(60, 44, 30, 255)), {});
+  // what used to be a ficus, now mostly an argument for going outside
+  capsule(f, cx, 30, cx - 1, 12, 1, 0.7, DR.dead, {});
+  const leaves = [[-6, 10, 0.6], [5, 7, 0.4], [-8, 18, 1.4], [7, 15, 1.2], [-3, 4, 0.2], [8, 24, 1.8], [-9, 26, 2.2]];
+  for (const [lx, ly, droop] of leaves) {
+    line(f, cx, ly + 4, cx + lx * 0.6, ly + 2, DR.dead[1]);
+    blob(f, cx + lx, ly + droop * 2, 2.6, 1.3, DR.dead, { shift: -1 });
+  }
+  for (const [lx, ly] of [[-4, 41], [6, 42], [2, 42]]) blob(f, cx + lx, ly, 1.8, 0.8, DR.dead, { shift: -1 });
+  return finishProp(f);
+}
+
+function paintMop() {
+  const f = makeFrame(30, 40);
+  // yellow mop bucket with the wringer
+  slab(f, 3, 26, 18, 12, 5, DR.yellow, { seed: 4201 });
+  box(f, 5, 23, 12, 4, DR.metal, {});
+  for (const x of [5, 18]) blob(f, x, 38, 1.6, 1.4, PR.dark, {});
+  fillRect(f, 5, 28, 14, 2, rgba(110, 120, 100, 255));                // grey water
+  // the mop, leaning
+  capsule(f, 12, 26, 24, 1, 0.9, 0.9, DR.pine, {});
+  for (let k = 0; k < 7; k++) capsule(f, 11, 25, 7 + k * 1.6, 30 + (k % 3), 0.6, 0.6, DR.coat, {});
+  stencil(f, 6, 31, 'WET', PR.dark[1], 0.8);
+  return finishProp(f);
+}
+
+function paintCone() {
+  // A-frame CAUTION WET FLOOR sign: in a nuclear bunker, the least of anyone's worries
+  const f = makeFrame(22, 30);
+  fillPoly(f, [{ x: 4, y: 29 }, { x: 8, y: 1 }, { x: 14, y: 1 }, { x: 18, y: 29 }], DR.yellow[2]);
+  fillPoly(f, [{ x: 16, y: 29 }, { x: 14, y: 1 }, { x: 15, y: 1 }, { x: 19, y: 29 }], DR.yellow[0]);
+  line(f, 8, 1, 14, 1, DR.yellow[4]);
+  fillRect(f, 7, 4, 8, 3, PR.dark[1]);
+  stencil(f, 7, 5, 'WET', DR.yellow[4], 1);
+  // the little man, mid-slip
+  blob(f, 11, 12, 1.4, 1.4, PR.dark, {});
+  line(f, 11, 13, 10, 18, PR.dark[1]);
+  line(f, 10, 18, 14, 21, PR.dark[1]);
+  line(f, 10, 18, 7, 22, PR.dark[1]);
+  line(f, 11, 15, 14, 12, PR.dark[1]);
+  line(f, 11, 15, 8, 14, PR.dark[1]);
+  fillRect(f, 6, 24, 10, 1, PR.dark[1]);
+  return finishProp(f);
+}
+
+function paintChains() {
+  const f = makeFrame(22, 44);
+  const link = (x, y, side) => {
+    if (side) { fillRect(f, x - 1, y - 2, 2, 5, DR.chain[2]); px(f, x - 1, y - 2, DR.chain[4]); }
+    else { blob(f, x, y, 1.8, 2.6, DR.chain, {}); px(f, x, y, INK); }
+  };
+  for (let k = 0; k < 11; k++) link(6 + Math.sin(k * 0.4) * 0.6, 2 + k * 3.6, k % 2);
+  for (let k = 0; k < 8; k++) link(15 + Math.sin(k * 0.5) * 0.8, 2 + k * 3.6, k % 2);
+  // a hook on the long one, with a scrap of somebody's overalls
+  capsule(f, 6, 41, 6, 43, 1, 1, DR.chain, {});
+  capsule(f, 6, 43, 9, 40, 0.9, 0.9, DR.chain, {});
+  fillRect(f, 7, 38, 4, 3, rgba(200, 110, 40, 255));
+  return finishProp(f);
+}
+
+function paintHook() {
+  const f = makeFrame(26, 48);
+  const cx = 12;
+  for (let k = 0; k < 4; k++) blob(f, cx, 2 + k * 3.4, 1.5, 2, DR.chain, {});
+  capsule(f, cx, 14, cx, 17, 1, 1, DR.chain, {});
+  capsule(f, cx, 17, cx + 3, 15, 0.9, 0.9, DR.chain, {});
+  // a side of something, hung by the hock: a narrow shank, then the ribcage
+  capsule(f, cx, 17, cx - 1, 25, 1.8, 2.6, DR.meat, { grain: 0.1, seed: 4401 });
+  blob(f, cx - 1, 16.5, 2, 1.6, DR.bone, {});                           // the knuckle on the hook
+  const body = [{ x: cx - 4, y: 24 }, { x: cx + 3, y: 24 }, { x: cx + 9, y: 32 }, { x: cx + 8, y: 42 },
+    { x: cx + 2, y: 47 }, { x: cx - 6, y: 45 }, { x: cx - 8, y: 36 }];
+  fillPoly(f, body, DR.meat[2]);
+  for (let y = 24; y < 47; y++) {                                       // shade it round
+    for (let x = cx - 9; x <= cx + 10; x++) {
+      if (!(getpx(f, x, y) >>> 24)) continue;
+      const u = (x - cx) / 9;
+      over(f, x, y, u > 0.3 ? DR.meat[1] : u < -0.4 ? DR.meat[3] : DR.meat[2], 0.8);
+    }
+  }
+  fillPoly(f, [{ x: cx + 6, y: 29 }, { x: cx + 9, y: 32 }, { x: cx + 8, y: 42 }, { x: cx + 5, y: 44 }], DR.fat[2]);
+  for (let k = 0; k < 6; k++) {                                         // the ribs, exposed
+    const y = 29 + k * 2.6;
+    line(f, cx - 5 + k * 0.3, y, cx + 5, y + 1.5, DR.bone[3]);
+    line(f, cx - 5 + k * 0.3, y + 1, cx + 5, y + 2.5, DR.meat[0]);
+  }
+  for (let k = 0; k < 3; k++) px(f, cx - 1 + k * 2, 47 + (k % 2), DR.blood[2]);
+  fillRect(f, cx - 6, 36, 7, 5, rgba(226, 226, 216, 255));               // the sticker
+  stencil(f, cx - 6, 36, '???', PR.red[1], 1);
+  return finishProp(f);
+}
+
+function paintBody(dead) {
+  // A member of staff, lying down on the job. Head to the left, feet to the right.
+  const f = makeFrame(52, 20);
+  const Rb = dead === 'guard' ? DR.olive : DR.coat;
+  for (let k = 0; k < 30; k++) {                                       // the pool first
+    const x = 10 + hash2(k, 1, 4501) * 30, y = 15 + hash2(k, 2, 4501) * 4;
+    blob(f, x, y, 2 + hash2(k, 3, 4501) * 4, 1.3, DR.blood, {});
+  }
+  capsule(f, 13, 11, 31, 12, 5, 4.4, Rb, { grain: 0.06, seed: 4502 }); // torso
+  capsule(f, 31, 12, 46, 9, 2.6, 2.2, dead === 'guard' ? DR.olive : PR.dark, {});   // legs
+  capsule(f, 31, 13, 45, 15, 2.6, 2.2, dead === 'guard' ? DR.olive : PR.dark, {});
+  blob(f, 48, 9, 2.4, 1.6, PR.dark, {}); blob(f, 47, 15.5, 2.4, 1.6, PR.dark, {});
+  capsule(f, 16, 8, 24, 3, 1.6, 1.4, Rb, {});                           // an arm flung out
+  blob(f, 25, 2.5, 1.6, 1.4, DR.skin, {});
+  if (dead === 'guard') {
+    blob(f, 7, 12, 4.4, 3.6, DR.olive, { shift: 1 });                  // face down, helmet on
+    fillRect(f, 3, 14, 9, 1, DR.olive[0]);
+  } else {
+    blob(f, 7, 11, 3.8, 3.6, DR.skin, {});                            // face up, glasses askew
+    fillRect(f, 5, 10, 5, 1, INK);
+    px(f, 6, 13, DR.blood[2]);
+    fillRect(f, 16, 14, 6, 4, rgba(150, 110, 60, 255));               // the clipboard
+    fillRect(f, 17, 15, 4, 2, DR.coat[4]);
+    over(f, 20, 10, DR.blood[2], 0.9); over(f, 21, 11, DR.blood[1], 0.9); over(f, 22, 10, DR.blood[2], 0.9);
+  }
+  return finishProp(f);
+}
+
+function paintNosecone() {
+  const f = makeFrame(32, 64);
+  const cx = 15;
+  // cradle
+  box(f, 3, 55, 26, 8, PR.hazard, { seed: 4601 });
+  for (let x = 3; x < 29; x += 6) fillRect(f, x, 55, 3, 8, PR.dark[1]);
+  // the cone, standing on its base like someone forgot where it goes
+  for (let y = 2; y < 56; y++) {
+    const t = (y - 2) / 53;
+    const r = 1.5 + Math.pow(t, 0.62) * 11;
+    blob(f, cx, y, r, 1.2, PR.white, { mode: 'cyl', nyBias: -0.25, grain: 0.03, seed: 4602 + y });
+  }
+  for (let y = 2; y < 10; y++) for (let x = cx - 5; x <= cx + 5; x++) if (getpx(f, x, y) >>> 24) over(f, x, y, PR.red[2], 0.9);
+  for (let x = cx - 12; x <= cx + 12; x++) for (let y = 38; y < 42; y++) if (getpx(f, x, y) >>> 24) over(f, x, y, PR.dark[1], 0.9);
+  stencil(f, cx - 3, 26, '07', PR.dark[1], 0.9);
+  stencil(f, cx - 3, 44, 'NO', PR.dark[1], 0.8);
+  stencil(f, cx - 7, 50, 'STEP', PR.dark[1], 0.8);
+  for (let k = 0; k < 5; k++) px(f, cx - 8 + k * 4, 36, PR.dark[0]);
+  return finishProp(f);
+}
+
+function paintPinball() {
+  const f = makeFrame(46, 52);
+  // backbox: an explosion and a woman in a bikini riding a bomb. It was 1987.
+  box(f, 7, 1, 30, 20, DR.cab, { seed: 4701 });
+  fillRect(f, 9, 3, 26, 13, rgba(40, 20, 60, 255));
+  blob(f, 22, 12, 9, 6, flat(rgba(255, 150, 40, 255)), {});
+  blob(f, 22, 11, 6, 4, flat(rgba(255, 230, 120, 255)), {});
+  capsule(f, 14, 8, 28, 10, 2.2, 2, PR.steel, {});                      // the bomb
+  blob(f, 19, 6.4, 1.3, 1.3, flat(rgba(40, 18, 40, 255)), {});          // her, silhouetted
+  capsule(f, 19, 7, 21, 9, 1, 1, flat(rgba(40, 18, 40, 255)), {});
+  capsule(f, 21, 9, 24, 11, 0.8, 0.8, flat(rgba(40, 18, 40, 255)), {});
+  stencil(f, 10, 16, 'NUKE EM', PR.hazard[4], 1);
+  glow(f, 22, 10, 12, rgba(255, 200, 120, 255), { halo: 0, tint: 0.15, seed: 4702 });
+  // cabinet and playfield glass
+  fillPoly(f, [{ x: 5, y: 34 }, { x: 37, y: 34 }, { x: 43, y: 22 }, { x: 11, y: 22 }], rgba(30, 40, 90, 255));
+  for (let k = 0; k < 8; k++) px(f, 14 + k * 3.4, 25 + (k % 3) * 2.5, [PR.red[4], PR.hazard[4], GLOW_GREEN][k % 3]);
+  line(f, 5, 34, 37, 34, DR.cab[4]);
+  box(f, 5, 34, 32, 8, DR.cab, { seed: 4703 });
+  stencil(f, 16, 36, 'TILT', PR.red[3], 1);
+  for (const x of [6, 34]) fillRect(f, x, 42, 2, 9, DR.metal[2]);
+  for (const x of [11, 39]) fillRect(f, x, 34, 2, 13, DR.metal[1]);
+  return finishProp(f);
+}
+
+function paintCandles() {
+  const f = makeFrame(28, 20);
+  const set = [[5, 7], [9, 11], [13, 5], [17, 9], [21, 13], [11, 16], [19, 17]];
+  blob(f, 13, 18, 12, 2, DR.wax, { shift: -1 });                        // the puddle of wax
+  for (const [x, hgt] of set) {
+    const top = 19 - hgt;
+    box(f, x - 1, top, 3, hgt, DR.wax, {});
+    px(f, x, top - 1, rgba(40, 30, 20, 255));
+    blob(f, x, top - 3, 1.1, 2, flat(rgba(255, 196, 80, 255)), {});
+    px(f, x, top - 3, rgba(255, 250, 220, 255));
+    over(f, x + 1, top + 1, DR.wax[4], 0.8);
+  }
+  glow(f, 13, 8, 12, rgba(255, 170, 60, 255), { halo: 0.35, tint: 0.2, seed: 4801, base: rgba(40, 20, 8, 255), core: 0.5 });
+  return finishProp(f);
+}
+
+function paintPew() {
+  const f = makeFrame(60, 32);
+  slab(f, 2, 17, 48, 4, 8, DR.pewwood, { seed: 4901 });                 // seat
+  box(f, 5, 3, 44, 12, DR.pewwood, { grain: 0.1, seed: 4902 });         // back
+  fillRect(f, 5, 3, 44, 1, DR.pewwood[4]);
+  for (let k = 0; k < 3; k++) fillRect(f, 5, 6 + k * 3, 44, 1, DR.pewwood[1]);
+  box(f, 2, 21, 3, 10, DR.pewwood, {}); box(f, 46, 21, 3, 10, DR.pewwood, {});
+  // the end panel, carved with the sign of the thing they pray to
+  box(f, 0, 4, 6, 27, DR.pewwood, { shift: 1, seed: 4903 });
+  const cx = 3, cy = 12;
+  for (let k = 0; k < 3; k++) {
+    const a = -Math.PI / 2 + k * 2.094;
+    px(f, cx + Math.cos(a) * 1.8, cy + Math.sin(a) * 1.8, DR.pewwood[0]);
+    px(f, cx + Math.cos(a) * 2.2, cy + Math.sin(a) * 2.2, DR.pewwood[0]);
+  }
+  px(f, cx, cy, DR.pewwood[0]);
+  fillRect(f, 20, 13, 9, 2, rgba(120, 30, 30, 255));                    // a hymn book
+  return finishProp(f);
+}
+
+function paintTrash() {
+  const f = makeFrame(24, 32);
+  const cx = 11;
+  for (let y = 9; y < 31; y++) blob(f, cx, y, 7 - (y - 9) * 0.05, 1, DR.bin, { mode: 'cyl', nyBias: -0.1 });
+  for (const y of [12, 20, 28]) fillRect(f, cx - 7, y, 14, 1, DR.bin[1]);
+  blob(f, cx, 9, 7.5, 2, DR.bin, { shift: 1 });
+  // overflowing: memos, a pizza box, the banana peel of legend
+  for (let k = 0; k < 6; k++) blob(f, cx - 5 + k * 2, 6 + (k % 3), 2.4, 1.6, DR.coat, { shift: k % 2 });
+  slab(f, cx - 2, 3, 10, 2, 4, DR.pine, { seed: 5001 });
+  capsule(f, cx - 7, 29, cx - 12, 30, 1, 0.6, DR.yellow, {});
+  capsule(f, cx - 7, 29, cx - 10, 26, 0.8, 0.6, DR.yellow, {});
+  px(f, cx + 5, 1, INK); px(f, cx + 2, 0, INK); px(f, cx + 8, 2, INK);  // flies
+  return finishProp(f);
+}
+
+
+/**
+ * Each floor's own column, so the same concrete post is not holding up every
+ * ceiling in the bunker. Same 40x64 frame and footprint as the stock pillar.
+ */
+function paintPillarStyle(style) {
+  const w = 40, h = 64;
+  const f = makeFrame(w, h);
+  const cx = 20;
+  if (style === 'wood') {
+    // THE ORGAN LOFT: a timber post, iron-banded, carved with the priests' sign
+    for (let y = 4; y < h - 3; y++) blob(f, cx, y, 9, 1.2, DR.pewwood, { mode: 'cyl', nyBias: -0.04, grain: 0.14, seed: 5101 + y });
+    for (let y = 6; y < h - 4; y += 3) for (let x = cx - 8; x <= cx + 8; x += 5) over(f, x + ((y * 3) % 4), y, DR.pewwood[0], 0.5);
+    for (const y of [8, 30, 52]) box(f, cx - 10, y, 20, 4, PR.dark, { shift: 1 });
+    for (const y of [8, 30, 52]) for (const x of [cx - 7, cx, cx + 7]) px(f, x, y + 1, PR.steel[4]);
+    box(f, cx - 12, 1, 24, 5, DR.pewwood, { shift: 1, seed: 5102 });   // capital
+    box(f, cx - 12, h - 5, 24, 5, DR.pewwood, { shift: -1, seed: 5103 });
+    const ty = 20;
+    for (let k = 0; k < 3; k++) {                                          // the carved trefoil
+      const a = -Math.PI / 2 + k * 2.094;
+      blob(f, cx + Math.cos(a) * 3.5, ty + Math.sin(a) * 3.5, 1.8, 1.8, flat(DR.pewwood[0]), {});
+    }
+    px(f, cx, ty, DR.pewwood[0]);
+  } else if (style === 'salt') {
+    // SALT CATHEDRAL: the concrete is still in there somewhere
+    for (let y = 6; y < h - 4; y++) blob(f, cx, y, 11, 1.2, PR.crete, { mode: 'cyl', nyBias: -0.04, grain: 0.1, seed: 5201 + y });
+    for (let y = 6; y < h - 3; y++) {
+      for (let x = cx - 13; x <= cx + 13; x++) {
+        const n = fbm(0x5a17, x * 0.18, y * 0.12, 3, 8);
+        const lo = (y - 6) / (h - 10);
+        if (n + lo * 0.35 > 0.72 && Math.abs(x - cx) <= 11 + (n > 0.8 ? 2 : 0)) {
+          px(f, x, y, mix(DR.porcelain[3], DR.porcelain[1], hash2(x, y, 5202) * 0.5));
+        }
+      }
+    }
+    for (let k = 0; k < 6; k++) {                                          // crystals on the shoulders
+      const x = cx - 10 + k * 4, y = 7 + (k % 2) * 2;
+      box(f, x, y - 3, 3, 4, DR.porcelain, {});
+    }
+    blob(f, cx, h - 3, 14, 2.5, DR.porcelain, { shift: -1 });              // a drift at the foot
+  } else if (style === 'rust') {
+    // THE FURNACE: an I-beam gone orange, sweating at the rivets
+    box(f, cx - 12, 2, 24, 5, PR.rust, { shift: 1, seed: 5301 });
+    box(f, cx - 12, h - 7, 24, 6, PR.rust, { shift: -1, seed: 5302 });
+    box(f, cx - 4, 7, 8, h - 14, PR.rust, { grain: 0.12, seed: 5303 });     // the web
+    box(f, cx - 12, 7, 5, h - 14, PR.rust, { shift: 1, grain: 0.1, seed: 5304 });   // flanges
+    box(f, cx + 7, 7, 5, h - 14, PR.rust, { shift: -1, grain: 0.1, seed: 5305 });
+    for (let y = 10; y < h - 8; y += 6) { px(f, cx - 10, y, PR.rust[4]); px(f, cx + 9, y, PR.rust[3]); }
+    speckle(f, cx - 12, 7, 24, h - 14, PR.rust[0], 0.08, 5306, 0.8);
+    for (let k = 0; k < 4; k++) {                                          // heat-bluing near the floor
+      for (let x = cx - 12; x < cx + 12; x++) over(f, x, h - 12 - k * 2, rgba(80, 70, 120, 255), 0.25);
+    }
+    glow(f, cx, h - 10, 8, rgba(255, 120, 40, 255), { halo: 0, tint: 0.25, seed: 5307 });
+  } else {
+    // MUTTER: a conduit column wrapped in cable, blinking to itself
+    box(f, cx - 11, 2, 22, h - 4, DR.cab, { grain: 0.06, seed: 5401 });
+    for (let y = 6; y < h - 6; y += 5) {
+      for (let x = cx - 10; x < cx + 10; x++) px(f, x, y + ((x + y) & 1), PR.dark[(x >> 2) & 1 ? 1 : 2]);
+    }
+    const cols = [PR.red, DR.bottle, PR.hazard];
+    for (let k = 0; k < 3; k++) {
+      for (let y = 3; y < h - 3; y++) {
+        const x = cx - 8 + k * 7 + Math.sin(y * 0.3 + k) * 1.5;
+        px(f, x, y, cols[k][2]); px(f, x + 1, y, cols[k][1]);
+      }
+    }
+    for (let k = 0; k < 6; k++) px(f, cx - 6 + (k % 3) * 6, 12 + k * 8, k % 2 ? GLOW_GREEN : PR.red[4]);
+    box(f, cx - 13, 1, 26, 4, DR.metal, { shift: 1 });
+    box(f, cx - 13, h - 5, 26, 4, DR.metal, { shift: -1 });
+  }
+  return finishProp(f);
+}
 function paintProps(out) {
   out.key_red = paintKey(rgba(206, 46, 42, 255));
   out.key_blue = paintKey(rgba(56, 118, 224, 255));
@@ -3510,6 +4110,33 @@ function paintProps(out) {
   out.weapon_halo = paintWeapon('halo');
   out.weapon_pipebomb = paintWeapon('pipebomb');
   out.weapon_deadman = paintWeapon('deadman');
+  // set dressing (maps.js DECOR names these prop_<kind>)
+  out.prop_desk = paintDesk();
+  out.prop_chair = paintChair();
+  out.prop_filing = paintFiling();
+  out.prop_locker = paintLocker();
+  out.prop_vending = paintVending();
+  out.prop_cooler = paintCooler();
+  out.prop_toilet = paintToilet();
+  out.prop_urinal = paintUrinal();
+  out.prop_skeleton = paintSkeleton();
+  out.prop_sandbags = paintSandbags();
+  out.prop_crate = paintCrate();
+  out.prop_crates = paintCrates();
+  out.prop_console = paintConsole();
+  out.prop_plant = paintPlant();
+  out.prop_mop = paintMop();
+  out.prop_cone = paintCone();
+  out.prop_chains = paintChains();
+  out.prop_hook = paintHook();
+  out.prop_corpse = paintBody('staff');
+  out.prop_corpse2 = paintBody('guard');
+  out.prop_nosecone = paintNosecone();
+  out.prop_pinball = paintPinball();
+  out.prop_candles = paintCandles();
+  out.prop_pew = paintPew();
+  out.prop_trash = paintTrash();
+  for (const style of ['wood', 'salt', 'rust', 'tech']) out[`pillar_${style}`] = paintPillarStyle(style);
 }
 
 // ---------------------------------------------------------------------------

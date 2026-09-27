@@ -121,7 +121,9 @@ export function renderWorld(game, W, H) {
 
   for (const it of game.items) {
     if (it.taken) continue;
+    // Columns wear the floor's own material; the stock concrete post is the fallback.
     const key = it.kind === 'weapon' ? `weapon_${it.weapon || 'splitter'}`
+      : it.kind === 'pillar' ? (lv.pillarKey && art.sprites[lv.pillarKey] ? lv.pillarKey : 'pillar')
       : it.kind === 'treasure' ? `treasure${(Math.floor(game.time * 6) % 4)}`
       : it.kind === 'flare' ? `flare${Math.floor(game.time * 9) % 3}`
       : it.kind === 'ammo' ? 'ammo_flak'
@@ -135,6 +137,21 @@ export function renderWorld(game, W, H) {
       h: it.kind === 'pillar' ? 0.95 : it.kind === 'barrel' ? 0.62 : it.kind === 'lamp' ? 0.16 : 0.34,
       emissive: it.kind === 'lamp' || it.kind === 'flare',
     });
+  }
+
+  // Set dressing from the level parser: desks, lockers, the odd colleague. It
+  // never moves, so each piece keeps one billboard for the life of the level.
+  const decor = lv.decor;
+  if (decor) {
+    for (let i = 0; i < decor.length; i++) {
+      const d = decor[i];
+      let spr = d._spr;
+      if (spr === undefined) {
+        const f = art.sprites[d.key];
+        spr = d._spr = f ? { x: d.x, y: d.y, z: d.z || 0, frame: f, h: d.h, emissive: !!d.emissive } : null;
+      }
+      if (spr) S.push(spr);
+    }
   }
 
   // Warheads and their contrails. The trail is what makes a sky read as busy.

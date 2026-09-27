@@ -3,7 +3,7 @@
 //
 //   node tools/preview-textures.js [outDir]
 import { writePng } from './png.js';
-import { buildTextures, TEXTURE_ORDER } from '../src/engine/textures.js';
+import { buildTextures, TEXTURE_ORDER, TEXTURE_BASE } from '../src/engine/textures.js';
 
 const OUT = process.argv[2] || '/tmp/claude-0/-home-user-MComm/1d9ae501-9927-5c9d-832d-0ee312d588ac/scratchpad';
 const TEX = 64, AREA = TEX * TEX;
@@ -60,7 +60,7 @@ function sheet(path, items, { cols, scale, bg = 0xff181418, fg = 0xffc8c8d0 }) {
 }
 
 // ---- build + check -------------------------------------------------------
-const { atlas, count, names, emissive } = buildTextures();
+const { atlas, count, names, emissive } = buildTextures({ all: true });
 const lumOf = (c) => 0.299 * (c & 255) + 0.587 * ((c >>> 8) & 255) + 0.114 * ((c >>> 16) & 255);
 
 let fails = 0;
@@ -114,8 +114,29 @@ const TILE_X = ['CONCRETE', 'CONCRETE_CRACKED', 'STEEL_PLATE', 'STEEL_RIVET', 'P
   'FLOOR_DIRT', 'FLOOR_BLOOD', 'CEIL_CONCRETE', 'CEIL_PIPES', 'CEIL_FLESH', 'FLOOR_DECK'];
 const TILE_Y = ['FLOOR_CONCRETE', 'FLOOR_GRATE', 'FLOOR_TILE', 'FLOOR_DIRT', 'FLOOR_BLOOD',
   'CEIL_CONCRETE', 'CEIL_PIPES', 'CEIL_FLESH', 'FLOOR_DECK'];
+// the level materials added with the dressing set tile the same way
+const NEW_FLOORS = ['FLOOR_LINO', 'FLOOR_SALT', 'FLOOR_RAISED', 'FLOOR_SCORCH', 'FLOOR_BOARDS',
+  'CEIL_OFFICE', 'CEIL_SALT', 'CEIL_CABLES', 'CEIL_BEAMS', 'CEIL_ROOF'];
+TILE_X.push('OFFICE_WALL', 'SALT_WALL', 'LOCKERS', 'SERVER', 'ORGAN_PIPES', ...NEW_FLOORS);
+TILE_Y.push(...NEW_FLOORS);
 
-console.log(`atlas ${atlas.length} px  (expect ${32 * AREA}) ${atlas.length === 32 * AREA ? 'OK' : 'WRONG'}`);
+console.log(`atlas ${atlas.length} px  (expect ${count * AREA}) ${atlas.length === count * AREA ? 'OK' : 'WRONG'}`);
+if (atlas.length !== count * AREA) fails++;
+// assets.js keeps its own copy of the order for the fallback atlas; the two
+// must agree or a fallback boot paints every variant as the wrong material.
+{
+  const { TEXTURE_ORDER: assetOrder } = await import('../src/engine/assets.js').catch(() => ({}));
+  if (assetOrder) {
+    const same = assetOrder.length === names.length && assetOrder.every((n, i) => n === names[i]);
+    console.log(`assets.js TEXTURE_ORDER ${same ? 'matches' : 'DIFFERS FROM'} textures.js (${assetOrder.length} vs ${names.length})`);
+    if (!same) fails++;
+  }
+  // and every texture the level data may name must exist
+  const { VALID_TEXTURES } = await import('../src/game/maps.js');
+  const missing = VALID_TEXTURES.filter((n) => !names.includes(n));
+  console.log(missing.length ? `MISSING from atlas: ${missing.join(', ')}` : `all ${VALID_TEXTURES.length} level textures present`);
+  fails += missing.length;
+}
 console.log('idx name              colours   sd  mean  min  max  seamX seamY  emis  result');
 for (const r of rows) {
   const d = atlas.subarray(r.i * AREA, (r.i + 1) * AREA);
@@ -134,12 +155,38 @@ for (const r of rows) {
       (r.colours < 12 ? ' colours' : '') + (r.sd <= 8 ? ' flat' : '') + (seamBad ? ' seam' : ''))
   );
 }
+// A dressed cell sits next to plain cells of its own material, so its border
+// must be the base's border: anything painted across the edge shows as a seam.
+{
+  const edgeDiff = (a, b, which) => {
+    let s2 = 0;
+    for (let k = 0; k < TEX; k++) {
+      const pts = which === 'x' ? [[0, k], [TEX - 1, k]] : [[k, 0], [k, TEX - 1]];
+      for (const [x, y] of pts) s2 += Math.abs(lumOf(a[y * TEX + x]) - lumOf(b[y * TEX + x]));
+    }
+    return s2 / (TEX * 2);
+  };
+  let bad = 0;
+  for (const [n, base] of Object.entries(TEXTURE_BASE || {})) {
+    const i = names.indexOf(n), j = names.indexOf(base);
+    const a = atlas.subarray(i * AREA, (i + 1) * AREA), b = atlas.subarray(j * AREA, (j + 1) * AREA);
+    const floorish = /^(FLOOR|CEIL)/.test(n);
+    const dx = edgeDiff(a, b, 'x'), dy = floorish ? edgeDiff(a, b, 'y') : 0;
+    if (dx > 6 || dy > 6) { bad++; console.log(`  seam: ${n} differs from ${base} at its border (x ${dx.toFixed(1)}, y ${dy.toFixed(1)})`); }
+  }
+  console.log(bad ? `${bad} dressed textures break their base's border` : `all ${Object.keys(TEXTURE_BASE || {}).length} dressed textures keep their base's border`);
+  fails += bad;
+}
 console.log(fails === 0 ? `ALL ${count} TEXTURES PASS` : `${fails} FAILURES of ${count}`);
 
 // ---- images --------------------------------------------------------------
 sheet(`${OUT}/textures.png`, frames, { cols: 8, scale: 3 });
 sheet(`${OUT}/detail-a.png`, frames.slice(0, 16), { cols: 4, scale: 5 });
-sheet(`${OUT}/detail-b.png`, frames.slice(16), { cols: 4, scale: 5 });
+sheet(`${OUT}/detail-b.png`, frames.slice(16, 32), { cols: 4, scale: 5 });
+// the dressing set, in pages a person can actually read
+for (let p = 0, n = 32; n < frames.length; p++, n += 16) {
+  sheet(`${OUT}/detail-v${p}.png`, frames.slice(n, n + 16), { cols: 4, scale: 5 });
+}
 
 // tiling proof: 3x2 repeat of each tileable texture
 {
