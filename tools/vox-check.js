@@ -377,6 +377,30 @@ check('persistent chains are small (3 voices, <= 70 nodes)',
   check('cancel() empties the queue', vox._queue.length === 0 && vox.busy === false);
 }
 
+/* 9b. onStart: a queued line says when it is heard, a dropped one never does */
+{
+  vox.cancel(); ctx.advance(0.5);
+  const log = [];
+  const hook = (tag) => ({ priority: 0, onStart: (d) => log.push([tag, +ctx.currentTime.toFixed(2), d]) });
+  const a = vox.say('The first announcement takes the floor.', hook('a'));
+  const b = vox.say('The second one waits its turn.', hook('b'));
+  vox.say('The third waits too.', hook('c'));
+  vox.say('The fourth is one too many.', hook('d'));
+  check('onStart fires at once for a line that takes the floor, with its duration',
+    log.length === 1 && log[0][0] === 'a' && log[0][2] === a, JSON.stringify(log));
+  ctx.advance(a + 0.05);
+  check('...and for a queued line only when it starts', vox.busy === true && log.length === 2 && log[1][0] === 'b' && b > 0,
+    JSON.stringify(log));
+  vox.say('A warning cuts in.', { priority: 3, onStart: (d) => log.push(['w', +ctx.currentTime.toFixed(2), d]) });
+  vox.cancel(); ctx.advance(5);
+  check('a line cut out of the queue, or dropped from a full one, never reports a start',
+    log.map((x) => x[0]).join('') === 'abw' && vox.busy === false, log.map((x) => x[0]).join(''));
+  let threw = false;
+  try { vox.say('A hostile hook.', { onStart: () => { throw new Error('boom'); } }); } catch (e) { threw = true; }
+  check('a hook that throws does not break say()', !threw && vox.busy === true);
+  vox.cancel(); ctx.advance(0.5);
+}
+
 /* 10. cancel() stops everything it created */
 {
   vox.cancel(); ctx.advance(1.0);

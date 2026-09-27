@@ -252,6 +252,19 @@ export class Hud {
     if (this.mapOpen) this.drawMap(buf, W, H, s, game);
   }
 
+  /**
+   * The mouse hints sit in the band the guns fill, so they get a plate of their
+   * own like the subtitles do; bare, the text runs into the slide or the drum
+   * and cannot be read.
+   */
+  drawHint(buf, W, H, s, str, opts, a) {
+    const y = H * 0.735;
+    const m = this.text.measure(str, opts);
+    fillRectBuf(buf, W, H, W / 2 - m.w / 2 - 8 * s, y - opts.size * 0.95 - 3 * s,
+      m.w + 16 * s, opts.size * 1.3 + 6 * s, INK, Math.min(0.62, a + 0.2));
+    this.text.draw(buf, W, H, W / 2, y, str, opts);
+  }
+
   // -------------------------------------------------------------- reticle
 
   drawReticle(buf, W, H, s, game) {
@@ -280,20 +293,21 @@ export class Hud {
     if (!game.input.locked && game.input.lockBlocked) {
       // Somewhere that will never give us the mouse: say how it works instead.
       if (game.input.mouseMoved) {
-        this.text.draw(buf, W, H, W / 2, H * 0.735, 'CURSOR STEERING  ·  AIM OFF-CENTRE TO TURN', {
+        this.drawHint(buf, W, H, s, 'CURSOR STEERING  ·  AIM OFF-CENTRE TO TURN', {
           size: Math.round(7 * s), color: rgba(150, 200, 220, 255), align: 'center',
-          track: Math.round(2.4 * s), alpha: 0.4,
-        });
+          track: Math.round(2.4 * s), alpha: 0.6,
+        }, 0.6);
       }
     } else if (!game.input.locked && (pending || game.input.mouseMoved)) {
-      this.text.draw(buf, W, H, W / 2, H * 0.735,
+      const a = (pending ? 0.72 : 0.5) + 0.25 * Math.abs(Math.sin(this.tick * 2.2));
+      this.drawHint(buf, W, H, s,
         pending ? 'CLICK TO TAKE THE MOUSE' : 'CLICK TO CAPTURE THE MOUSE', {
           size: Math.round((pending ? 11 : 8) * s),
           color: pending ? rgba(255, 207, 92, 255) : rgba(150, 200, 220, 255),
           align: 'center', track: Math.round(3 * s),
           glow: pending ? 0.7 : 0, glowColor: rgba(255, 160, 40, 255),
-          alpha: (pending ? 0.72 : 0.35) + 0.25 * Math.abs(Math.sin(this.tick * 2.2)),
-        });
+          alpha: a,
+        }, a);
     }
     const spec = p.spec;
     const T = this.text;

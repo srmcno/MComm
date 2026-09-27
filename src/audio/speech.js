@@ -31,10 +31,15 @@
 // when the first Speech is constructed, which main.js does inside the first
 // user gesture.
 
-import { pickLine, pickLineAt, voiceOf } from './vox.js';
+import { pickLine, pickLineAt, voiceOf, lineStarted } from './vox.js';
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const num = (v, d) => (isNum(v) ? v : d);
+/** Tell a queued line's owner it will never be spoken (it was cut or bumped). */
+function dropped(item) {
+  const f = item && item.opts && item.opts.onDrop;
+  if (typeof f === 'function') { try { f(); } catch { /* a caller's hook must not break the queue */ } }
+}
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 export const VOICE_MODES = Object.freeze(['natural', 'robot', 'off']);
@@ -651,6 +656,8 @@ export class Speech {
    * Speak. Returns the estimated duration in seconds, or 0 if nothing will be
    * said. Floor rules match the formant Vox: a higher priority cuts in, equal
    * or lower waits in a queue of at most two, and a stale line is dropped.
+   * A queued line returns its estimate too; `opts.onStart` fires when it
+   * really starts, on either engine, and never for a line that was dropped.
    */
   say(text, opts = {}) {
     try {
@@ -669,7 +676,7 @@ export class Speech {
       if (this._active) {
         if (prio > this._active.priority) {
           this._stopActive();
-          this._queue = this._queue.filter((q) => q.priority >= prio);
+          this._queue = this._queue.filter((q) => q.priority >= prio || (dropped(q), false));
         } else {
           const est = this._estimate(raw, o);
           const item = { raw, opts: o, priority: prio, est };
@@ -678,7 +685,7 @@ export class Speech {
           for (let i = 1; i < this._queue.length; i++) {
             if (this._queue[i].priority < this._queue[worst].priority) worst = i;
           }
-          if (prio > this._queue[worst].priority) { this._queue[worst] = item; return est; }
+          if (prio > this._queue[worst].priority) { dropped(this._queue[worst]); this._queue[worst] = item; return est; }
           return 0;
         }
       }
@@ -796,6 +803,7 @@ export class Speech {
     this._route = 'natural';
     this._lastText = plainText(raw);
     this._lastVoice = role;
+    lineStarted(o, est);
 
     const fire = () => {
       if (a.dead || this._active !== a) return;

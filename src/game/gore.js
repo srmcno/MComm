@@ -21,19 +21,21 @@ const ALL_PARTS = HEAD | ARM_R | ARM_L | LEG_R | LEG_L;
 /**
  * Joint heights as fractions of the frame height, measured up from the feet.
  * The sprite generator publishes its own rig and that wins; these are the
- * numbers read off the current skeletons, so a build without it still puts
- * the stumps somewhere sensible. Quadrupeds read hip as the hind hip and
- * shoulder as the front shoulder.
+ * numbers it publishes for the current skeletons (buildSprites().rig, to two
+ * places), so a build without it still puts the stumps where the art has
+ * them. Quadrupeds read hip as the hind hip and shoulder as the front
+ * shoulder; their neck is the shoulder line and the head hangs out in front,
+ * at or below it.
  */
 export const RIG_DEFAULT = {
-  wrencher: { hip: 0.41, shoulder: 0.65, neck: 0.69, head: 0.82 },
-  sparker: { hip: 0.45, shoulder: 0.70, neck: 0.75, head: 0.84 },
-  bellows: { hip: 0.37, shoulder: 0.63, neck: 0.67, head: 0.76 },
-  priest: { hip: 0.46, shoulder: 0.71, neck: 0.75, head: 0.84 },
-  gorger: { hip: 0.32, shoulder: 0.62, neck: 0.64, head: 0.71 },
-  howler: { hip: 0.42, shoulder: 0.65, neck: 0.69, head: 0.80 },
-  ghoul: { hip: 0.50, shoulder: 0.41, neck: 0.52, head: 0.60 },
-  stalker: { hip: 0.46, shoulder: 0.35, neck: 0.48, head: 0.56 },
+  wrencher: { hip: 0.43, shoulder: 0.69, neck: 0.73, head: 0.81 },
+  sparker: { hip: 0.46, shoulder: 0.71, neck: 0.76, head: 0.83 },
+  bellows: { hip: 0.38, shoulder: 0.64, neck: 0.67, head: 0.75 },
+  priest: { hip: 0.45, shoulder: 0.70, neck: 0.73, head: 0.82 },
+  gorger: { hip: 0.31, shoulder: 0.61, neck: 0.64, head: 0.69 },
+  howler: { hip: 0.41, shoulder: 0.64, neck: 0.68, head: 0.78 },
+  ghoul: { hip: 0.50, shoulder: 0.40, neck: 0.40, head: 0.38 },
+  stalker: { hip: 0.45, shoulder: 0.34, neck: 0.34, head: 0.29 },
 };
 export const QUADRUPED = { ghoul: true, stalker: true };
 // Attacks that need hands. Lose both and the thing has to improvise.
@@ -80,25 +82,66 @@ function popcount(m) { let n = 0; while (m) { n += m & 1; m >>= 1; } return n; }
 
 // ------------------------------------------------------------ rotation
 
-const ROT = new WeakMap();
 const ROT_STEPS = 16;
+// Least recently used first: a Map keeps insertion order, and a source frame
+// is moved to the back whenever it is asked for. Only bodies and bits in the
+// air need turning, so a few megapixels covers any room; a campaign's worth of
+// maimed corpses would not fit in a phone's tab.
+const ROT = new Map();
+const ROT_MAX_PX = 6e6;
+const ROT_MAX_FRAMES = 160;
+let rotPx = 0;
+let rotLast = null;
 
 /**
  * A frame turned by `ang` radians clockwise, snapped to one of sixteen steps
  * and cached against the source frame. Built the first time it is asked for;
- * a spinning gib costs one rotation per step, once per game.
+ * a spinning gib costs one rotation per step while it is in use, and the
+ * cache lets the least recently turned frames go once it is over budget.
  */
 export function rotFrame(f, ang) {
   if (!f) return f;
   let step = Math.round(ang / (TAU / ROT_STEPS)) % ROT_STEPS;
   if (step < 0) step += ROT_STEPS;
   if (step === 0) return f;
-  let arr = ROT.get(f);
-  if (!arr) { arr = new Array(ROT_STEPS).fill(null); ROT.set(f, arr); }
-  let out = arr[step];
-  if (!out) { out = rotate(f, step * TAU / ROT_STEPS); arr[step] = out; }
+  let ent = ROT.get(f);
+  if (!ent) {
+    ent = { steps: new Array(ROT_STEPS).fill(null), px: 0 };
+    ROT.set(f, ent);
+  } else if (ent !== rotLast) {
+    ROT.delete(f); ROT.set(f, ent);
+  }
+  rotLast = ent;
+  let out = ent.steps[step];
+  if (!out) {
+    out = rotate(f, step * TAU / ROT_STEPS);
+    ent.steps[step] = out;
+    const px = out.w * out.h;
+    ent.px += px; rotPx += px;
+    if (rotPx > ROT_MAX_PX || ROT.size > ROT_MAX_FRAMES) rotEvict(f);
+  }
   return out;
 }
+
+/** Drop the least recently used rotations until the cache is back in budget. */
+function rotEvict(keep) {
+  for (const [src, ent] of ROT) {
+    if (rotPx <= ROT_MAX_PX && ROT.size <= ROT_MAX_FRAMES) break;
+    if (src === keep) continue;
+    ROT.delete(src);
+    rotPx -= ent.px;
+  }
+}
+
+/** Forget every rotation, for a level change. */
+export function clearRotations() {
+  ROT.clear();
+  rotPx = 0;
+  rotLast = null;
+}
+
+/** What the rotation cache holds, for the tools. */
+export function rotationStats() { return { frames: ROT.size, px: rotPx }; }
 
 function rotate(f, a) {
   // Square canvas big enough for the diagonal, so nothing is cropped.
@@ -200,7 +243,10 @@ export class Gore {
     this._J = { x: 0, y: 0, z: 0, px: 0, py: 0, pz: 0, ox: 0, oy: 0 };
     this._order = [0, 0, 0, 0, 0];
     this._bodyPx = {};
-    this.sndT = { land: 0, spurt: 0, tink: 0, bump: 0 };
+    this.sndT = { land: 0, spurt: 0, tink: 0, bump: 0, boing: 0 };
+    // Rips and pops heard this frame, played together as one bigger one.
+    this._rip = { name: 'limb_rip', n: 0, pan: 0, vol: 0, t: 0, lo: 0.9, hi: 1.15 };
+    this._pop = { name: 'head_pop', n: 0, pan: 0, vol: 0, t: 0, lo: 0.92, hi: 1.12 };
     this.stats = { severed: 0, heads: 0, punts: 0, goals: 0 };
   }
 
@@ -209,6 +255,35 @@ export class Gore {
       while (list.length) this.free.push(list.pop());
     }
     for (const f of this.fountains) { f.active = false; f.e = null; }
+    this._rip.n = 0; this._pop.n = 0;
+    clearRotations();
+  }
+
+  /**
+   * A pipe bomb in a crowd takes twenty limbs off in one frame. Twenty rips
+   * stacked on each other are a phasey blob that crowds the gun out of the
+   * mixer, so they are gathered here and go out as one or two louder ones.
+   */
+  _queueRip(q, pan, vol) {
+    // The loudest one says where it came from.
+    if (!q.n || vol > q.vol) { q.pan = pan; q.vol = vol; }
+    q.n++;
+  }
+
+  _flushRip(q, dt) {
+    q.t -= dt;
+    if (!q.n || q.t > 0) return;
+    const n = q.n;
+    q.n = 0;
+    q.t = 0.06;
+    const rng = this.rng;
+    const sfx = this.game.sound;
+    // Bigger, and a touch lower, the more came off at once.
+    const vol = q.vol * Math.min(1.6, 1 + 0.15 * (n - 1));
+    const rate = randRange(rng, q.lo, q.hi) * (n > 1 ? Math.max(0.84, 1 - 0.03 * (n - 1)) : 1);
+    sfx.sfx(q.name, { pan: q.pan, vol, rate });
+    // A crowd of them gets a second, lower layer spread the other way.
+    if (n >= 3) sfx.sfx(q.name, { pan: -q.pan * 0.5, vol: vol * 0.7, rate: rate * 0.8, delay: 0.018 });
   }
 
   get art() { return this.game.art || {}; }
@@ -362,7 +437,7 @@ export class Gore {
     const vol = this.volAt(J.x, J.y, 1);
     if (bit === HEAD) {
       this.stats.heads++;
-      game.sound.sfx('head_pop', { pan, vol, rate: randRange(rng, 0.92, 1.12) });
+      this._queueRip(this._pop, pan, vol);
       // A little pink mist where the head was, for the frame it takes to read.
       // An explosion brings its own cloud; two would read as a balloon.
       if (!(opts && opts.noRun)) P.effect({
@@ -371,7 +446,7 @@ export class Gore {
         fps: 24, size: e.height * 0.8, additive: false, alpha: 0.8,
       });
     } else {
-      game.sound.sfx('limb_rip', { pan, vol, rate: randRange(rng, 0.9, 1.15) });
+      this._queueRip(this._rip, pan, vol);
     }
     this.fountain(e, bit, bit === HEAD ? 3.2 : randRange(rng, 2.0, 4.0), bit === HEAD ? 1.5 : 1);
     this.updateMobility(e);
@@ -471,48 +546,80 @@ export class Gore {
     }
 
     if (!this.canMaim(e)) {
-      if (killed && spec.gib && force >= spec.gib) this.game.gib(e);
+      // Once. After that it is the branch above: thrown, not re-minced.
+      if (killed && spec.gib && force >= spec.gib) {
+        if (!e._gibbed) this.game.gib(e);
+        e.gibbed = true;
+      }
       if (killed) this.launch(e, dx, dy, knock, spec.lift || 0);
       return 0;
     }
     const heavy = e.maxHp >= 150;
     if (killed && spec.gib && force >= spec.gib * (heavy ? 1.6 : 1)) {
       const n = this.explode(e, dx, dy, 6 + knock * 0.6);
-      this.game.gib(e);
+      // The kill may have thrown the chunks already (the big ones come apart
+      // as they die); game.gib() marks a body it has done.
+      if (!e._gibbed) this.game.gib(e);
       this.launch(e, dx, dy, knock * 1.2, (spec.lift || 3) + 1.5);
       if (n) this.popMany(e, n);
       return n;
     }
 
     const rig = this.rigOf(e.kind);
-    const zf = (bz - e.z) / e.height;
+    const quad = !!QUADRUPED[e.kind];
+    // Heights are read off where the body is drawn, the same as zoneAt():
+    // a legless crawler's head is down by the floor, not where it used to be.
+    const z0 = e.z + (e.zOff || 0);
+    const zf = (bz - z0) / e.height;
     const ca = Math.cos(e.ang), sa = Math.sin(e.ang);
-    const facing = ((bx - e.x) * -sa + (by - e.y) * ca) >= 0 ? 1 : -1;
+    const ox = bx - e.x, oy = by - e.y;
+    const facing = (ox * -sa + oy * ca) >= 0 ? 1 : -1;
+    const ahead = (ox * ca + oy * sa) / (e.radius || 0.3);   // along its facing, in radii
     const arm = facing > 0 ? ARM_R : ARM_L, armO = facing > 0 ? ARM_L : ARM_R;
     const leg = facing > 0 ? LEG_R : LEG_L, legO = facing > 0 ? LEG_L : LEG_R;
     const o = this._order;
+    // A burst right at the head is a headshot, and the Widow fused to the
+    // range is built to deliver exactly that. Measured to the head itself, so
+    // a burst two cells over it does not count.
+    let near, headshot;
+    if (quad) {
+      // Four legs carry the head out in front at shoulder height, so height
+      // alone says nothing. It has to go off in front of the face and close.
+      const J = this.joint(e, HEAD);
+      near = Math.hypot(bx - J.px, by - J.py, bz - J.pz);
+      headshot = ahead > 0.3 && near < 0.7;
+    } else {
+      near = Math.hypot(ox, oy, bz - (z0 + rig.head * e.height));
+      headshot = zf >= rig.neck - 0.04 && near < 1.4;
+    }
     // The part nearest the blast goes first; the rest follow in order of
     // how exposed they are at that height.
-    if (zf >= rig.neck - 0.04) { o[0] = HEAD; o[1] = arm; o[2] = armO; o[3] = leg; o[4] = legO; }
+    if (quad) {
+      // Below the belly it is legs, front pair or hind pair by which end the
+      // burst is nearer; above it, the head only if it was a headshot.
+      const legTop = Math.min(rig.hip, rig.shoulder) * 0.95;
+      const fore = ahead >= 0;
+      const a1 = fore ? arm : leg, a2 = fore ? armO : legO, b1 = fore ? leg : arm, b2 = fore ? legO : armO;
+      if (headshot && zf >= legTop) { o[0] = HEAD; o[1] = a1; o[2] = a2; o[3] = b1; o[4] = b2; }
+      else { o[0] = a1; o[1] = a2; o[2] = b1; o[3] = b2; o[4] = HEAD; }
+    } else if (zf >= rig.neck - 0.04) { o[0] = HEAD; o[1] = arm; o[2] = armO; o[3] = leg; o[4] = legO; }
     else if (zf >= rig.hip) { o[0] = arm; o[1] = armO; o[2] = leg; o[3] = legO; o[4] = HEAD; }
     else { o[0] = leg; o[1] = legO; o[2] = arm; o[3] = armO; o[4] = HEAD; }
 
     const ratio = force / Math.max(10, e.maxHp);
     let p = spec.sever * clamp(ratio * 2.2, 0.25, 1.5) * (killed ? 1.5 : 1);
-    // A burst right at the head is a headshot, and the Widow fused to the
-    // range is built to deliver exactly that. Measured to the head itself, so
-    // a burst two cells over it does not count.
-    const near = Math.hypot(bx - e.x, by - e.y, bz - (e.z + rig.head * e.height));
-    const headshot = zf >= rig.neck - 0.04 && near < 1.4;
     let n = 0;
     const max = spec.parts || 1;
-    const quad = !!QUADRUPED[e.kind];
     for (let k = 0; k < 5 && n < max; k++) {
       const b = o[k];
       if (e.maim & b) continue;
       // Losing a head is fatal, so off a hit that was not, it takes a real
       // headshot. Off a kill it is just another part.
-      let chance = b !== HEAD ? p : headshot ? spec.head * (1.15 - near / 2.8) : killed ? spec.head * p * 0.35 : 0;
+      let chance = b !== HEAD ? p : headshot ? spec.head * (1.15 - near / (quad ? 1.4 : 2.8)) : killed ? spec.head * p * 0.35 : 0;
+      // A quadruped's head is right there at body height, so a burst that
+      // was never going to kill it has to have hit hard for its size too:
+      // scaled by how much of what it had left the burst took.
+      if (b === HEAD && quad && !killed) chance *= clamp(force / Math.max(1, e.hp + force), 0.02, 1);
       // Parts come off where the blast is. A burst at the hat should not take
       // the boots, so a part far above or below the burst is rarely the one
       // that goes; a real headshot is already measured to the head itself.
@@ -521,6 +628,8 @@ export class Gore {
           : (b & (ARM_R | ARM_L)) ? (quad ? rig.shoulder * 0.6 : rig.shoulder - 0.1)
           : rig.hip * 0.55;
         chance *= clamp(1.15 - Math.abs(zf - pz) * 2.2, 0.08, 1);
+        // The far end of a quadruped is sheltered by the rest of it.
+        if (quad && b !== HEAD && ((b & (ARM_R | ARM_L)) ? ahead < -0.5 : ahead > 0.5)) chance *= 0.5;
       }
       if (rng() < chance) {
         if (this.sever(e, b, dx, dy, 3 + knock * 0.55)) { n++; p *= 0.6; }
@@ -636,6 +745,9 @@ export class Gore {
     c.ang = rng() * TAU;
     c.spin = this.screenSpin(vx, vy) * randRange(rng, 7, 15);
     c.rest = c.head ? 0.56 : 0.3;
+    // A long while, but not for ever: a room that saw a fight an age ago
+    // should not still be full of arms waiting for the Boot.
+    c.life = randRange(rng, 45, 70);
     c.trail = randRange(rng, 0.8, 1.6);
     // Born inside the body it came off; it must not bounce back and hit it.
     c.hitId = e.id;
@@ -706,6 +818,7 @@ export class Gore {
   kickable(px, py, ca, sa, range, arc) {
     let best = null, bestS = 1e9;
     const cosArc = Math.cos(arc);
+    const lv = this.game.level;
     for (let pass = 0; pass < 2; pass++) {
       const list = pass === 0 ? this.parts : this.gibs;
       for (let i = 0; i < list.length; i++) {
@@ -718,7 +831,10 @@ export class Gore {
         if (cosA < cosArc && d > 0.5) continue;
         // Heads first: nobody walks up to a severed head to kick a toe.
         const s = d - cosA - (c.head ? 1.2 : 0) + (pass ? 0.8 : 0);
-        if (s < bestS) { bestS = s; best = c; }
+        if (s >= bestS) continue;
+        // The Boot does not reach through a wall, however thin.
+        if (!lv.lineOfSight(px, py, c.x, c.y)) continue;
+        bestS = s; best = c;
       }
     }
     return best;
@@ -899,7 +1015,9 @@ export class Gore {
   update(dt) {
     const game = this.game;
     const T = this.sndT;
-    T.land -= dt; T.spurt -= dt; T.tink -= dt; T.bump -= dt;
+    T.land -= dt; T.spurt -= dt; T.tink -= dt; T.bump -= dt; T.boing -= dt;
+    this._flushRip(this._rip, dt);
+    this._flushRip(this._pop, dt);
     // Blood trails share a budget per frame, so sixty limbs in the air at once
     // cost what a handful would.
     this._trailBudget = 8;
@@ -907,7 +1025,7 @@ export class Gore {
       const f = this.fountains[i];
       if (!f.active) continue;
       f.t += dt;
-      if (f.t >= f.life || !f.e || f.e.gibbedAway) { f.active = false; f.e = null; continue; }
+      if (f.t >= f.life || !f.e) { f.active = false; f.e = null; continue; }
       f.next -= dt;
       if (f.next <= 0) {
         // The heart slows as it runs out of things to pump.
@@ -1072,7 +1190,12 @@ export class Gore {
         c.z = 0.97 - c.rad;
         c.vz = -c.vz * 0.3;
       }
-      if (c.z <= c.rad) { c.z = c.rad; this._floor(c, h); }
+      if (c.z <= c.rad) { c.z = c.rad; this._floor(c, h); continue; }
+      // Coming down over a parapet: its cap is the floor here. The
+      // side walls are only solid below the cap, so nothing else stops it
+      // sinking into the sandbags where nobody can see it or kick it.
+      const cap = this._capAt(lv, c.x, c.y);
+      if (cap > 0 && c.z - c.rad < cap && c.vz <= 0) { c.z = cap + c.rad; this._floor(c, h); }
     }
     c.ang += c.spin * dt;
 
@@ -1101,6 +1224,12 @@ export class Gore {
     return lv.blockedAt(x, y, z);
   }
 
+  /** The top of the wall cell under x,y (a parapet's cap), or 0 for open floor. */
+  _capAt(lv, x, y) {
+    // A parapet's cap or the top of a waist-high prop: somewhere to land.
+    return lv.restAt ? lv.restAt(x, y) : 0;
+  }
+
   _wall(c, axis) {
     const game = this.game;
     const rng = this.rng;
@@ -1111,8 +1240,12 @@ export class Gore {
     if (speed < 1.2) return;
     const pan = game.panAt(c.x, c.y);
     if (c.type === T_CASING) { this._tink(c, speed * 0.5); return; }
-    if (c.head) game.sound.sfx('bone_bounce', { pan, vol: this.volAt(c.x, c.y, clamp(speed / 10, 0.2, 1)) });
-    else if (this.sndT.land <= 0) {
+    if (c.head) {
+      if (this.sndT.boing <= 0) {
+        this.sndT.boing = 0.05;
+        game.sound.sfx('bone_bounce', { pan, vol: this.volAt(c.x, c.y, clamp(speed / 10, 0.2, 1)) });
+      }
+    } else if (this.sndT.land <= 0) {
       this.sndT.land = 0.05;
       game.sound.sfx('meat_thud', { pan, vol: this.volAt(c.x, c.y, clamp(speed / 10, 0.15, 0.9)), rate: randRange(rng, 0.9, 1.2) });
     }
@@ -1167,10 +1300,15 @@ export class Gore {
       if (c.type === T_CASING) {
         this._tink(c, vi);
       } else if ((c.head || c.bone) && vi > 2.2) {
-        game.sound.sfx('bone_bounce', {
-          pan, vol: this.volAt(c.x, c.y, clamp(vi / 8, 0.15, 1) * (c.bone ? 0.45 : 1)),
-          rate: randRange(rng, 0.9, 1.15) * (c.bone ? 1.35 : 1),
-        });
+        // Gated like the thuds: a bomb's worth of shards landing together
+        // is one clatter, not fourteen.
+        if (this.sndT.boing <= 0) {
+          this.sndT.boing = 0.05;
+          game.sound.sfx('bone_bounce', {
+            pan, vol: this.volAt(c.x, c.y, clamp(vi / 8, 0.15, 1) * (c.bone ? 0.45 : 1)),
+            rate: randRange(rng, 0.9, 1.15) * (c.bone ? 1.35 : 1),
+          });
+        }
       } else if (!c.landed || vi > 3.5) {
         if (this.sndT.land <= 0) {
           this.sndT.land = 0.045;

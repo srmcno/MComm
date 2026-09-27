@@ -1398,12 +1398,19 @@ check("a queued line is captioned with its own words, not the voice it waited be
 // ======================================================= gore and physics
 // A stage for these: an indoor run of open floor with a wall at the end, the
 // floor emptied of its own staff, and targets placed by hand.
-await page.evaluate(() => {
+await page.evaluate(async () => {
   const g = window.NUKEHAUS.game;
+  const { makeRng } = await import('./src/core/math.js');
   window.GORE = {
     arena() {
       g.newGame(1); g.loadLevel(1); g.setState('play'); g._god = true;
       g.enemies.length = 0;
+      // Every stage starts from the same dice and a steady hand, so a check
+      // does not pass or fail on what the checks before it happened to roll
+      // (nail spread and sever chances both draw from these).
+      g.rng = makeRng(0xA11CE);
+      if (g.gore) g.gore.rng = makeRng(0x90e5eed);
+      g.radio.reset();
       const lv = g.level;
       let best = null, bestOpen = -1;
       for (let y = 3; y < lv.H - 3; y++) for (let x = 3; x < lv.W - 9; x++) {
@@ -1421,6 +1428,8 @@ await page.evaluate(() => {
       }
       const p = g.player;
       p.x = best.x; p.y = best.y; p.ang = 0; p.pitch = 0; p.vx = 0; p.vy = 0;
+      p.recoilPitch = 0; p.kick = 0; p.kickVel = 0; p.cooldown = 0;
+      p.fireAnim = 0; p.kickAnim = 0; p.throwAnim = 0; p.flashTimer = 0;
       return best;
     },
     async spawn(kind, dx, dy) {
@@ -1698,6 +1707,612 @@ s = await page.evaluate(async () => {
 check('a thrown body bowls over the one behind it, a blast re-throws a lying head, a nail makes it hop',
   s.bowled > 10 && s.pushed > 0.3 && s.blown > 1 && s.hop > 0.08,
   `pin took ${s.bowled} and slid ${s.pushed}; head blown ${s.blown}, hopped ${s.hop}`);
+
+// ------- 60. side views: the sprite faces the way it walks, and the arm shot
+// off the flank nearest the camera is the one that disappears
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  G.arena();
+  const p = g.player;
+  const e = await G.spawn('wrencher', 2, 0);
+  const out = {};
+  // Facing +y, which is screen-right for a camera looking down +x: its right
+  // flank faces the camera, and the generator paints that as view 1.
+  e.ang = Math.PI / 2; e.state = 2;
+  out.right = e.frameKey(p.x, p.y);
+  out.rightZone = g.gore.zoneAt(e, e.x - e.radius, e.y, e.z + e.height * 0.6);
+  e.ang = -Math.PI / 2;
+  out.left = e.frameKey(p.x, p.y);
+  out.leftZone = g.gore.zoneAt(e, e.x - e.radius, e.y, e.z + e.height * 0.6);
+  e.ang = Math.PI;
+  out.front = e.frameKey(p.x, p.y);
+  e.headlessT = 1; e.state = 6; e.ang = Math.PI / 2;
+  out.headless = e.frameKey(p.x, p.y);
+  g.enemies.length = 0;
+  return out;
+});
+check('side views: facing screen-right shows its right side (view 1), screen-left its left (view 3)',
+  /_walk1_/.test(s.right) && s.rightZone === 2 && /_walk3_/.test(s.left) && s.leftZone === 4 &&
+  /_walk0_/.test(s.front) && /_walk1_/.test(s.headless),
+  `${s.right} near flank ${s.rightZone}, ${s.left} near flank ${s.leftZone}, ${s.front}, headless ${s.headless}`);
+
+// ------- 61. gore bookkeeping: the rotation cache is bounded and cleared, a
+// dead wasp is only gibbed once, and the fallback rig matches the art's
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  const gore = await import('./src/game/gore.js');
+  const art = window.NUKEHAUS.art;
+  const out = {};
+  // Every die and dead frame of the cast, maimed, turned through every step.
+  let peak = 0;
+  const keys = Object.keys(art.sprites).filter((k) => /^(wrencher|sparker|ghoul)_(die\d|dead)$/.test(k));
+  for (const k of keys) for (const m of [0, 3, 12, 31]) {
+    const f = m ? art.maim(k, m) : art.sprites[k];
+    if (!f) continue;
+    for (let st = 1; st < 16; st++) { gore.rotFrame(f, st * Math.PI / 8); peak = Math.max(peak, gore.rotationStats().px); }
+  }
+  out.peakMpx = +(peak / 1e6).toFixed(2);
+  G.arena();
+  out.afterClear = gore.rotationStats().px;
+  let fallbackOff = 0;
+  for (const [k, r] of Object.entries(art.rig || {})) {
+    const d = gore.RIG_DEFAULT[k];
+    if (!d) { fallbackOff = 9; continue; }
+    for (const j of ['hip', 'shoulder', 'neck', 'head']) fallbackOff = Math.max(fallbackOff, Math.abs(d[j] - r[j]));
+  }
+  out.rigOff = +fallbackOff.toFixed(3);
+  const w = await G.spawn('wasp', 3, 0);
+  w.hurt(999, g, g.player.x, g.player.y);
+  G.step(1);
+  let gibs = 0;
+  const gib0 = g.gib;
+  g.gib = (e) => { if (e === w) gibs++; return gib0.call(g, e); };
+  for (let k = 0; k < 3; k++) { g.explodeAt(w.x + 0.3, w.y, 0.4, 3, 90); G.step(0.4); }
+  g.gib = gib0;
+  out.waspGibs = gibs;
+  g.enemies.length = 0;
+  return out;
+});
+check('the rotation cache stays inside its budget and a level load empties it; a dead wasp gibs once',
+  s.peakMpx <= 6.5 && s.afterClear === 0 && s.waspGibs === 1 && s.rigOff < 0.006,
+  `peak ${s.peakMpx} Mpx, ${s.afterClear} px after load, wasp gibbed ${s.waspGibs}x, fallback rig off by ${s.rigOff}`);
+
+// ------- 62. blasts: a quadruped's head only goes to a hard burst at its face,
+// and a crawler loses its head to a burst where its head is actually drawn
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  const { WEAPONS } = await import('./src/game/weapons.js');
+  const { HEAD, LEG_R, LEG_L } = await import('./src/game/gore.js');
+  G.arena();
+  const spec = WEAPONS.pistol.gore;
+  const out = { quad: 0, above: 0, crawler: 0 };
+  for (let i = 0; i < 200; i++) {
+    g.enemies.length = 0;
+    const e = await G.spawn(i & 1 ? 'stalker' : 'ghoul', 4, 0);
+    e.hp = e.maxHp = 200; e.state = 1;
+    const bx = e.x - 0.7, by = e.y, bz = e.z + e.height * 0.5;
+    const killed = e.hurt(12, g, bx, by);
+    g.gore.blast(e, bx, by, bz, 12, spec, killed);
+    if (e.maim & HEAD) out.quad++;
+    g.gore.clear();
+    const q = await G.spawn('ghoul', 4, 1);
+    q.hp = q.maxHp = 34; q.state = 1;
+    q.hurt(26, g, q.x, q.y);
+    g.gore.blast(q, q.x, q.y, q.z + q.height + 0.6, 26, spec, false);
+    if (q.maim & HEAD) out.above++;
+    g.gore.clear();
+  }
+  for (let i = 0; i < 60; i++) {
+    g.enemies.length = 0;
+    const e = await G.spawn('wrencher', 4, 0);
+    e.hp = e.maxHp = 2000; e.state = 5; e.stateT = -99;
+    g.gore.sever(e, LEG_R, 0, 1, 1); g.gore.sever(e, LEG_L, 0, -1, 1);
+    e._pose(1 / 60, g);
+    const z = e.z + e.zOff + g.gore.rigOf('wrencher').head * e.height;
+    g.gore.blast(e, e.x - 0.2, e.y, z, 30, spec, false);
+    if (e.maim & HEAD) out.crawler++;
+    g.gore.clear();
+  }
+  g.enemies.length = 0;
+  return out;
+});
+check('a light burst in front of a quadruped rarely takes its head, one over it never does, a crawler\'s drawn head is hit',
+  s.quad < 40 && s.above === 0 && s.crawler > 30,
+  `quad heads ${s.quad}/200, over-the-top ${s.above}/200, crawler heads ${s.crawler}/60`);
+
+// ------- 63. loose parts: over a parapet they land on its cap, they fade in
+// the end, the Boot does not reach them through a wall, and a pipe bomb in a
+// crowd is one big rip rather than twenty
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  G.arena();
+  const lv = g.level;
+  const out = {};
+  let cell = null;
+  for (let y = 1; y < lv.H - 1 && !cell; y++) for (let x = 2; x < lv.W - 1 && !cell; x++) {
+    const i = y * lv.W + x;
+    if (lv.wall[i] === 1 && lv.height[i] < 0.5 && !lv.blocked(x - 0.5, y + 0.5) && !lv.blocked(x - 1.5, y + 0.5)) cell = [x, y, lv.height[i]];
+  }
+  const e = await G.spawn('wrencher', 3, 0);
+  g.enemies.length = 0;
+  if (cell) {
+    const c = g.gore.spawnPart(e, 'arm', cell[0] - 0.6, cell[1] + 0.5, 0.62, 1.4, 0, 2.6);
+    for (let k = 0; k < 180; k++) g.gore.update(1 / 60);
+    out.parapet = { inCell: lv.idx(c.x, c.y) === cell[1] * lv.W + cell[0], z: +(c.z - c.rad).toFixed(2), cap: +cell[2].toFixed(2), settled: c.settled };
+    out.life = +c.life.toFixed(1);
+  }
+  // A full wall with open floor either side of it, along x.
+  let wall = null;
+  for (let y = 2; y < lv.H - 2 && !wall; y++) for (let x = 3; x < lv.W - 2 && !wall; x++) {
+    const i = y * lv.W + x;
+    if (lv.wall[i] === 1 && lv.height[i] >= 1 && !lv.propBlock[i] && !lv.wall[i - 1] && !lv.wall[i - 2] && !lv.wall[i + 1] &&
+        !lv.propBlock[i - 1] && !lv.propBlock[i - 2] && !lv.propBlock[i + 1]) wall = [x, y];
+  }
+  if (wall) {
+    g.gore.clear();
+    const px = wall[0] - 1.2, py = wall[1] + 0.5;
+    const behind = g.gore.spawnPart(e, 'head', wall[0] + 1.3, py, 0.1, 0, 0, 0);
+    behind.settled = true;
+    out.throughWall = !!g.gore.kickable(px, py, 1, 0, 3, 0.6);
+    const front = g.gore.spawnPart(e, 'arm', wall[0] - 0.3, py, 0.1, 0, 0, 0);
+    front.settled = true;
+    out.inFront = g.gore.kickable(px, py, 1, 0, 3, 0.6) === front;
+  }
+  G.arena();
+  for (const [k, dx, dy] of [['wrencher', 3.6, -0.5], ['sparker', 4.0, 0.45], ['priest', 4.6, -0.1], ['wrencher', 4.2, -0.9], ['sparker', 3.3, 0.8]]) {
+    await G.spawn(k, dx, dy);
+  }
+  const heard = {};
+  const sfx0 = g.sound.sfx;
+  g.sound.sfx = (name, o) => { heard[name] = (heard[name] || 0) + 1; return sfx0.call(g.sound, name, o); };
+  g.detonateBomb({ x: g.player.x + 3.9, y: g.player.y, z: 0.3, spec: { blastRadius: 6.2, damage: 130, gore: { sever: 0.9, head: 0.5, parts: 4, knock: 18, gib: 70, lift: 5 } } });
+  G.step(0.1);
+  g.sound.sfx = sfx0;
+  out.rips = heard.limb_rip || 0;
+  out.pops = heard.head_pop || 0;
+  out.severed = g.gore.parts.length;
+  g.enemies.length = 0;
+  return out;
+});
+check('a limb over a parapet lands on its cap and fades in time; the Boot stops at walls; a crowd bomb is one or two rips',
+  s.parapet && s.parapet.z >= s.parapet.cap - 0.02 && s.life >= 45 && s.life <= 70 &&
+  s.throughWall === false && s.inFront === true && s.severed >= 8 && s.rips >= 1 && s.rips <= 2 && s.pops <= 2,
+  `parapet ${JSON.stringify(s.parapet)}, life ${s.life}s; through wall ${s.throughWall}, in front ${s.inFront}; ` +
+  `${s.severed} parts off, ${s.rips} rips, ${s.pops} pops`);
+
+// ------- 64. an armless gunman has to improvise, and improvising is worse
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  const { ARM_R, ARM_L } = await import('./src/game/gore.js');
+  G.arena();
+  const p = g.player;
+  const out = {};
+  for (const kind of ['sparker', 'bellows', 'wrencher']) {
+    const e = await G.spawn(kind, 1, 0);
+    e.hp = e.maxHp = 999;
+    g.gore.sever(e, ARM_R, 0, 1, 1); g.gore.sever(e, ARM_L, 0, -1, 1);
+    let worst = 0;
+    const hurt0 = p.hurt;
+    p.hurt = (n) => { worst = Math.max(worst, n); };
+    for (let i = 0; i < 20; i++) e._strike(g, true, 1.0);
+    p.hurt = hurt0;
+    out[kind] = { armless: e.armless, worst: +worst.toFixed(1), real: +(e.def.damage * (g.diff.enemyDamage || 1)).toFixed(1) };
+    g.enemies.length = 0;
+  }
+  return out;
+});
+check('an armless Sparker or Bellows headbutts for less than its real attack; a Wrencher still hurts',
+  s.sparker.armless && s.sparker.worst > 0 && s.sparker.worst < s.sparker.real &&
+  s.bellows.armless && s.bellows.worst < s.bellows.real * 0.5 && s.wrencher.worst >= 7,
+  `sparker ${s.sparker.worst} vs ${s.sparker.real}, bellows ${s.bellows.worst} vs ${s.bellows.real}, wrencher ${s.wrencher.worst}`);
+
+// ------ 65. the Boot still finds the bomb, the barrel and the door when the
+// floor in front of it is covered in limbs, gibs and the dead
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  const { Enemy } = await import('./src/game/entities.js');
+  const out = {};
+  G.arena();
+  const p = g.player;
+  const x0 = p.x, y0 = p.y;
+  // The floor's own drums would take the kick first, which is right but not this test.
+  for (const it of g.items) if (it.kind === 'barrel') it.taken = true;
+  let popup = null;
+  const oPop = g.hud.popup.bind(g.hud);
+  g.hud.popup = (t, o) => { popup = popup || t; return oPop(t, o); };
+  // A settled pipe bomb with a corpse and a loose arm lying beside it.
+  p.owned.pipebomb = true; p.ammo.bomb = 5; g.bombs.length = 0;
+  p.pitch = g.rc.projY * -0.6;
+  g.tryBomb();
+  G.step(1.5);
+  const b = g.bombs[0];
+  if (b) {
+    const e = new Enemy('wrencher', b.x + 0.4, b.y - 0.3);
+    e.alive = false; e.state = 7;
+    g.enemies.push(e);
+    g.gore.spawnPart(e, 'arm', b.x - 0.5, b.y + 0.1, 0.2, 0, 0, 0);
+    G.step(0.3);
+    p.x = b.x - 1.2; p.y = b.y; p.ang = 0; p.pitch = 0; p.kickCooldown = 0;
+    popup = null;
+    g.tryKick();
+    out.bomb = { settledBefore: true, vx: +b.vx.toFixed(1), popup };
+    g.blowBombs(); G.step(0.5);
+  }
+  // A barrel with a gib on the floor between the boot and the drum.
+  g.enemies.length = 0; g.gore.clear();
+  p.x = x0; p.y = y0; p.ang = 0; p.pitch = 0; p.kickCooldown = 0;
+  const bar = { kind: 'barrel', x: x0 + 1.3, y: y0, z: 0, prop: true, taken: false, solid: true, hp: 20 };
+  g.items.push(bar);
+  g.gore.spawnGib(x0 + 0.6, y0, 0.1, 0, 0, 0, 2, 0.15);
+  G.step(0.3);
+  g.tryKick();
+  out.barrel = bar.taken;
+  G.step(1);
+  // A shut door with a gib at its foot.
+  g.gore.clear();
+  const lv = g.level;
+  let door = null;
+  for (let i = 0; i < lv.wall.length && !door; i++) {
+    if (lv.wall[i] !== 2) continue;
+    const dx0 = i % lv.W, dy0 = (i / lv.W) | 0;
+    for (const [sx, sy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const j = (dy0 + sy) * lv.W + dx0 + sx;
+      if (!lv.wall[j] && !lv.propBlock[j]) { door = { i, x: dx0 + sx + 0.5, y: dy0 + sy + 0.5, ang: Math.atan2(-sy, -sx) }; break; }
+    }
+  }
+  if (door) {
+    lv.doorState[door.i] = 0; lv.doorOpen[door.i] = 0;
+    p.keys = [true, true, true];
+    p.x = door.x; p.y = door.y; p.ang = door.ang; p.kickCooldown = 0;
+    g.gore.spawnGib(p.x + Math.cos(door.ang) * 0.35, p.y + Math.sin(door.ang) * 0.35, 0.1, 0, 0, 0, 3, 0.15);
+    G.step(0.2);
+    p.kickCooldown = 0;
+    g.tryKick();
+    out.door = lv.doorState[door.i];
+  }
+  g.hud.popup = oPop;
+  return out;
+});
+check('the Boot punts a live bomb, bursts a barrel and opens a door past the limbs, gibs and corpses at its feet',
+  !!s.bomb && s.bomb.vx > 5 && s.bomb.popup === 'BOMB PUNTED' && s.barrel === true && s.door === 1,
+  `bomb vx ${s.bomb && s.bomb.vx} (${s.bomb && s.bomb.popup}), barrel ${s.barrel ? 'blown' : 'intact'}, door state ${s.door}`);
+
+// ------ 66. a waist-high prop stops bodies, not the nails fired over it
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  G.arena();
+  const p = g.player, lv = g.level;
+  // A sandbag pile two cells out, a wrencher behind it.
+  const pi = lv.idx(p.x + 2, p.y);
+  const oldB = lv.propBlock[pi], oldH = lv.propH[pi];
+  lv.propBlock[pi] = 1; lv.propH[pi] = 0.4;
+  const e = await G.spawn('wrencher', 3.6, 0);
+  e.hp = e.maxHp = 999; e.state = 5; e.stateT = -99;
+  p.z = 0.5;
+  const chest = e.z + e.height * 0.7;
+  G.aimAt(e.x, e.y, chest);
+  p.owned.nailer = true; p.weapon = 'nailer'; p.pendingWeapon = null; p.ammo.nail = 100;
+  let hits = 0;
+  for (let k = 0; k < 6; k++) {
+    const hp = e.hp;
+    e.x = p.x + 3.6; e.y = p.y; e.state = 5; e.stateT = -99;
+    p.cooldown = 0; g.tryFire(); G.step(1 / 60);
+    if (e.hp < hp) hits++;
+  }
+  // Straight into the bags: the pile takes it and the wrencher does not.
+  const dx = 2.5, dz = 0.2 - p.z, L = Math.hypot(dx, dz);
+  const low = g.traceHit(p.x, p.y, p.z, dx / L, 0, dz / L, 26);
+  const walk = lv.blocked(p.x + 2, p.y);
+  const pil = g.items.find((it) => it.kind === 'pillar');
+  const pillar = pil ? lv.blockedAt(pil.x, pil.y, 0.9) : true;
+  lv.propBlock[pi] = oldB; lv.propH[pi] = oldH;
+  return { hits, lowWall: low.wall, lowEnemy: !!low.enemy, lowX: +(low.x - p.x).toFixed(2), walk, pillar };
+});
+check('a nail fired over a sandbag pile hits the wrencher behind it; one fired into the pile stops there',
+  s.hits >= 5 && s.lowWall && !s.lowEnemy && s.lowX < 2.2 && s.walk && s.pillar,
+  `${s.hits}/6 over the top hit; low shot stopped at ${s.lowX} (wall ${s.lowWall}); bags block walking ${s.walk}, pillar blocks at 0.9 ${s.pillar}`);
+
+// ------ 67. a body comes apart once: repeat blasts over a corpse, or a kill
+// that asks for gib() twice, do not double the chunks and the sound
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  G.arena();
+  const p = g.player;
+  const sfx = g.sound.sfx.bind(g.sound);
+  let gibSounds = 0;
+  g.sound.sfx = (n, o) => { if (n === 'gib') gibSounds++; return sfx(n, o); };
+  const spec = { blastRadius: 6.2, damage: 130, gore: { sever: 0.9, head: 0.5, parts: 4, knock: 18, gib: 70, lift: 5 } };
+  const w = await G.spawn('wasp', 3, 0);
+  w.state = 1; w.hurt(999, g, p.x, p.y);
+  G.step(1.5);
+  const wasp = [];
+  for (let k = 0; k < 3; k++) {
+    const s0 = gibSounds, c0 = g.gore.gibs.length;
+    g.detonateBomb({ x: w.x + 0.6, y: w.y + 0.3, z: 0.3, spec });
+    wasp.push([gibSounds - s0, g.gore.gibs.length - c0]);
+    G.step(1);
+  }
+  g.enemies.length = 0;
+  const gh = await G.spawn('ghoul', 3, 0);
+  gh.state = 1;
+  const s1 = gibSounds;
+  g.detonateBomb({ x: gh.x + 0.3, y: gh.y, z: 0.3, spec });
+  const ghoul = gibSounds - s1;
+  g.sound.sfx = sfx;
+  return { wasp, ghoul, ghoulDead: !gh.alive };
+});
+check('gib() runs once per body: later blasts over a dead wasp add nothing, a gib-force kill plays one gib',
+  s.wasp[0][0] <= 1 && s.wasp[1][0] === 0 && s.wasp[2][0] === 0 && s.wasp[1][1] === 0 && s.wasp[2][1] === 0
+    && s.ghoulDead && s.ghoul === 1,
+  `wasp per bomb [sounds, chunks] ${JSON.stringify(s.wasp)}; ghoul kill gib sounds ${s.ghoul}`);
+
+// ------ 68. a flak blast sweeping over a body takes it apart the way the
+// weapon that fired it does, not with the generic explosion spec
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  const { WEAPONS } = await import('./src/game/weapons.js');
+  const { EXPLOSION_GORE } = await import('./src/game/gore.js');
+  G.arena();
+  const p = g.player;
+  // Only the sweep's calls count; the ground pass has always used the weapon spec.
+  for (const it of g.items) if (it.kind === 'barrel') it.taken = true;
+  const specs = [];
+  let inSweep = false;
+  const blast = g.gore.blast.bind(g.gore), sweep = g.onBlastSweep.bind(g);
+  g.onBlastSweep = (b) => { inSweep = true; try { sweep(b); } finally { inSweep = false; } };
+  g.gore.blast = (e, x, y, z, f, spec, k) => {
+    if (inSweep) specs.push(spec === WEAPONS.pistol.gore ? 'pistol' : spec === EXPLOSION_GORE ? 'explosion' : 'other');
+    return blast(e, x, y, z, f, spec, k);
+  };
+  const e = await G.spawn('wrencher', 4, 0);
+  e.hp = e.maxHp = 999; e.state = 5; e.stateT = -99;
+  p.owned.pistol = true; p.weapon = 'pistol'; p.pendingWeapon = null; p.ammo.flak = 100;
+  G.aimAt(e.x, e.y, e.z + e.height * 0.6);
+  p.fuse = Math.hypot(e.x - p.x, e.y - p.y); p.autoFuse = false;
+  p.cooldown = 0; g.tryFire();
+  G.step(0.8);
+  delete g.gore.blast; delete g.onBlastSweep;
+  return { specs: [...new Set(specs)], n: specs.length };
+});
+check('a Widow burst sweeping over a wrencher uses the Widow gore spec, not EXPLOSION_GORE',
+  s.n >= 1 && s.specs.length === 1 && s.specs[0] === 'pistol', `${s.n} sweep gore.blast calls, specs ${s.specs.join(',')}`);
+
+// ------ 69. the pipe bomb leaves the hand, from any weapon, and an empty or
+// detonator hand is drawn when there is no bomb to hold
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game, G = window.GORE;
+  const R = await import('./src/game/render.js');
+  G.arena();
+  const p = g.player;
+  const vm = g.art.vm;
+  let last = null;
+  const spy = new Proxy(vm, { get(t, k) { if (typeof k === 'string' && /_(idle|fire\d|reload\d)$/.test(k) && !last) last = k; return t[k]; } });
+  const buf = new Uint32Array(320 * 200);
+  const key = () => { last = null; g.art.vm = spy; try { R.drawViewmodel(g, buf, 320, 200); } finally { g.art.vm = vm; } return last; };
+  const seq = (n) => { const out = []; for (let i = 0; i < n; i++) { const k = key(); if (out[out.length - 1] !== k) out.push(k); G.step(1 / 60); } return out; };
+  p.owned.pipebomb = true; p.ammo.bomb = 5; g.bombs.length = 0;
+  p.weapon = 'pipebomb'; p.pendingWeapon = null; p.cooldown = 0; p.kickAnim = 0;
+  const idle = key();
+  g.tryFire();
+  const thrown = seq(40);
+  const waiting = key();
+  p.cooldown = 0; g.tryFire();          // detonate
+  G.step(1);
+  p.ammo.bomb = 0;
+  const empty = key();
+  p.ammo.bomb = 5; p.weapon = 'pistol'; p.cooldown = 0;
+  g.tryBomb();
+  const fromPistol = seq(40);
+  g.blowBombs(); G.step(0.5);
+  return { idle, thrown, waiting, empty, fromPistol };
+});
+check('a pipe bomb throw plays the throw frames from any weapon; no bomb in hand while one is out or the bag is empty',
+  s.idle === 'pipebomb_idle' && s.thrown[0] === 'pipebomb_fire0' && s.thrown.includes('pipebomb_fire1')
+    && s.waiting === 'pipebomb_fire2' && s.empty === 'pipebomb_fire2'
+    && s.fromPistol[0] === 'pipebomb_fire0' && s.fromPistol[s.fromPistol.length - 1] === 'pistol_idle',
+  `thrown ${s.thrown.join('>')}; bomb out ${s.waiting}; empty ${s.empty}; from the Widow ${s.fromPistol.join('>')}`);
+
+// ------ 70. the canvas fills the window through resizes and on ultrawide
+{
+  const sizes = [];
+  for (const [w, h] of [[1600, 900], [2560, 1080], [800, 1000], [1024, 640]]) {
+    await page.setViewportSize({ width: w, height: h });
+    await sleep(400);
+    sizes.push(await page.evaluate(() => {
+      const c = document.getElementById('screen'), r = c.getBoundingClientRect();
+      return [innerWidth, innerHeight, Math.round(r.width), Math.round(r.height), Math.round(r.top)];
+    }));
+  }
+  check('the canvas tracks the window through resizes, including 2560x1080',
+    sizes.every((v) => v[0] === v[2] && v[1] === v[3] && v[4] === 0),
+    sizes.map((v) => `${v[0]}x${v[1]} -> ${v[2]}x${v[3]}`).join(', '));
+}
+
+// ------- 71. a bomb in a crowd cannot take the SFX pool from the player's gun
+// Twenty limb_rips on one frame used to be sixteen stacked copies, and the
+// pool they filled refused the nailer and the flak pistol for most of a second.
+s = await page.evaluate(async () => {
+  const { Sound } = await import('./src/audio/synth.js');
+  const oc = new OfflineAudioContext(2, 44100, 44100);
+  const snd = new Sound();
+  await snd.init(oc);
+  const live = (n) => snd._voices.filter((v) => v.name === n && v.head && !v.fading).length;
+  snd.sfx('pipebomb_blow');
+  for (let i = 0; i < 5; i++) {
+    snd.sfx('enemy_die'); snd.sfx('head_pop');
+    for (let k = 0; k < 4; k++) snd.sfx('limb_rip');
+    snd.sfx('gib');
+  }
+  for (let i = 0; i < 10; i++) snd.sfx('body_slam');
+  for (let i = 0; i < 20; i++) { snd.sfx('meat_thud'); snd.sfx('bone_bounce'); }
+  // and the crowd dying around it, until the pool is full
+  for (const n of ['wrencher_die', 'sparker_die', 'ghoul_die', 'howler_die', 'stalker_die', 'head_punt', 'splat']) {
+    for (let i = 0; i < 3; i++) snd.sfx(n);
+  }
+  const pool = snd._voices.filter((v) => v.pool === 0).length;
+  const rips = live('limb_rip');
+  snd.sfx('nailer_fire');
+  snd.sfx('flak_fire');
+  const out = { pool, rips, nailer: live('nailer_fire'), flak: live('flak_fire'), err: snd._err && snd._err.name };
+  snd.panic();
+  return out;
+});
+check("a bomb's worth of gore on one frame stays three rips deep and never refuses the player's gun",
+  s.pool >= 26 && s.rips <= 3 && s.nailer === 1 && s.flak === 1 && !s.err,
+  `pool ${s.pool}, ${s.rips} limb_rip live, nailer ${s.nailer}, flak ${s.flak}`);
+
+// ------- 72. a stalled frame cannot abort a gated sound effect
+// The audio clock running past the start time used to make gate()'s tail event
+// overlap its own curve, which threw and took the rest of the effect with it.
+s = await page.evaluate(async () => {
+  const { Sound } = await import('./src/audio/synth.js');
+  const oc = new OfflineAudioContext(2, 44100, 44100);
+  const snd = new Sound();
+  await snd.init(oc);
+  const out = {};
+  oc.suspend(0.5).then(() => {
+    const t0 = snd._t;
+    snd._t = function () { return this._now() - 0.03; };     // as if the frame had stalled 30 ms
+    for (const n of ['radio_close', 'radio_static', 'door_close', 'acid_burn', 'roof_open']) {
+      snd._err = null; snd.sfx(n); out[n] = snd._err ? snd._err.name : 'ok';
+    }
+    snd._t = t0;
+    oc.resume();
+  });
+  await oc.startRendering();
+  return out;
+});
+check('a sound effect whose start time the audio clock has already passed still plays whole',
+  Object.values(s).every((x) => x === 'ok'), JSON.stringify(s));
+
+// ------- 73. voice lines have priorities, and a queued line waits for its caption
+// A stand-in engine with the real floor rules: a higher priority cuts in, the
+// rest queue, and onStart fires when a line is actually heard.
+await page.evaluate(() => {
+  window.FAKEVOX = () => {
+    const e = { t: 0, active: null, queue: [], said: [], cancels: 0, engine: 'robot', lastLine: '', lastRequested: '' };
+    const start = (it) => {
+      e.active = { ...it, end: e.t + it.d };
+      e.lastLine = it.text;
+      e.said.push([+e.t.toFixed(2), it.text, it.p]);
+      if (it.o.onStart) it.o.onStart(it.d);
+    };
+    e.pump = () => {
+      if (e.active && e.t >= e.active.end) e.active = null;
+      if (!e.active && e.queue.length) {
+        let b = 0;
+        for (let i = 1; i < e.queue.length; i++) if (e.queue[i].p > e.queue[b].p) b = i;
+        start(e.queue.splice(b, 1)[0]);
+      }
+    };
+    e.say = (text, o = {}) => {
+      const p = o.priority || 0;
+      e.lastRequested = text;
+      e.pump();
+      const it = { text, o, p, d: 3 };
+      if (e.active) {
+        if (p <= e.active.p) {
+          if (e.queue.length >= 2) return 0;
+          e.queue.push(it);
+          return 3;
+        }
+        e.active = null;
+        e.queue = e.queue.filter((q) => q.p >= p);
+      }
+      start(it);
+      return 3;
+    };
+    e.sayLine = (key, o) => e.say(key, o);
+    e.cancel = () => { e.cancels++; e.active = null; e.queue.length = 0; };
+    e.setVolume = () => {};
+    e.setMode = () => {};
+    Object.defineProperty(e, 'busy', { get() { e.pump(); return !!e.active; } });
+    e.step = (dt) => { e.t += dt; e.pump(); };
+    return e;
+  };
+});
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.newGame(1); g.loadLevel(0); g.setState('play');
+  const real = g.vox, hs = g.hud.say, subs = g.subtitlesOn;
+  const v = window.FAKEVOX();
+  g.vox = v; g.subtitlesOn = true; g.radio.reset();
+  const caps = [];
+  g.hud.say = function (t, d) { caps.push([+v.t.toFixed(2), t]); return hs.call(this, t, d); };
+  g.radio.say('ilsa', 'ilsa_low_health', 'Heal.', { priority: 1 });
+  g.radio.update(1 / 60);
+  v.step(1);
+  g.speak('mirv_warning', {}, 'Plural.');
+  const radioAfter = g.radio.current ? g.radio.current.key : null;
+  g.speak('idle_taunt', {}, 'Productivity.');
+  const before = caps.map((c) => c[1]);
+  v.step(2.2);
+  v.step(1);
+  g.vox = real; g.hud.say = hs; g.subtitlesOn = subs; g.radio.reset();
+  const taunt = caps.find((c) => c[1] === 'idle_taunt');
+  return { said: v.said, radioAfter, before, tauntAt: taunt ? taunt[0] : null };
+});
+const mirv = s.said.find((x) => x[1] === 'mirv_warning');
+check('a MIRV warning cuts in over the radio instead of queueing behind it, and takes the portrait with it',
+  !!mirv && mirv[0] === 1 && mirv[2] === 3 && s.radioAfter === null,
+  s.said.map((x) => `${x[0]}s ${x[1]} p${x[2]}`).join(', '));
+check('a line that has to wait is captioned when it is heard, not when it was asked for',
+  !s.before.includes('idle_taunt') && s.tauntAt === 4.2, `caption at ${s.tauntAt}s, voice free at 4.2s`);
+
+// ------- 74. the death exchange is heard whole, and the game over card waits for it
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.newGame(1); g.loadLevel(0); g.setState('play');
+  const real = g.vox;
+  const v = window.FAKEVOX();
+  g.vox = v; g.radio.reset();
+  const idle = { anyPressed: () => false };
+  const god = g._god;
+  g._god = false; g.player.health = 20; g._hurtSaid = false;
+  g.radio.say('brick', 'brick_low_health', 'Ow.', { priority: 1 });
+  g.player.hurt(9999, g, 'test');
+  g.onPlayerHurt(null, 'melee');
+  g.onPlayerHurt(null, 'melee');              // the body takes another hit before the card
+  const queued = g.radio.queue.map((q) => q.key);
+  for (let t = 0; t < 2.6; t += 1 / 30) { g.radio.update(1 / 30); v.step(1 / 30); }
+  const cancelsBefore = v.cancels;
+  g.gameOver('killed');
+  for (let t = 0; t < 16; t += 1 / 30) { g.updateGameOver(1 / 30, idle); v.step(1 / 30); }
+  g.vox = real; g._god = god; g.setState('title');
+  return { queued, said: v.said.map((x) => x[1]), cut: v.cancels - cancelsBefore };
+});
+check("dying queues only the death lines, and Brick's last words, the card and Ilsa's answer all play",
+  s.queued.join() === 'brick_death,ilsa_death' && s.cut === 0 &&
+    s.said.filter((k) => k !== 'brick_low_health').join() === 'brick_death,game_over,ilsa_death' &&
+    !s.said.includes('brick_low_health'),
+  `queued ${s.queued.join('+')}; heard ${s.said.join(' > ')}; ${s.cut} cut`);
+
+// ------- 75. no ducking for silence, and captions read the way the voice does
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game;
+  const { plainText } = await import('./src/audio/speech.js');
+  const real = g.vox, duck = g.sound.duck, vv = g.volVox;
+  const v = window.FAKEVOX();
+  g.vox = v; g.radio.reset();
+  let ducks = 0;
+  g.sound.duck = () => { ducks++; };
+  g.volVox = 0;
+  g.speak('idle_taunt', {}, 'Productivity.');
+  g.speakAs('ilsa', 'ilsa_low_health', 'Heal.');
+  const silent = ducks;
+  g.volVox = vv; v.cancel();
+  g.speak('idle_taunt', {}, 'Productivity.');
+  const heard = ducks - silent;
+  v.cancel();
+  const raw = 'Bunker {Sieben|S IY1 B AH N}, {HH AH} a stray } and | here %s.';
+  g.speakAs('mutter', null, raw);
+  const caption = g.lastSpoken.text;
+  g.vox = real; g.sound.duck = duck; g.radio.reset();
+  return { silent, heard, caption, want: plainText(raw) };
+});
+check('voice volume at zero leaves the music alone, and captions use the same plainText as the voice',
+  s.silent === 0 && s.heard > 0 && s.caption === s.want,
+  `ducks at 0%: ${s.silent}, at full: ${s.heard}; "${s.caption}"`);
 
 // ------------------------------------------------------------- report
 console.log('');

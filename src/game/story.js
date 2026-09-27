@@ -626,6 +626,40 @@ export class Radio {
     this.exIdx = 0;
   }
 
+  /**
+   * Drop everything below priority `p`, the line on air included (and its
+   * voice with it). The player dying keeps the death exchange this way, and
+   * nothing that was waiting in front of it.
+   */
+  keepAbove(p) {
+    for (let i = this.queue.length - 1; i >= 0; i--) {
+      if ((this.queue[i].priority || 0) < p) this.queue.splice(i, 1);
+    }
+    if (this.current && (this.current.priority || 0) < p) {
+      const talking = this.current.job ? this.ownsVoice(this.current) : true;
+      this.current = null;
+      this.cooldown = 0.28;
+      if (talking) this.cancelVoice();
+    }
+  }
+
+  /**
+   * MUTTER took the floor with something that matters more (a warning): the
+   * line on air has lost its voice, so it gives up the portrait as well, and
+   * goes back in the queue to be said whole later if it had barely started.
+   */
+  yieldFloor() {
+    const m = this.current;
+    if (!m) return;
+    this.current = null;
+    this.cooldown = 0.28;
+    if (m.t < m.life * 0.5) {
+      this.queue.unshift({ speaker: m.speaker, key: m.key, text: m.text, priority: m.priority,
+        args: null, delay: 0.3, exact: true });
+      if (this.queue.length > 3) this.queue.length = 3;
+    }
+  }
+
   cancelVoice() {
     const v = this.game && this.game.vox;
     if (v && v.cancel) { try { v.cancel(); } catch { /* the mute path is fine */ } }
@@ -655,17 +689,24 @@ export class Radio {
   }
 
   /**
+   * Whether the voice still talking is this line's own, and not a line that
+   * started after it (MUTTER's game over card, a warning that cut in).
+   */
+  ownsVoice(c) {
+    if (!this.voiceBusy()) return false;
+    const g = this.game;
+    return !c.job || !g || !g.voxJob || g.voxJob === c.job;
+  }
+
+  /**
    * @param {string} speaker  brick | ilsa | mutter
    * @param {string} key      announcer line key
    * @param {string} text     fallback text, also the subtitle
    * @param {object} opts     {once, priority, delay, args}
    */
   say(speaker, key, text, opts = {}) {
-    if (opts.once) {
-      const tag = key + '|' + (text || '').slice(0, 24);
-      if (this.said.has(tag)) return false;
-      this.said.add(tag);
-    }
+    const tag = opts.once ? key + '|' + (text || '').slice(0, 24) : null;
+    if (tag && this.said.has(tag)) return false;
     const pr = opts.priority || 0;
     if (this.current && pr > (this.current.priority || 0) + 1) {
       this.queue.length = 0;
@@ -676,7 +717,15 @@ export class Radio {
       // arrives late. Cut the voice too.
       this.cancelVoice();
     }
-    if (this.queue.length > 2) this.queue.shift();
+    if (this.queue.length > 2) {
+      // Full: the least important waiter makes room, the oldest of them first,
+      // so the plot never loses its place in line to banter.
+      let w = 0;
+      for (let i = 1; i < this.queue.length; i++) if ((this.queue[i].priority || 0) < (this.queue[w].priority || 0)) w = i;
+      if ((this.queue[w].priority || 0) > pr) return false;
+      this.queue.splice(w, 1);
+    }
+    if (tag) this.said.add(tag);
     this.queue.push({ speaker, key, text, priority: pr, args: opts.args, pick: opts.pick, delay: opts.delay || 0, exact: !!opts.exact });
     return true;
   }
@@ -710,25 +759,47 @@ export class Radio {
   update(dt) {
     this.cooldown -= dt;
     if (this.current) {
-      this.current.t += dt;
-      if (this.current.t >= this.current.life) {
+      const c = this.current;
+      if (c.job && !c.job.fired) {
+        // Handed to the voice, which is still finishing somebody else's line:
+        // the clock, the portrait and the caption wait until this one starts.
+        // A line the engine threw away (a warning cut in, or took its place in
+        // the engine's queue) never starts, and nobody heard it, so it goes
+        // back in line to be said whole. A line that went nowhere for another
+        // reason gets one more try, then the next one goes.
+        c.wait = (c.wait || 0) + dt;
+        const busy = this.voiceBusy();
+        if (c.job.fired) { this.onAir(c); return; }
+        if (c.job.dropped || !busy || c.wait > 15) {
+          const tries = (c.tries || 0) + 1;
+          this.current = null;
+          this.cooldown = 0.28;
+          if (tries <= (c.job.dropped ? 3 : 1) && c.wait <= 15) {
+            this.queue.unshift({ speaker: c.speaker, key: c.key, text: c.text, priority: c.priority,
+              args: null, delay: 0.4, exact: true, tries });
+            if (this.queue.length > 3) this.queue.length = 3;
+          }
+        }
+        return;
+      }
+      c.t += dt;
+      if (c.t >= c.life) {
         // The caption's clock is an estimate and the voice is the truth: a
         // natural voice can run long, and the next speaker must not start
         // over the end of it. Hold the floor while it talks, within reason.
-        if (this.current.t < this.current.life + 4 && this.voiceBusy()) return;
-        if (this.current.natural && !this.current.closed) this.game.sound.sfx('radio_close', { vol: 0.42 });
+        if (c.t < c.life + 4 && this.ownsVoice(c)) return;
+        if (c.natural && !c.closed) this.game.sound.sfx('radio_close', { vol: 0.42 });
         this.current = null;
         this.cooldown = 0.28;
         return;
       }
       // A browser voice is studio-clean, and Ilsa is on a radio in a reactor
       // core. A little crackle now and then puts her back there.
-      const c = this.current;
       // She keys off when she stops talking, not when the caption's estimate
       // runs out. Only for a browser voice: the formant Ilsa carries her own
       // squelch tail, and with the voice OFF a click after a silent caption is
       // just a click.
-      if (c.natural && !c.closed && c.t > 0.6 && !this.voiceBusy()) {
+      if (c.natural && !c.closed && c.t > 0.6 && !this.ownsVoice(c)) {
         c.closed = true;
         this.game.sound.sfx('radio_close', { vol: 0.42 });
       }
@@ -742,18 +813,23 @@ export class Radio {
     // Somebody (MUTTER on the tannoy, usually) still has the floor. Wait for
     // it so the caption and the voice arrive together, but not forever, and
     // not at all for anything urgent: a stuck engine must not gag the plot.
-    const urgent = this.queue.some((q) => (q.priority || 0) >= 5);
-    if (!urgent && (this.floorWait || 0) < 6 && this.voiceBusy()) {
+    // Urgent means it would take the floor anyway. A line that could only
+    // queue behind the voice (MUTTER's game over card) waits here instead,
+    // where the portrait and the caption can wait with it.
+    const g = this.game;
+    let top = -Infinity;
+    for (let i = 0; i < this.queue.length; i++) top = Math.max(top, this.queue[i].priority || 0);
+    const busy = this.voiceBusy();
+    const urgent = top >= 5 && top > ((g && g.voxFloor) || 0);
+    if (busy && !urgent && (this.floorWait || 0) < 6) {
       this.floorWait = (this.floorWait || 0) + dt;
       return;
     }
     this.floorWait = 0;
     const m = this.queue.shift();
     if (m.delay > 0) { m.delay = 0; this.cooldown = 0.3; this.queue.unshift(m); return; }
-    const g = this.game;
     const sp = SPEAKERS[m.speaker] || SPEAKERS.mutter;
-    if (m.speaker === 'ilsa') g.sound.sfx('radio_open', { vol: 0.5 });
-    const dur = g.speakAs(sp.voice, m.exact ? null : m.key, m.text, m.args, m.pick);
+    const dur = g.speakAs(sp.voice, m.exact ? null : m.key, m.text, m.args, m.pick, m.priority);
     // Show the line the announcer actually chose, not the fallback we queued.
     const said = (g.lastSpoken && g.lastSpoken.text) || m.text;
     const natural = m.speaker === 'ilsa' && dur > 0 && !!g.vox && g.vox.engine === 'natural';
@@ -764,11 +840,22 @@ export class Radio {
       speakerDef: sp,
       natural,
       crackleAt: natural ? 0.8 + g.rng() * 1.2 : undefined,
+      // A line the engine refused outright still carries its job, marked
+      // dropped, so update() can put it back in line rather than caption it.
+      job: dur > 0 || (g.lastVoiceJob && g.lastVoiceJob.dropped) ? g.lastVoiceJob || null : null,
     };
+    if (!this.current.job || this.current.job.fired) this.onAir(this.current);
+  }
+
+  /** The line is audible: key the radio (Ilsa is on one) and take its real length. */
+  onAir(c) {
+    if (c.speaker === 'ilsa') this.game.sound.sfx('radio_open', { vol: 0.5 });
+    if (c.job && c.job.dur > 0) c.life = Math.max(2.4, Math.min(14, c.job.dur));
   }
 
   get portraitKey() {
     if (!this.current || !this.current.speakerDef.portrait) return null;
+    if (this.current.job && !this.current.job.fired) return null;   // still waiting for the floor
     const base = this.current.speakerDef.portrait;
     const t = this.current.t;
     // Mouth-ish animation: cycle expressions while talking, settle at the end.

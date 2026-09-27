@@ -163,10 +163,7 @@ export class Enemy {
     if (this.state === ST.DEAD) return `${k}_dead`;
     if (this.state === ST.DYING && this.headlessT > 0) {
       // Still running. It has not got the memo.
-      const a = wrapAngle(this.ang - Math.atan2(camY - this.y, camX - this.x));
-      let d = Math.round(a / (Math.PI / 2));
-      d = ((d % 4) + 4) % 4;
-      return `${k}_walk${d}_${this.animFrame % 4}`;
+      return `${k}_walk${this.facing(camX, camY)}_${this.animFrame % 4}`;
     }
     if (this.state === ST.DYING) {
       const n = this.kind === 'boss' ? 6 : 4;
@@ -181,11 +178,21 @@ export class Enemy {
     }
     if (this.state === ST.ATTACK) return `${k}_fire`;
     if (this.state === ST.WINDUP) return `${k}_aim`;
-    const a = wrapAngle(this.ang - Math.atan2(camY - this.y, camX - this.x));
-    let d = Math.round(a / (Math.PI / 2));
-    d = ((d % 4) + 4) % 4;
     const f = this.state === ST.IDLE ? 0 : this.animFrame % 4;
-    return `${k}_walk${d}_${f}`;
+    return `${k}_walk${this.facing(camX, camY)}_${f}`;
+  }
+
+  /**
+   * Which of the four painted views the camera is looking at: 0 the front,
+   * 1 the character's right side, 2 its back, 3 its left side, as the sprite
+   * generator paints them. Measured from the body's facing round to the
+   * camera; on this y-down grid that turn is positive towards the body's
+   * right, so a camera off its right flank reads 1 and sees the right arm.
+   */
+  facing(camX, camY) {
+    const a = wrapAngle(Math.atan2(camY - this.y, camX - this.x) - this.ang);
+    const d = Math.round(a / (Math.PI / 2));
+    return ((d % 4) + 4) % 4;
   }
 
   hurt(n, game, fromX, fromY) {
@@ -326,8 +333,9 @@ export class Enemy {
       if (this.stateT > 0.22) {
         this.state = ST.CHASE;
         this.stateT = 0;
+        // One hand is slower than two, and no hands is slower still.
         this.cooldown = d.cooldown * randRange(this.rng, 0.85, 1.25) *
-          ((this.maim & 6) && !this.armless && d.attack !== 'bless' ? 1.25 : 1);
+          (this.armless ? 1.4 : (this.maim & 6) && d.attack !== 'bless' ? 1.25 : 1);
       }
       return;
     }
@@ -476,9 +484,13 @@ export class Enemy {
     const p = game.player;
     const dmgScale = (game.diff && game.diff.enemyDamage) || 1;
     if (this.armless) {
-      // Both arms gone and still clocked in. It headbutts.
+      // Both arms gone and still clocked in. It headbutts. A brawler's head
+      // was half of what it hit with anyway; the ones that carried a gun or a
+      // flamer have lost what made them dangerous, and a headbutt that always
+      // lands must not out-hurt a bolt you could have dodged.
       if (sees && toP <= 1.6) {
-        p.hurt(Math.max(7, d.damage * 0.6) * dmgScale * randRange(this.rng, 0.8, 1.2), game, this.kind + ':headbutt');
+        const base = d.attack === 'melee' ? Math.max(7, d.damage * 0.6) : Math.min(8, d.damage * 0.4);
+        p.hurt(base * dmgScale * randRange(this.rng, 0.8, 1.2), game, this.kind + ':headbutt');
         game.onPlayerHurt(this, 'melee');
       }
       game.sound.sfx('kick_hit', { pan: game.panOf(this), rate: 0.8 });
@@ -559,7 +571,7 @@ export class Bolt {
     this.life -= dt;
     this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
     if (this.life <= 0) { this.alive = false; return; }
-    if (this.z < 0.05 || this.z > 2.4 || game.level.blocked(this.x, this.y)) {
+    if (this.z < 0.05 || this.z > 2.4 || game.level.blockedShot(this.x, this.y, this.z)) {
       this.alive = false;
       game.onBoltImpact(this, null);
       return;
@@ -615,8 +627,10 @@ export class PipeBomb {
       game.sound.sfx('pipebomb_land', { pan: game.panAt(this.x, this.y), vol: 0.5 });
     } else { this.x = nx; this.y = ny; }
     this.z += this.vz * dt;
-    if (this.z <= 0.08) {
-      this.z = 0.08;
+    // The floor here, or the top of whatever parapet or prop it came down on.
+    const rest = 0.08 + (game.level.restAt ? game.level.restAt(this.x, this.y) : 0);
+    if (this.z <= rest) {
+      this.z = rest;
       if (Math.abs(this.vz) > 1.4) {
         this.vz = -this.vz * 0.28;
         this.vx *= 0.55; this.vy *= 0.55;

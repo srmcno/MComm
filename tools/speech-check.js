@@ -750,8 +750,36 @@ function rig(plat, behaviour = {}, opts = {}) {
   const gsrc = fs.readFileSync(new URL('../src/game/game.js', import.meta.url), 'utf8');
   check('game.js stops the radio when the game pauses', /s === STATE\.PAUSE\)[^\n]*radio\.hold\(\)/.test(gsrc) ||
     /STATE\.PAUSE[\s\S]{0,80}radio\.hold\(\)/.test(gsrc));
-  check('game.js stops speech at game over and between floors', /STATE\.GAMEOVER[\s\S]{0,120}radio\.reset\(\)/.test(gsrc));
+  check('game.js keeps only the death exchange at game over', /STATE\.GAMEOVER\)\s*this\.radio\.keepAbove\(5\)/.test(gsrc));
+  check('game.js stops speech between floors', /STATE\.INTERMISSION[\s\S]{0,60}radio\.reset\(\)/.test(gsrc));
   check('game.js stops speech on the way back to the title', /STATE\.TITLE\)\s*this\.radio\.reset\(\)/.test(gsrc));
+}
+
+/* 6b. onStart: the caption waits for the voice */
+{
+  const { clock, synth, sp } = rig('Windows / Chrome');
+  const log = [];
+  const hook = (tag, priority = 0) => ({ voice: 'mutter', priority, onStart: (d) => log.push([tag, +clock.now().toFixed(2), d]) });
+  const t0 = clock.now();
+  const a = sp.say('The first announcement takes the floor, and keeps it for a while.', hook('a'));
+  const b = sp.say('The second one waits its turn.', hook('b'));
+  check('natural: onStart fires at once for a line that takes the floor', log.length === 1 && log[0][2] === a);
+  clock.advance(1);
+  const w = sp.say('Warning. This one cuts in.', hook('w', 3));
+  check('natural: a higher priority cuts in and starts at once, and the lower waiter is dropped',
+    log.length === 2 && log[1][0] === 'w' && log[1][2] === w && sp._queue.length === 0, JSON.stringify(log));
+  sp.say('And this one queues behind the warning.', hook('q'));
+  clock.advance(w + 2);
+  const q = log.find((x) => x[0] === 'q');
+  const heardW = synth.audible.find((x) => /cuts in/.test(x.text));
+  check('natural: a queued line reports its start when the voice before it is done, not when asked',
+    !!q && !!heardW && q[1] >= heardW.until - 0.01 && q[1] - t0 > 1.5 && !log.some((x) => x[0] === 'b'),
+    JSON.stringify(log) + (heardW ? ` warning heard until ${heardW.until.toFixed(2)}` : ''));
+  sp.cancel();
+  check('natural: onStart is optional and a throwing one breaks nothing',
+    sp.say('Plain.', {}) > 0 && sp.say('Hostile.', { priority: 5, onStart: () => { throw new Error('boom'); } }) > 0);
+  sp.cancel();
+  void b;
 }
 
 /* 7. the cast table and the engine agree */
