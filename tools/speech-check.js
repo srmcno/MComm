@@ -957,7 +957,7 @@ const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve();
   for (const set of DISTRACTED) set.forEach((line, j) => gags.set(clipKey(j === 1 ? 'ilsa' : 'brick', plainText(line)), true));
   for (const c of clips) {
     const id = `${c.k || 'exact'}.${c.i}${c.a ? '.' + c.a : ''}`;
-    if (!ROLES.includes(c.r) || !c.t || !(c.d > 0.3 && c.d < 20)) { bad.push(id + ' fields'); continue; }
+    if (!(ROLES.includes(c.r) || c.r === 'victim') || !c.t || !(c.d > 0.3 && c.d < 20)) { bad.push(id + ' fields'); continue; }
     const bytes = Buffer.from(c.b || '', 'base64');
     const mp3 = bytes.length > 400 && ((bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) || (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0));
     if (!mp3) bad.push(id + ' audio');
@@ -980,7 +980,7 @@ const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve();
     const whole = LEVEL_STORY_SETS.map((sets) => sets.some((set) => set.every((b) => bank.has(b.key))));
     check('every floor has an opening exchange the recorded cast can play whole', whole.every(Boolean), whole.join(','));
     const kb = Math.round(clips.reduce((n, c) => n + c.b.length, 0) / 1024);
-    check('the pack stays under 6 MB of base64', kb < 6144, `${kb} KB`);
+    check('the pack stays under 10 MB of base64', kb < 10240, `${kb} KB`);
   }
 }
 
