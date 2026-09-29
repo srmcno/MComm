@@ -7,31 +7,31 @@ export const ENEMY_TYPES = {
     hp: 44, speed: 2.55, radius: 0.32, height: 0.86, eye: 0.5,
     sight: 15, attack: 'melee', range: 1.35, damage: 19, windup: 0.42, cooldown: 1.05,
     score: 100, alert: 'wrencher_alert', pain: 0.28, gib: 3,
-    z: 0, walkFps: 7, deathFps: 11,
+    z: 0, walkFps: 7, deathFps: 12, stride: 1.45,
   },
   sparker: {
     hp: 28, speed: 2.9, radius: 0.28, height: 0.8, eye: 0.52,
     sight: 20, attack: 'bolt', range: 15, damage: 9, windup: 0.34, cooldown: 1.35,
     score: 120, alert: 'wrencher_alert', pain: 0.34, gib: 2,
-    z: 0, walkFps: 8, deathFps: 12, strafes: true,
+    z: 0, walkFps: 8, deathFps: 13, stride: 1.3, strafes: true,
   },
   bellows: {
     hp: 118, speed: 1.55, radius: 0.40, height: 0.94, eye: 0.55,
     sight: 14, attack: 'flame', range: 5.2, damage: 26, windup: 0.55, cooldown: 0.9,
     score: 300, alert: 'bellows_flame', pain: 0.14, gib: 5, explodes: true,
-    z: 0, walkFps: 5, deathFps: 9,
+    z: 0, walkFps: 5, deathFps: 10, stride: 1.05,
   },
   wasp: {
     hp: 22, speed: 4.4, radius: 0.24, height: 0.44, eye: 0.1,
     sight: 22, attack: 'bolt', range: 11, damage: 7, windup: 0.22, cooldown: 0.85,
     score: 150, alert: 'wasp_buzz', pain: 0.18, gib: 2, flying: true,
-    z: 0.48, walkFps: 14, deathFps: 12,
+    z: 0.48, walkFps: 14, deathFps: 13, stride: 0,
   },
   priest: {
     hp: 96, speed: 1.9, radius: 0.32, height: 1.0, eye: 0.62,
     sight: 24, attack: 'bless', range: 999, damage: 0, windup: 1.1, cooldown: 3.2,
     score: 500, alert: 'priest_chant', pain: 0.2, gib: 4,
-    z: 0, walkFps: 5, deathFps: 10,
+    z: 0, walkFps: 5, deathFps: 11, stride: 1.2,
   },
   // ---- the radiation cases -------------------------------------------------
   // Everything the leak made out of the day shift. Fast, wet, and wrong.
@@ -39,14 +39,14 @@ export const ENEMY_TYPES = {
     hp: 34, speed: 4.2, radius: 0.28, height: 0.74, eye: 0.42,
     sight: 18, attack: 'lunge', range: 2.2, damage: 16, windup: 0.30, cooldown: 0.85,
     score: 180, alert: 'ghoul_alert', die: 'ghoul_die', pain: 0.34, gib: 5, mutant: true,
-    z: 0, walkFps: 12, deathFps: 13, strafes: true, lungeSpeed: 11,
+    z: 0, walkFps: 12, deathFps: 14, stride: 1.25, strafes: true, lungeSpeed: 11,
   },
   gorger: {
     hp: 190, speed: 1.25, radius: 0.46, height: 0.92, eye: 0.5,
     sight: 13, attack: 'chomp', range: 1.7, damage: 30, windup: 0.62, cooldown: 1.35,
     score: 450, alert: 'gorger_alert', die: 'gorger_burst', pain: 0.06, gib: 9,
     mutant: true, bursts: true,
-    z: 0, walkFps: 4, deathFps: 7,
+    z: 0, walkFps: 4, deathFps: 9, stride: 0.95,
   },
   howler: {
     hp: 70, speed: 2.1, radius: 0.30, height: 1.02, eye: 0.72,
@@ -57,14 +57,14 @@ export const ENEMY_TYPES = {
     sight: 24, attack: 'spit', range: 17, damage: 9, windup: 0.72, cooldown: 2.6,
     score: 380, alert: 'howler_alert', die: 'howler_die', pain: 0.24, gib: 6,
     mutant: true, acid: true,
-    z: 0, walkFps: 6, deathFps: 10, strafes: true,
+    z: 0, walkFps: 6, deathFps: 11, stride: 1.6, strafes: true,
   },
   stalker: {
     hp: 46, speed: 5.6, radius: 0.26, height: 0.52, eye: 0.3,
     sight: 26, attack: 'rend', range: 1.9, damage: 22, windup: 0.22, cooldown: 0.7,
     score: 300, alert: 'stalker_alert', die: 'stalker_die', pain: 0.18, gib: 5,
     mutant: true, charger: true,
-    z: 0, walkFps: 16, deathFps: 14, strafes: true, lungeSpeed: 15,
+    z: 0, walkFps: 16, deathFps: 15, stride: 2.2, strafes: true, lungeSpeed: 15,
   },
   maw: {
     hp: 1500, speed: 0.9, radius: 0.9, height: 1.9, eye: 1.1,
@@ -116,6 +116,14 @@ export class Enemy {
     this.painFlash = 0;
     this.lastSeen = null;
     this.deathFrame = 0;
+    // Animation: distance walked (the walk cycle runs off it), time spent
+    // standing about (the breathing loop), which flinch is showing, and the
+    // beat after an attack when the weight comes back.
+    this.walkDist = Math.random() * 4;
+    this.idleT = 0;
+    this.stillT = 0;
+    this.painVar = 0;
+    this.recoverT = 0;
     this.rng = makeRng((this.id * 2654435761) >>> 0);
     this.spawnGrace = 0.25;
     this.kvx = 0; this.kvy = 0;      // knockback velocity
@@ -158,28 +166,35 @@ export class Enemy {
 
   /** Sprite key for the current state, given where the camera is. */
   frameKey(camX, camY) {
-    const k = this.kind === 'boss' ? 'mutter' : this.kind;
     if (this.kind === 'maw') return mawFrame(this, camX, camY);
-    if (this.state === ST.DEAD) return `${k}_dead`;
+    if (this.kind === 'boss') return mutterFrame(this);
+    const K = keysOf(this.kind);
+    if (this.state === ST.DEAD) return K.dead;
     if (this.state === ST.DYING && this.headlessT > 0) {
       // Still running. It has not got the memo.
-      return `${k}_walk${this.facing(camX, camY)}_${this.animFrame % 4}`;
+      return K.walk[this.facing(camX, camY)][this.walkFrame()];
     }
-    if (this.state === ST.DYING) {
-      const n = this.kind === 'boss' ? 6 : 4;
-      return `${k}_die${clamp(this.deathFrame | 0, 0, n - 1)}`;
+    if (this.state === ST.DYING) return K.die[clamp(this.deathFrame | 0, 0, DIE_FRAMES - 1)];
+    if (this.painFlash > 0.001 && this.state === ST.PAIN) return K.pain[this.painVar];
+    // The attack in beats: wind up, wind all the way up, the strike, the
+    // follow-through, and a moment to get the weight back. A lunger shows
+    // the strike for as long as it is in the air.
+    if (this.state === ST.WINDUP) return this.stateT < this.def.windup * 0.45 ? K.aim0 : K.aim1;
+    if (this.state === ST.ATTACK) return this.stateT < 0.09 ? K.fire0 : K.fire1;
+    if (this.lungeT > 0) return K.fire1;
+    if (this.recoverT > 0) return K.recover;
+    const D = this.facing(camX, camY);
+    if (this.state === ST.IDLE || this.state === ST.ALERT || this.stillT > 0.2) {
+      return K.idle[D][((this.idleT * 1.25 + this.bobPhase) | 0) & 1];
     }
-    if (this.painFlash > 0.001 && this.state === ST.PAIN) return `${k}_pain`;
-    if (this.kind === 'boss') {
-      if (this.state === ST.ATTACK || this.state === ST.WINDUP) {
-        return `mutter_fire${clamp(this.animFrame % 3, 0, 2)}`;
-      }
-      return `mutter_idle${this.animFrame % 4}`;
-    }
-    if (this.state === ST.ATTACK) return `${k}_fire`;
-    if (this.state === ST.WINDUP) return `${k}_aim`;
-    const f = this.state === ST.IDLE ? 0 : this.animFrame % 4;
-    return `${k}_walk${this.facing(camX, camY)}_${f}`;
+    return K.walk[D][this.walkFrame()];
+  }
+
+  /** Walk frame from distance covered, so the feet keep pace with the floor. */
+  walkFrame() {
+    const st = this.def.stride;
+    if (!st) return this.animFrame % WALK_FRAMES;
+    return ((this.walkDist / st) * WALK_FRAMES | 0) % WALK_FRAMES;
   }
 
   /**
@@ -219,6 +234,8 @@ export class Enemy {
     }
     // Bigger creatures shrug off flinching; a Sparker is staggered by anything.
     if (this.rng() < this.def.pain) {
+      // a different flinch from the last one, so a burst of hits reads as a burst
+      if (this.state !== ST.PAIN || this.stateT > 0.08) this.painVar ^= 1;
       this.state = ST.PAIN;
       this.stateT = 0;
       game.onEnemyPain(this);
@@ -243,6 +260,8 @@ export class Enemy {
     this.spawnGrace = Math.max(0, this.spawnGrace - dt);
     this.animT += dt;
     if (this.animT > 1 / d.walkFps) { this.animT = 0; this.animFrame++; }
+    this.idleT += dt;
+    if (this.recoverT > 0) this.recoverT -= dt;
 
     // Knockback runs whatever the state, so a corpse still slides.
     const floorZ = this.alive ? d.z : (d.flying ? 0 : d.z);
@@ -280,10 +299,10 @@ export class Enemy {
     if (this.state === ST.DEAD) return;
     if (this.state === ST.DYING) {
       if (this.headlessT > 0) { this._headless(dt, game); return; }
-      const n = this.kind === 'boss' ? 6 : 4;
+      const n = DIE_FRAMES;
       this.deathFrame += dt * d.deathFps;
-      // In the air it is still falling over; the floor finishes the job.
-      if (this.z > floorZ + 0.05 && this.deathFrame > 1.9) this.deathFrame = 1.9;
+      // In the air it is still twisting over; the floor finishes the job.
+      if (this.z > floorZ + 0.05 && this.deathFrame > 2.9) this.deathFrame = 2.9;
       if (this.deathFrame >= n) { this.state = ST.DEAD; this.deathFrame = n - 1; }
       return;
     }
@@ -333,6 +352,7 @@ export class Enemy {
       if (this.stateT > 0.22) {
         this.state = ST.CHASE;
         this.stateT = 0;
+        this.recoverT = 0.24;
         // One hand is slower than two, and no hands is slower still.
         this.cooldown = d.cooldown * randRange(this.rng, 0.85, 1.25) *
           (this.armless ? 1.4 : (this.maim & 6) && d.attack !== 'bless' ? 1.25 : 1);
@@ -386,16 +406,22 @@ export class Enemy {
     }
 
     const ml = Math.hypot(mx, my);
+    let walked = 0;
     if (ml > 0.001) {
       const sp = d.speed * this.mobility * dt;
       const stepX = (mx / ml) * sp, stepY = (my / ml) * sp;
-      const before = this.x;
+      const before = this.x, beforeY = this.y;
       lv.move(this, stepX, stepY, this.radius);
+      walked = Math.hypot(this.x - before, this.y - beforeY);
       if (Math.abs(this.x - before) < 1e-6 && Math.abs(stepX) > 1e-6) {
         // Wall-hugging: swing around instead of grinding into the corner.
         this.strafeDir *= -1;
       }
     }
+    // The legs go as far as the body did, and a body that is going nowhere
+    // stands and breathes instead of marching on the spot.
+    this.walkDist += walked;
+    if (walked < d.speed * dt * 0.2) this.stillT += dt; else this.stillT = 0;
 
     if (this.airborne > 0 && !d.flying) this.z = d.z + this.airborne * 0.10;
     else if (!d.flying) this.z = d.z;
@@ -439,7 +465,7 @@ export class Enemy {
     if (this.crawl) {
       const rig = game.gore && game.gore.rigOf(this.kind);
       const drop = rig ? rig.hip * this.height : 0;
-      const k = this.alive ? 1 : this.state === ST.DYING ? clamp(1 - this.deathFrame / 3, 0, 1) : 0;
+      const k = this.alive ? 1 : this.state === ST.DYING ? clamp(1 - this.deathFrame / (DIE_FRAMES - 1), 0, 1) : 0;
       if (moving) this.hopPh += dt * 7;
       off = -drop * k + (this.alive ? Math.abs(Math.sin(this.hopPh)) * 0.025 : 0);
     } else if (this.hop && moving) {
@@ -462,6 +488,7 @@ export class Enemy {
     const sp = Math.max(2.3, this.def.speed * 1.2) * (this.hop ? 0.55 : 1) * dt;
     const bx = this.x, by = this.y;
     lv.move(this, Math.cos(this.ang) * sp, Math.sin(this.ang) * sp, this.radius);
+    this.walkDist += Math.hypot(this.x - bx, this.y - by) * 1.4;   // the legs go faster than they need to
     if (Math.hypot(this.x - bx, this.y - by) < sp * 0.4) {
       this.ang = wrapAngle(this.ang + Math.PI + randRange(this.rng, -0.8, 0.8));
       this.zigT = randRange(this.rng, 0.3, 0.6);
@@ -641,6 +668,43 @@ export class PipeBomb {
       }
     }
   }
+}
+
+const WALK_FRAMES = 8;
+const DIE_FRAMES = 6;
+
+// Frame keys per kind, built once: frameKey() runs for every enemy every
+// frame and should not be making strings to do it.
+const KEYS = {};
+function keysOf(k) {
+  let K = KEYS[k];
+  if (K) return K;
+  K = { walk: [], idle: [], die: [], pain: [`${k}_pain0`, `${k}_pain1`], dead: `${k}_dead`,
+    aim0: `${k}_aim0`, aim1: `${k}_aim1`, fire0: `${k}_fire0`, fire1: `${k}_fire1`, recover: `${k}_recover` };
+  for (let d = 0; d < 4; d++) {
+    const w = [], i = [];
+    for (let f = 0; f < WALK_FRAMES; f++) w.push(`${k}_walk${d}_${f}`);
+    for (let f = 0; f < 2; f++) i.push(`${k}_idle${d}_${f}`);
+    K.walk.push(w); K.idle.push(i);
+  }
+  for (let f = 0; f < DIE_FRAMES; f++) K.die.push(`${k}_die${f}`);
+  KEYS[k] = K;
+  return K;
+}
+
+const MUTTER_KEYS = {
+  idle: ['mutter_idle0', 'mutter_idle1', 'mutter_idle2', 'mutter_idle3'],
+  fire: ['mutter_fire0', 'mutter_fire1', 'mutter_fire2'],
+  die: ['mutter_die0', 'mutter_die1', 'mutter_die2', 'mutter_die3', 'mutter_die4', 'mutter_die5'],
+};
+
+/** MUTTER is bolted to the silo: a face, not a body, and its own frame set. */
+function mutterFrame(e) {
+  if (e.state === ST.DEAD) return 'mutter_dead';
+  if (e.state === ST.DYING) return MUTTER_KEYS.die[clamp(e.deathFrame | 0, 0, 5)];
+  if (e.painFlash > 0.001 && e.state === ST.PAIN) return 'mutter_pain';
+  if (e.state === ST.ATTACK || e.state === ST.WINDUP) return MUTTER_KEYS.fire[e.animFrame % 3];
+  return MUTTER_KEYS.idle[e.animFrame % 4];
 }
 
 /** The maw reuses the boss frame naming, because it is boss-shaped. */

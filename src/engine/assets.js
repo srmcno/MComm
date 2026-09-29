@@ -122,9 +122,13 @@ const ENEMY_TINT = {
 export function requiredSpriteKeys() {
   const keys = [];
   for (const id of ENEMY_IDS) {
-    for (let d = 0; d < 4; d++) for (let f = 0; f < 4; f++) keys.push(`${id}_walk${d}_${f}`);
-    keys.push(`${id}_aim`, `${id}_fire`, `${id}_pain`, `${id}_dead`);
-    for (let i = 0; i < 4; i++) keys.push(`${id}_die${i}`);
+    for (let d = 0; d < 4; d++) {
+      for (let f = 0; f < 8; f++) keys.push(`${id}_walk${d}_${f}`);
+      for (let f = 0; f < 2; f++) keys.push(`${id}_idle${d}_${f}`);
+    }
+    keys.push(`${id}_aim0`, `${id}_aim1`, `${id}_fire0`, `${id}_fire1`, `${id}_recover`,
+      `${id}_pain0`, `${id}_pain1`, `${id}_dead`);
+    for (let i = 0; i < 6; i++) keys.push(`${id}_die${i}`);
   }
   for (const boss of ['mutter', 'maw']) {
     for (let i = 0; i < 4; i++) keys.push(`${boss}_idle${i}`);
