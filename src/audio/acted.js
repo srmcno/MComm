@@ -72,8 +72,17 @@ export class ClipBank {
     if (!l || !l.length) return null;
     if (Number.isFinite(opts.pick)) l = l.filter((c) => c.i === opts.pick);
     const city = opts.args && opts.args.length ? String(opts.args[0]).toLowerCase() : '';
-    if (l.some((c) => c.a)) l = l.filter((c) => c.a && c.a.toLowerCase() === city);
+    const named = l.some((c) => c.a);
+    if (named) l = l.filter((c) => c.a && c.a.toLowerCase() === city);
     if (!l.length) return null;
+    // A line that has more variants than takes: the takes are the good ones and
+    // get the larger share, but the rest are heard too, or a floor's worth of
+    // kills would be the same five sentences. `spare` is how many variants
+    // have no take. Not for a named city or a chosen variant: those are exact.
+    if (!named && !Number.isFinite(opts.pick) && opts.spare > 0) {
+      const take = Math.max(0.5, (l.length * 3) / (l.length * 3 + opts.spare));
+      if (this.rng() >= take) return null;
+    }
     const prev = this.last[key];
     const fresh = l.length > 1 ? l.filter((c) => c !== prev) : l;
     const c = fresh[Math.min(fresh.length - 1, Math.floor(this.rng() * fresh.length))];

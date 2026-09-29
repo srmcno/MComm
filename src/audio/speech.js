@@ -31,7 +31,7 @@
 // when the first Speech is constructed, which main.js does inside the first
 // user gesture.
 
-import { pickLine, pickLineAt, voiceOf, lineStarted } from './vox.js';
+import { pickLine, pickLineAt, voiceOf, lineStarted, LINES } from './vox.js';
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const num = (v, d) => (isNum(v) ? v : d);
@@ -43,6 +43,8 @@ function dropped(item) {
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 export const VOICE_MODES = Object.freeze(['natural', 'robot', 'off']);
+// Story and finale lines are recorded or nothing: a scene is never half actor.
+const NO_MIX = /^(boot|ilsa_intro|ilsa_level\d|brick_boot|brick_story\d\w*|ilsa_story\d\w*|mutter_story\d\w*|boss_death|boss_intro|ilsa_boss_warning|ilsa_almost_there|ilsa_rescued|ilsa_victory|ilsa_death|brick_death|brick_victory|victory|game_over|all_cities_lost)$/;
 const STORE_KEY = 'nukehaus.voice.v1';
 
 /** The saved VOICE setting. Storage can be absent or throw; default NATURAL. */
@@ -531,6 +533,29 @@ export class Speech {
     return !!this.clips.find(ROLES.includes(role) ? role : 'mutter', plainText(text));
   }
 
+  /** The variants of a line key that were never recorded (a stable list per key). */
+  _unrecorded(key) {
+    if (!this._spare) this._spare = new Map();
+    let list = this._spare.get(key);
+    if (list) return list;
+    const v = LINES[key], role = voiceOf(key);
+    list = [];
+    if (Array.isArray(v) && this.clips) {
+      for (const s of v) if (!this.clips.find(role, plainText(s))) list.push(s);
+    }
+    this._spare.set(key, list);
+    return list;
+  }
+
+  /** One of them, never the one said last time when there is another. */
+  _pickSpare(key, list) {
+    if (!this._lastSpare) this._lastSpare = {};
+    let i = Math.min(list.length - 1, Math.floor(this.clips.rng() * list.length));
+    if (list.length > 1 && list[i] === this._lastSpare[key]) i = (i + 1) % list.length;
+    this._lastSpare[key] = list[i];
+    return list[i];
+  }
+
   /** The formant synth arrives once the AudioContext exists. */
   attachFormant(vox) {
     this.formant = vox || null;
@@ -673,9 +698,16 @@ export class Speech {
     try {
       const o = opts && typeof opts === 'object' ? opts : {};
       // A recorded take of this line, when there is one: its words are the line.
-      const take = this._acted() ? this.clips.pick(key, o) : null;
-      if (take) return this.say(take.t, { ...o, voice: o.voice || voiceOf(key), take });
-      let text = isNum(o.pick) ? pickLineAt(key, o.pick) : pickLine(key);
+      // Variants nobody recorded still get their turn (see ClipBank.pick), said
+      // by the browser voice, so a well-worn line is not five sentences forever.
+      let text = null;
+      if (this._acted() && this.clips.has(key)) {
+        const spare = NO_MIX.test(key) ? [] : this._unrecorded(key);
+        const take = this.clips.pick(key, { ...o, spare: spare.length });
+        if (take) return this.say(take.t, { ...o, voice: o.voice || voiceOf(key), take });
+        if (spare.length && !isNum(o.pick)) text = this._pickSpare(key, spare);
+      }
+      if (text === null) text = isNum(o.pick) ? pickLineAt(key, o.pick) : pickLine(key);
       if (!text) return 0;
       const args = o.args;
       if (args && args.length) {

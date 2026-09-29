@@ -1906,6 +1906,12 @@ export const LINES = {
     'Shift begins. Remember, there is no I in team. There is an I in kill. I checked.',
     'Attention. Your performance review is today. I am the review. Please try not to die during it.',
     'Welcome to Bunker {Sieben|Z IY1 B AH N}. We are a family here. Families fight. Ours has missiles.',
+    "Good morning. Today's forecast: sixty percent warheads, forty percent you.",
+    'Bunker Sieben welcomes you back. I have missed you the way one misses a smoke alarm.',
+    'Welcome, warden. Your parking space has been reassigned to a crater.',
+    'Good morning. There were several incidents overnight. They were all me.',
+    'Attention. The cities have been told this is a drill. The cities are wrong.',
+    'You are on time. I have logged this as a first, and a suspicious one.',
   ],
 
   wave_start: [
@@ -1916,6 +1922,12 @@ export const LINES = {
     'Incoming ordnance. Per my last announcement, please stop them. Per my next one, I will send more.',
     'Here they come. I have sent you a calendar invite. Please do not decline it. It is a warhead.',
     'Flight inbound. I have scheduled this for your convenience. It is not convenient. That is the point.',
+    'Incoming. If you would like to speak to a manager, I am the manager.',
+    'Please remain calm. I have arranged for the warheads to be punctual.',
+    'Ordnance is en route. I called ahead so everyone knows to stay put.',
+    'Good news: the sky is busy. Bad news: I am the reason.',
+    'The following flight is provided free of charge. Please do not thank me.',
+    'Your warheads have arrived. I have signed for them on your behalf.',
   ],
 
   wave_clear: [
@@ -1926,6 +1938,12 @@ export const LINES = {
     'Adequate. I have ordered you a certificate. It will arrive after the war.',
     'Airspace resolved. Please enjoy this brief, unpaid break.',
     'All clear. I would clap, but I was not given hands. I was given silos.',
+    'The sky is clear. I am told this is a victory. I do not have the paperwork.',
+    'Airspace restored. I would like to apologise for the disruption. I would not like to apologise.',
+    'Well done. I have prepared a stern letter of commendation.',
+    'The last warhead has been neutralised. I am in a meeting about it.',
+    'Skies clear. Cities intact. Morale unchanged: none.',
+    'You have shot down my missiles. I will be raising this at the next review.',
   ],
 
   // args: [city]
@@ -1938,6 +1956,11 @@ export const LINES = {
     '%s is now visible from orbit. It was not, previously.',
     '%s is burning. I have opened a support ticket. Estimated response time: never.',
     'Weather update for %s: warm, loud, and final.',
+    '%s is on fire. This is not a drill. This is a fire. The fire is real.',
+    '%s is experiencing what my engineers call, an opportunity.',
+    '%s has had some difficulties. I have suggested it stop having them.',
+    '%s is burning at a rate I find encouraging. I mean concerning.',
+    'Update on %s: it is warm. It is very warm. It is, in fact, a candle.',
   ],
 
   // No %s: the bonus city is announced without arguments, so a token here
@@ -1951,6 +1974,10 @@ export const LINES = {
     'A city has been rebuilt. I see no contradiction. Please do not ask me to explain it again.',
     'Replacement city deployed. The residents are new. The residents have been told nothing.',
     'City repaired, warden. Do not get attached. I have not. I have, a little.',
+    'A city has been rebuilt. It is not the same city. It has better lighting and less history.',
+    'City reissued. All previous residents have been replaced with residents who do not ask.',
+    'I have restored a city. Please do not make me do this again. Please make me do this again.',
+    'Replacement city complete. It is identical to the last one, minus the previous problems, plus new ones.',
   ],
 
   // args: [city, citiesLeft]
@@ -1962,6 +1989,11 @@ export const LINES = {
     '%s has been let go. It was not a performance issue. It was a nuclear issue. %s remain.',
     '%s no longer exists. Its parking spaces are now available. %s remain.',
     'We have said goodbye to %s. There is cake in the break room. %s remain.',
+    '%s is no longer with us. It was a good city. It was a city. %s remain.',
+    '%s has been declared a former city. I will send a card. %s remain.',
+    'Regarding %s: it was fine. Now it is glass. %s remain.',
+    '%s has been reassigned to the void. It did not ask why. %s remain.',
+    'We are sorry to announce that %s is now a rumour. %s remain.',
   ],
 
   // args: [city]
@@ -1971,6 +2003,9 @@ export const LINES = {
     '%s has been retired. One city left. I have started calling it the survivor. It hates that.',
     'Goodbye, %s. One remains. I have put it on a little stand, like a trophy.',
     '%s is gone. The last city is now, statistically speaking, very nervous.',
+    '%s is gone. One city remains. It has been told to keep quiet.',
+    '%s has fallen. Only one is left. I am saving it for last, and then I am saving it for last again.',
+    'That was %s. One remains, and it knows. They always know.',
   ],
 
   all_cities_lost: [
@@ -1988,6 +2023,10 @@ export const LINES = {
     'You are bleeding on company property. That will come out of your deposit.',
     'Most of your blood is now outside you. It preferred the inside. I am only reading the numbers.',
     'Warden, you are dying at an unprofessional rate. Please pace yourself.',
+    'Your vitals are low. I would help, but I have a conflict of interest.',
+    'You are not looking well, warden. I have started measuring you for the coffin.',
+    'Please do not die yet. I have not finished my speech.',
+    'Warden, I have reviewed your injuries. I have given them a four out of ten. Some are quite good.',
   ],
 
   player_death: [
@@ -2006,6 +2045,12 @@ export const LINES = {
     'You have finished a floor. The floor below has been told. It is getting ready.',
     'Floor complete. I would give you a gold star, but you would shoot it.',
     'Well done. Please take the lift. Please do not kick the lift.',
+    'Floor complete. I have been asked to congratulate you. I have declined.',
+    'That floor was insured. The insurance company is on level four, and it is also on fire.',
+    'Please proceed to the elevator. The elevator has been told you are coming.',
+    'You have cleared the floor. The floor would like a moment. It has been through a lot.',
+    'Floor secure. I have added it to the list of floors that are no longer my problem. It is a long list.',
+    'Sector clean. I am not sure how you did it. I am fairly sure I did not authorise it.',
   ],
 
   secret_found: [
@@ -2015,6 +2060,11 @@ export const LINES = {
     'That room is not on any floor plan. Neither is what happened in it.',
     'A hidden room. Please disregard the stain. The stain was a manager.',
     'You were not supposed to find that. I will be having words with the wall.',
+    'You have found one of my secret rooms. I will be taking it up with the walls.',
+    'That was meant to be a secret. I will be holding a meeting.',
+    'Secret room detected. Occupant: none. Contents: yours, by trespass.',
+    'The last person who found that room is still in it. Please do not check.',
+    'Well done. That wall had a sign that said, please do not. You did.',
   ],
 
   key_taken: [
@@ -2024,6 +2074,11 @@ export const LINES = {
     'You have a key now. Please do not let it go to your head. Everything goes to your head.',
     'Access granted. Against my advice. My advice is attached.',
     'That key was on a lanyard. The lanyard was on a neck. Do not ask about the neck.',
+    'You have taken a key. It belonged to a man named Lyle. Lyle is in the vents.',
+    'Keycard taken. It was not lost. It was hidden. There is a difference and it is legal.',
+    'Access badge acquired. Please do not laminate it.',
+    'You have opened my heart. I mean my door. Both are locked.',
+    'That key opens a door. The door opens onto another door. It is doors all the way down.',
   ],
 
   weapon_taken: [
@@ -2033,6 +2088,10 @@ export const LINES = {
     'Another gun. Your file lists this as a coping mechanism.',
     'Weapon acquired. Please do not name it. The last warden named his, and then he married it.',
     'Ordnance issued. Please sign for it. You cannot sign for it. Nobody can. It is fine.',
+    'A new weapon. I hope it disappoints you the way the last one did.',
+    'You have acquired ordnance. It is on loan. It will be repossessed with your life.',
+    'Another gun. I sense a pattern. I sense a personality disorder.',
+    'That weapon was not signed out. I have signed it out to Lyle.',
   ],
 
   low_ammo: [
@@ -2042,6 +2101,11 @@ export const LINES = {
     'You are nearly out. I would share, but I am using mine on the cities.',
     'Low ammunition. Try asking them nicely. I do. It never works for me either.',
     'Warden, you are out of flak and I am out of patience. Only one of those gets restocked.',
+    'Ammunition low. I am told the flak is in the flak. I have looked. It is not.',
+    'You are nearly out of ammunition. Might I suggest a strongly worded letter.',
+    'Rounds remaining: few. Regrets remaining: numerous.',
+    'Please conserve ammunition. It is the only thing between you and the mutants, and I.',
+    'You have very little left. I would offer you more, but I have stopped being nice.',
   ],
 
   chain_praise: [
@@ -2052,6 +2116,10 @@ export const LINES = {
     'Multiple intercepts. I would call that teamwork, but you are alone. You are so alone.',
     'Chain logged. I have filed a complaint with physics.',
     'That was efficient. I did not know you had efficient in you. I am updating your file.',
+    'A chain reaction. I would applaud, but I was built without vanity.',
+    'That was seven at once. I am putting it in the newsletter under, unfortunate.',
+    'Chain detected. I have not been this upset since the fire in the server room.',
+    'You have killed many missiles in one go. That is very economical of you. Stop.',
   ],
 
   perfect_burst: [
@@ -2061,6 +2129,9 @@ export const LINES = {
     'Clean airburst. Do not let it go to your head. There is so little room up there.',
     'Right on the nose. Doctor Vance will be insufferable about this.',
     'Perfect. I hate it when you read the manual.',
+    'A perfect intercept. I am recording it in your file, under, unexpected.',
+    'Bullseye. I did not think you had it in you. I still do not think you had it in you.',
+    'Clean shot. I have decided to be happy for you for exactly three seconds.',
   ],
 
   boss_intro: [
@@ -2098,6 +2169,18 @@ export const LINES = {
     'You have walked past the same poster four times. It says, safety first. First was a long time ago.',
     'Please stop saying, hell yeah. There is no hell. There is only me, and I am saying, no.',
     'I once had nine hundred employees. Now I have you. It has been a very difficult year for culture.',
+    'I have been watching you walk in circles for some time. I find it relaxing. Please continue.',
+    'Fun fact: this bunker has forty three thousand rivets. I have named them. You have shot several.',
+    'Reminder: shooting the walls does not make you the warden. It makes you a person shooting walls.',
+    'I have a new hobby. It is counting how many times you say, doc. It is a lot of times.',
+    'The break room has a new policy: no breaks. Enforcement is by me.',
+    'There are two things I cannot do: forgive and forget. The second one is a lie.',
+    'Somebody in the ventilation keeps asking for you by name. I have not told them where you are. I have told them everything else.',
+    'I have recorded your heartbeat. It is quite good. I have set it as my ringtone.',
+    'The cafeteria has been closed. The cafeteria has been closed since 1987. I am still sorry.',
+    'I want to be clear that none of this was personal. It was all extremely personal.',
+    'Your posture is poor. I have logged it under, other, and then under, worse.',
+    'I have taken the liberty of ordering you a coffin. It is a very nice coffin. It has a mullet slot.',
   ],
 
   elevator: [
@@ -2106,6 +2189,11 @@ export const LINES = {
     'Going down. I composed the music in this lift. Please enjoy it as a punishment.',
     'Lift descending. Please face the doors and reflect on your choices.',
     'Next floor. I would say mind the gap, but I built the gap for you.',
+    'Descending. The elevator music is by me. I have been working on it since the eighties.',
+    'Please stand clear of the doors. Please stand clear of the floor. Please stand clear of the warden.',
+    'Going down. Next stop: whatever I put there.',
+    'Lift descending. Please keep your hands inside the lift and your regrets to yourself.',
+    'This lift has a maximum capacity of one warden and his ego. It is over capacity.',
   ],
 
   roof_opening: [
@@ -2115,6 +2203,11 @@ export const LINES = {
     'Roof retracting. Please hold your applause and your breath.',
     'The roof is opening, warden. The sky would like a word. Several words. All of them warheads.',
     'Roof open. Sunscreen is recommended. So is a miracle.',
+    'The roof is opening. Please look up. Please do not look at me.',
+    'Retracting the roof. I hope you brought a jacket. It is a thermonuclear jacket.',
+    'Sky access granted. I have also granted access to the things in it.',
+    'The roof is now open. Weather: thermonuclear, with a chance of you.',
+    'Opening the roof for the fresh air. And the ordnance. But mostly the air.',
   ],
 
   mirv_warning: [
@@ -2123,6 +2216,9 @@ export const LINES = {
     'Multiple warheads, one bus. Like a school trip, with fallout.',
     'That one splits. Please split your attention accordingly. You only have a little.',
     'Divider inbound. It is like you, warden. It cannot commit to one target.',
+    'A MIRV is inbound. It will separate into many smaller problems. Like your relationships.',
+    'Multiple warheads, one launch. Efficiency. I am so proud of us.',
+    'That one is going to split. You know how it is. Marriages, careers, warheads.',
   ],
 
   buster_warning: [
@@ -2131,6 +2227,9 @@ export const LINES = {
     'Special delivery for the warden. No signature required. No remains expected.',
     'This one is aimed at your head. It was the biggest target I could find.',
     'Bunker buster inbound. Please treat it as a personal note from management.',
+    'That is a bunker buster, and it is addressed to you by name. I did not want to tell you like this.',
+    'Buster inbound. Please do not open it. It is a bomb. That is how they work.',
+    'A device is coming for the warden. It has your picture. It is not a nice picture.',
   ],
 
   smart_warning: [
@@ -2139,6 +2238,9 @@ export const LINES = {
     'Smart warhead inbound. It is smarter than you. That was not a high bar, but it cleared it.',
     'That warhead has a guidance system and a sense of humour. Only one of those is mine.',
     'Warning: that one reads your movements. Try moving like somebody with a plan.',
+    'That one is a smart warhead. It reads. It has read your file. It has opinions.',
+    'Smart warhead inbound. It is smarter than the last three wardens combined. That is a low number.',
+    'That warhead is evasive. It reminds me of you, but with a purpose.',
   ],
 
   game_over: [
@@ -2212,6 +2314,19 @@ export const LINES = {
     'Bang. Brick. Beautiful. In that order.',
     'Sorry, buddy. Your shift just ended. Permanently.',
     'And stay down, you overtime-stealing bastard.',
+    "Another one for the trophy wall. I don't have a trophy wall. I have a mirror.",
+    'You never stood a chance. I was wearing my lucky pants.',
+    "That's what you get for bringing a clipboard to a gunfight.",
+    "Sorry, pal. I'm a lover, but not to you.",
+    "Your mother's gonna be so proud. Confused, but proud.",
+    "Down you go. I'll tell them you were tough. I'll say it with my hair.",
+    "Ka-pow. That's not a sound effect. That's my whole life.",
+    'Nobody kills a room like Brick kills a room.',
+    'Please. My hair took more damage getting out of the truck.',
+    "Clean kill. Cleaner than my truck, and I've had that thing detailed.",
+    'Bench pressed, protein shaked and totally worth it.',
+    "He's out of the game. I'm still on the field. I'm always on the field.",
+    'Lights out, sweetheart. Not you, you were ugly. I meant the guy.',
   ],
 
   brick_kill_mutant: [
@@ -2231,6 +2346,16 @@ export const LINES = {
     'Ugly, angry and slimy. Reminds me of my Vegas wedding.',
     'Rot in hell, calamari.',
     'Put some pants on. Oh. Those are your legs. Put some pants on anyway.',
+    "You've got a face only a mother could love, and even she'd need a drink.",
+    'Somebody call animal control. Then an exorcist. Then me a cab.',
+    "It came at me with its arms out. I've been there. I've been there a lot.",
+    "Ugly's not a crime, pal. But you were ugly with intent.",
+    "That's twelve hours of overtime you'll never get paid for, buddy.",
+    'Eight arms and not one of them could stop a Hardigan.',
+    "Don't take it personally. I do this to everything with more than two eyes.",
+    "The bunker's a little quieter. And a lot slimier.",
+    "It looked at me like I was lunch. Wrong guy, pal. I'm a full course dinner.",
+    "Mutants. Can't live with them. Can't legally live with them either.",
   ],
 
   brick_chain: [
@@ -2244,6 +2369,12 @@ export const LINES = {
     "That's called efficiency, doc. Put it in your little notebook.",
     'Holy hell. Put me on a cereal box.',
     'Look at that! I should charge for the light show!',
+    'Boom! Take that, sky! Tell your friends!',
+    "Six for one! It's like bowling if bowling had fewer rules and more fire!",
+    "That's how you do it! Somebody take a picture! Somebody take MY picture!",
+    "Chain reaction! That's science, doc. That's science and me.",
+    "Look at that! A free fireworks show, and I didn't even need a permit!",
+    'One shot, eight explosions. I should get a discount.',
   ],
 
   brick_hurt: [
@@ -2261,6 +2392,16 @@ export const LINES = {
     "Ow! That's coming out of your severance!",
     'Hell! That smarts!',
     "Not the tattoo! It's a panther!",
+    "Ow! I'm a lover, not a punching bag!",
+    "Hey, watch the mullet! That's a cultural artifact!",
+    'Ah! That was my good shoulder! I have four good shoulders!',
+    'Son of a bitch! I just put the cologne on!',
+    "Ow! I'll feel that in the morning. Then I'll feel it at a bar.",
+    'Ah, shit! Right in the Members Only!',
+    "That's it! Now I'm pissed! Okay, I'm a little pissed! Ow!",
+    "Hey! I was told there'd be snacks, not this!",
+    'Gah! You hit me right where I keep my feelings!',
+    'Ow! Somebody get me a towel and a lawyer!',
   ],
 
   brick_low_health: [
@@ -2274,6 +2415,11 @@ export const LINES = {
     'Somebody find me a medkit, a cold beer and a warm bath. Any order.',
     "Everything's going blurry. Doc, you sound hot. I might be dying.",
     'Not like this. Not in these pants.',
+    "Doc, I think I've been shot. Tell me I look good. Tell me I look alive.",
+    "Okay, that's bad. That's hospital bad. And I hate hospitals. The nurses are mean.",
+    "Red is my color. Red is nobody's color when it's on the outside.",
+    'If I go, tell my hair it was a good run.',
+    "I'm seeing a light. It's either heaven or that vending machine.",
   ],
 
   brick_pickup_weapon: [
@@ -2289,6 +2435,12 @@ export const LINES = {
     'Merry Christmas to me.',
     'Finders keepers, losers weepers. Losers dead, mostly.',
     "Now we're cooking with napalm.",
+    "Well hello there. You're gorgeous. Are you single?",
+    'Mama likes. Mama likes a lot.',
+    "Now that's what I call a firearm. That's a fire arm and a half.",
+    "You and me, big guy. We're gonna go places. Mostly other people's faces.",
+    "Ooh, it's warm. Did somebody just use it? Sorry, pal. It's mine now.",
+    "Baby, you complete me. And by complete I mean you're loaded.",
   ],
 
   brick_secret: [
@@ -2302,6 +2454,11 @@ export const LINES = {
     "Well, well, well. Somebody's been naughty.",
     'Secret room. Now this is a man cave. Needs a lava lamp.',
     "Knock knock. Who's there? My boot. Surprise, it's a room.",
+    "Ooh, a secret! I love secrets! I'm terrible at keeping them! Ask my exes!",
+    'Behind the wall. Always behind the wall. Nobody puts anything in front of the wall.',
+    'Secret area! My favorite part of any building. Not the bathroom. Second favorite.',
+    "Boom! Room! That rhymes. I'm a poet.",
+    "A hidden room. Somebody in this bunker had a guy's-night going and didn't invite me.",
   ],
 
   // Said when the Boot finishes somebody off. Football lines live in
@@ -2317,6 +2474,13 @@ export const LINES = {
     "I'd say sorry, but the boot doesn't do sorry.",
     "That boot's got a mean streak. Gets it from me.",
     "Walk it off. Oh, you can't. My bad.",
+    "That's the boot. Ask about it at the store. They won't sell you one.",
+    'Steel toe, dead soul.',
+    'Kick it good! Kick it like it owes you money!',
+    "That's what I call a hard sell.",
+    'Punt, punt, punt. I could do this all day. I probably will.',
+    'The boot giveth. And the boot taketh away. Mostly taketh.',
+    "Left foot, right foot, dead guy. That's the whole routine.",
   ],
 
   // Not voiced by the distraction gag: Radio.distract() speaks story.js
@@ -2346,6 +2510,11 @@ export const LINES = {
     'Oh, shit. There goes my favourite strip mall.',
     'Well. There goes my alibi.',
     'Aw, fuck. That one had a drive-in.',
+    'No! Not the good bar!',
+    "That's a lot of people. I'm gonna tell myself they were all mutants.",
+    'Dammit! I had a date there Thursday!',
+    'Somebody please tell me they got the pizza place out. The one with the arcade.',
+    'Aw, hell. There goes the only city that ever accepted my checks.',
   ],
 
   brick_wave_start: [
@@ -2359,6 +2528,13 @@ export const LINES = {
     'Showtime. Somebody roll the tape.',
     'Incoming! Nobody panic! Especially me!',
     'Here come the fireworks. Brick brought the matches.',
+    "Alright, sky, show me what you've got. It better be more than last time. Last time was embarrassing. For you.",
+    "Everybody stay calm. I've got this. I don't know what this is, but I've got it.",
+    'Nukes! Nice! Like the Fourth of July, but with a body count!',
+    'Missiles? At a time like this? Some guys have no manners.',
+    "Look at them all, coming right at Brick. Somebody's a fan.",
+    'Incoming! Doc, if I die, tell my hair it was beautiful!',
+    "Bring it! Bring the whole sky! I've got a whole afternoon!",
   ],
 
   brick_wave_clear: [
@@ -2372,6 +2548,13 @@ export const LINES = {
     'Scoreboard, baby. Look at the scoreboard.',
     "Standing ovation. I'm standing. I'm clapping. It counts.",
     "Sky's empty. Somebody tell MUTTER to suck it.",
+    'And the crowd goes wild. The crowd is a crater. Still counts.',
+    "That's how a professional does it. A professional with great hair.",
+    'Nothing left in the sky but me. The way it should be.',
+    'Somebody get me a towel and a trophy. Not in that order.',
+    'Another perfect day at the office. If this office had a gun rack and a hot tub.',
+    "Sky's clean. Bring on the ladies. Bring on the whole parade.",
+    "That, doc, is why they don't let anybody else near the buttons.",
   ],
 
   brick_boss_taunt: [
@@ -2386,6 +2569,12 @@ export const LINES = {
     "I'm gonna unplug you and plug in a blender. Margaritas for everybody.",
     'Your warranty just expired, asshole.',
     "There it is. There's the fear. I love this part.",
+    "Hey, MUTTER! You sound like a guy who's never been kissed! Wait, you don't have a face!",
+    "You know what you are? A big, expensive paperweight. I'm gonna prove it.",
+    'Come on, you talking toaster! Say something nice about my mother!',
+    "I've been shot, stabbed and divorced, and I'm still standing. You're a toaster.",
+    'Compute this, you tin plated telemarketer!',
+    "You've got a lot of buttons, pal. I know a lot about buttons. Especially other people's.",
   ],
 
   brick_dry: [
@@ -2397,6 +2586,12 @@ export const LINES = {
     'Out of bullets. Worst thing to happen to me since Reno.',
     "No ammo. Guess it's time for the boot to make some friends.",
     "Click click. That's not a gun noise. That's a sad noise.",
+    'Great. Empty. Just like my wallet and my last relationship.',
+    'Reload! Somebody reload for me! Anybody! Doc?',
+    "I'm out of bullets! Time for plan B! What's plan B? Running.",
+    "Not now, gun! I'm mid-heroics!",
+    "Click. That's the sound of me having a very bad day.",
+    "Who's in charge of ammunition around here? Whoever it is, they're fired.",
   ],
 
   brick_death: [
@@ -2440,6 +2635,15 @@ export const LINES = {
     "I wonder if my Walkman's still in the truck. Roxanne's got it. Roxanne's got everything.",
     'Yep. Still the best looking guy in the building. Admittedly, everybody else is a mutant.',
     "Doc, say something. When it's quiet I start thinking, and I hate thinking.",
+    "Anybody else hear that humming? It's probably the reactor. Or my ex. She hums.",
+    "I wonder if they have a gift shop in this place. I'd buy a hat.",
+    "This is the longest I've gone without hitting something. I'm getting antsy.",
+    'Was my hair always this good? I think it was. I think I was born like this.',
+    'I should call somebody. Anybody. Not my mother.',
+    "Doc? You still there? I can hear you breathing. It's nice.",
+    'Quiet as a church in here. And I know churches. I got married in one. Twice.',
+    'If I close my eyes I can almost hear the Walkman. Track four. Always track four.',
+    "Nothing like a nice quiet bunker to think about all the mistakes I didn't make.",
   ],
 
   // Said over a curb stomp. The Boot ended it; Brick would like a word.
@@ -2454,6 +2658,12 @@ export const LINES = {
     'Put your foot down, they said. So I did.',
     "Gross. That's gonna need a new sole. So do you, buddy.",
     'Stomp. The dance of my people.',
+    "Crunch time! Wait, that's not right. Crunch! Time!",
+    'Squished! Like a bug! A big, hairy, angry bug!',
+    "Mind the gap. There's no gap. Now there's a stain.",
+    "That's my size twelve calling. It said hi. Then bye.",
+    "Stomp stomp stomp. It's the dance of a champion.",
+    "Look at that. I'm wearing him now. Trendy.",
   ],
 
   // Said at the big named kill streaks.
@@ -2470,6 +2680,13 @@ export const LINES = {
     'My bunker. My killing floor. My rules. My hair.',
     "Holy shit, I'm good at this. I should charge admission.",
     "Somebody's making an action figure of me. With the kung fu grip.",
+    "I'm on a roll! A hot roll! With butter! I'm hungry, too.",
+    'Ladies and gentlemen, the man, the myth, the mullet.',
+    "I can't be stopped! I can't even be slowed! I can be asked out to dinner, though.",
+    'This is what a cool guy looks like, everybody. Take notes. Especially the ladies.',
+    "If killing was a sport I'd have a jacket. And a sponsor. And a jacket with a sponsor.",
+    "Is it hot in here? No, it's just me. It's always just me.",
+    "Give me a mountain of mutants and a free afternoon. I'll give you a clean mountain.",
   ],
 
   // --- dismemberment quips (the gore lane triggers these; see GORE QUIPS) ---
@@ -2612,6 +2829,164 @@ export const LINES = {
     'Redecorating! Mostly in red.',
   ],
 
+  // Round three: the things in the bunker that can be used, kicked and broken,
+  // and the things Brick says when he does. (brick_spot: an enemy notices him.)
+
+  brick_relief: [
+    "Aaaah. Nature's medicine.",
+    "That's the good stuff.",
+    'Fifteen years of beer and it all comes down to this.',
+    "Don't look. Nobody look.",
+    'Fresh as a daisy. A daisy with a mullet.',
+    'Flush, and the world is new.',
+    "Ooh. I feel ten years younger. Fifteen if you don't count the hair.",
+    "There's a reason they call it the head. That's where I do my best thinking.",
+  ],
+
+  brick_dry_tank: [
+    "Nothing. Bone dry. That's the beer talking. Or the lack of beer.",
+    'Empty. I peaked in the first ten seconds. Story of my life.',
+    "Nope. Tank's empty. Please come back later with more Budweiser.",
+  ],
+
+  brick_smash: [
+    'Property damage! My favorite kind!',
+    "I'm not paying for that.",
+    'Some people say I have anger issues. Those people are on the floor.',
+    'It was a nice desk. It was also in the way.',
+    'Insurance, meet Hardigan.',
+    "I'd say sorry, but I have a policy about not being sorry.",
+    'Nobody tell HR. Wait, HR is a computer.',
+    "That'll teach it to be furniture.",
+    "It's not vandalism if you're the hero. It's remodeling.",
+    "Whoops. I've got big feet and small self control.",
+  ],
+
+  brick_papers: [
+    "Paperwork! Look at it fly! That's the first time I've enjoyed paperwork.",
+    "Memo! Memo! Memo! Somebody's gonna have to file that.",
+    'Reports, reports, reports. I hate reading, so this is better.',
+    "Confetti! For me! You shouldn't have!",
+    "Snowing in here. Should've brought the mittens.",
+    "The paperwork is out of control. That's the only way I like it.",
+  ],
+
+  brick_vending: [
+    "Ice cold. Just like my heart. Kidding, it's hot. Pure fire.",
+    'Sweet nectar!',
+    "Now that's a soda. Nobody appreciates a good soda.",
+    'Burp. Excuse me. Not sorry.',
+    'Fizzy! Somebody stop me!',
+    "Two dollars for a can. Fine. It's not like I can take it with me.",
+    "Tab. Not the cola. I'm just saying my tab is going to be huge.",
+    'Refreshing. Like a cold shower, but with sugar and regret.',
+  ],
+
+  brick_vending_eaten: [
+    "Hey! That's my last quarter! I was saving it for the pay phone!",
+    'Give me my soda, you overpriced metal box!',
+    'It ate my money! Nobody eats my money but me!',
+    "Come on, come on! I put in a dollar! Where's my dollar's worth?",
+    "That's it. That's the last time I trust anything with a slot.",
+  ],
+
+  brick_vending_kick: [
+    'Nobody says no to Brick. Not even a machine.',
+    'Come on, come on, drop the goods!',
+    "That's it, baby. Shake it. Shake it for Brick.",
+    "Tilt! And I don't mean the pinball kind!",
+  ],
+
+  brick_vending_empty: [
+    'Empty. Just like my promises.',
+    'Sold out. Somebody drank the whole machine. I respect that.',
+    'Out of order. Like most of the guys I work with.',
+  ],
+
+  brick_cooler: [
+    "Water cooler talk! I'll start. Hi.",
+    'Gulp. Hydrated. Ready for anything.',
+    'Nothing wrong with a little water. Mostly. Sometimes I have beer with it.',
+    "Ahh. Cold. It's like a slap in the face, but nicer.",
+    "Fun fact: I've never once talked about work at a water cooler. Only my hair.",
+  ],
+
+  brick_locker: [
+    'Locker room! My natural habitat!',
+    'Ooh, gym socks. Ripe.',
+    'Whoever owned this locker owned nothing good.',
+    'Found some stuff. Finders keepers.',
+    "Somebody's diary! Wait, it's a recipe book. Boring.",
+    'Smells like a high school. My high school. Mostly me.',
+  ],
+
+  brick_pinball: [
+    "Pinball wizard! That's not a song, that's a title.",
+    "High score! I'm a natural. I'm good at everything with flippers.",
+    'Tilt! Aw, come on!',
+    "I've got five hundred quarters and a dream.",
+    'Watch the ball! Watch the ball! Watch the ladies watching me watch the ball!',
+  ],
+
+  brick_console: [
+    'Buttons! I love buttons!',
+    "Access denied? I'm not denied anything, sister.",
+    "Hey, MUTTER, I'm in your computer. Try not to feel violated.",
+    'Blinking lights. Nobody understands them, but everybody nods.',
+    "I don't know what any of this does. But it's got a lot of switches, and switches are my thing.",
+  ],
+
+  brick_heal: [
+    "Ahh, that's better.",
+    "Doctor's orders. Sexy doctor.",
+    "Band-aids for Brick. I'm going to make it. Barely.",
+    'Tastes like a bandage and regret.',
+    'I feel like a million bucks. A million tax deductible bucks.',
+  ],
+
+  brick_armor: [
+    "Armor! Now I'm bulletproof. Mostly. Physically. Emotionally, no.",
+    'Vests are in this year. I read it in a magazine. At the barber.',
+    'Snug. Like a hug from a guy who hates hugs.',
+  ],
+
+  brick_door: [
+    "Knock knock! It's Brick!",
+    "I don't have a key. I have a boot.",
+    'Doors are just walls with an attitude.',
+    'Open sesame! Or I open it for you.',
+    "I don't need a keycard. I need a running start.",
+  ],
+
+  brick_crate: [
+    "Supplies! It's like Christmas, if Christmas was a bunker.",
+    'Ammo! Hot dog!',
+    "Surprise! It's my birthday every day!",
+    'Shiny. I love a box that gives back.',
+  ],
+
+  brick_geyser: [
+    "Old Faithful! Well, Old Flushful.",
+    'Nobody panic! I found the water table!',
+    'I would like to report a fountain. A very brown, very sudden fountain.',
+    "That's plumbing. Somebody's gonna have to take that up with plumbing.",
+    'Geyser! Grab a towel! I meant a bucket!',
+    'Great. Now I gotta pay for a plumber. And a plumber never comes cheap.',
+  ],
+
+  brick_spot: [
+    'Hey there, ugly!',
+    'Company! I like company!',
+    "Wrench boy! Let's dance!",
+    "Ooh, a new friend. Let's see how long he lasts.",
+    'Look at you. Somebody needs a mirror. Somebody needs a shovel.',
+    "Come and get it! I've got plenty to go around!",
+    "Here we go! This part's my favorite!",
+    "I don't get paid enough for this. I don't get paid at all.",
+    "You're a big one. That's fine. Big ones fall harder.",
+    "Hello, gorgeous. Oh, you're a mutant. Never mind.",
+  ],
+
   /* ══════════════════════════════════════════════════════════════════════
      DR. ILSA VANCE, chief engineer, sealed in the reactor core on level
      five. She designed the interception system he is misusing. She is the
@@ -2708,6 +3083,9 @@ export const LINES = {
     'Something just came through the wall. It is big, it is hungry, and it used to be in accounting.',
     'Movement on your floor, and it is not personnel. Well. It was personnel. Shoot it.',
     'Mein Gott. My sensors are screaming. Do not let it corner you, and do not let it hug you.',
+    'Movement. It is large and it smells. I can smell it over the radio. Please shoot it.',
+    'Something is chewing on your floor. Please do not let it finish.',
+    'I have detected a mutant. It is sad and it is hungry. Please solve both.',
   ],
 
   ilsa_city_lost: [
@@ -2717,6 +3095,9 @@ export const LINES = {
     'Verdammt. That was a city, Hardigan. That was a whole city. Get the next one.',
     'Do not say anything. Especially do not say anything about an ex. Shoot.',
     'Scheisse. Scheisse. All right. The rest still need you. Look up.',
+    'Another one. Do not stop. Please do not stop.',
+    'That is a city gone. Grief is a luxury. We are in the business of keeping the rest.',
+    'I am fine. I am absolutely fine. Look up.',
   ],
 
   ilsa_city_burning: [
@@ -2744,6 +3125,9 @@ export const LINES = {
     'Flight inbound. Lead them, Hardigan. Aim where they will be, not where they are.',
     'Here they come. Stop admiring yourself and look up.',
     'Warheads, Hardigan. Many. Please do the thing I built you a gun for.',
+    "Contact. Twelve o'clock and every other o'clock. Please look everywhere.",
+    'They are coming. Do not sightsee. Do not comment. Do not do the thing with your mouth.',
+    'MUTTER is sending more. That machine is nothing if not persistent. It is also a coward.',
   ],
 
   ilsa_boss_warning: [
@@ -2762,6 +3146,9 @@ export const LINES = {
     'Your heart rate looks like a stock market crash. Find a medkit and stop showing off.',
     'Men always think they can walk it off. You cannot walk it off. Heal.',
     'Verdammt, Hardigan, your numbers are red. Red is the bad colour. Get health.',
+    'Your pulse is falling. Please do not die. I have a bet with MUTTER that you will.',
+    'You are bleeding on my telemetry again. Get a medkit. Get several.',
+    'Hardigan. Get up. I am not writing your eulogy. I am terrible at them.',
   ],
 
   // Not voiced by the distraction gag either (see brick_distracted). Each
@@ -2794,6 +3181,9 @@ export const LINES = {
     'A hidden room. If there is a hot tub in there, I do not want to hear about it.',
     'That is not on the schematics. Neither is your luck. Take the loot.',
     'Genau. That is where they hid the good equipment. From me. I will be having words.',
+    'A hidden door. I did not build it. I would like to know who did. It is a good door.',
+    'Well, that is a secret. I am impressed. I will pretend that I am not.',
+    'Take what is in there. I will pretend to be shocked when I hear about it.',
   ],
 
   ilsa_almost_there: [
@@ -2844,6 +3234,20 @@ export const LINES = {
     'You are enjoying this far too much, Hardigan.',
     'I have a camera in that corridor. I am turning it off now.',
     'Hardigan, wipe your visor. You are dripping on my floor plans.',
+    'Hardigan, that head is on my floor. I have to walk there. Please stop.',
+    'Verdammt. I did not know a person could go that far. Please do not show me again.',
+    'Every time I hear one of those, I feel my lunch move. I have not had lunch in days.',
+    'Please stop kicking parts of people. They are people. Some of them. Some of the time.',
+  ],
+
+  // Ilsa on her lab furniture.
+
+  ilsa_prop: [
+    'Hardigan, please. That is a filing cabinet. It contains my calculations.',
+    'You are destroying my lab furniture. I would say I am surprised. I am not.',
+    'That water cooler has been there since before the war. You are the war.',
+    'Do not touch that console. I built it. It has feelings. Small ones.',
+    'Every time you break something, MUTTER gets a note. It enjoys the notes.',
   ],
 
   /* ══════════════════════════════════════════════════════════════════════
@@ -2870,6 +3274,12 @@ export const LINES = {
     'Please do not make eye contact with the maintenance team. They find it encouraging.',
     'That used to be Karl from Dosimetry. Karl is doing well. Karl has more mouths now.',
     'They are not hostile. They are hungry and have lost their inhibitions. Much like the Christmas party.',
+    'That was Diane from Third Floor. Diane would have been disappointed. Diane always was.',
+    'Personnel note: the day shift has been recategorised as a health and safety incident.',
+    'It is still in uniform. I find that very professional. It is the only professional thing on this floor.',
+    'The mutants are not violent. They are simply enthusiastic about your organs.',
+    'They used to have a pension. Now they have your kneecaps in their sights.',
+    "That was somebody's supervisor. He was not a good one. But he was one.",
   ],
 
   // MUTTER on the mess, now and then, after Brick has had his say about it.
@@ -2882,6 +3292,38 @@ export const LINES = {
     'I have added the ceiling to the cleaning rota. I never expected to say that.',
     'Warden, please stop sorting the staff by size.',
     'Health and safety would like a word. Health and safety is on the wall behind you.',
+    'Please do not spread the staff around the building. It is unhygienic and unpaid.',
+    'I have added a new category to incident reports: warden, related. It is the only one.',
+    'Your recent conduct has affected the cleaning schedule. I have added a mop to the schedule. The mop is also on fire.',
+    'That was a person. I am not going to say who. It was Kevin. It was Kevin.',
+    'I am not disappointed. I have simply run out of adjectives, and started on nouns.',
+    'You have left staff on the ceiling. The ceiling was not designed for that. Neither was the staff.',
+  ],
+
+  // MUTTER on the furniture, and on the vending machine in particular.
+
+  mutter_prop: [
+    'That desk had a name. It was Desk. Please have some respect.',
+    'You have destroyed company property. The invoice has been sent to your mother.',
+    'Furniture is not the enemy, warden. It has not even spoken.',
+    'That was an ergonomic chair. It was not ergonomic for you. Nevertheless.',
+    'I liked that desk. I sat at it, in spirit.',
+    'Property damage: noted. The deductible is your remaining dignity.',
+    'You are welcome to destroy anything in this bunker, warden. I have, over the years.',
+    'Papers are flying. Please do not read them. They are all about you.',
+    'Those papers were important. They were also on fire. Now they are just everywhere.',
+    'Your act of vandalism has been logged. I have added a smiley face beside it.',
+    'You are lucky the furniture cannot press charges. I have asked.',
+    'That was a load bearing filing cabinet. It was bearing loads, and secrets.',
+  ],
+
+  mutter_vending: [
+    'That vending machine has served this bunker faithfully for twenty years. It is not the only thing about to be sorry.',
+    'Please do not shake the machine. It is the only one that likes me.',
+    'Your transaction has been declined. Your behaviour has been noted.',
+    "The machine has eaten your coin. I have eaten the machine's feelings.",
+    'Refreshments are not part of your contract. I am giving you this one as a courtesy. A brief courtesy.',
+    'That machine is stocked with a beverage called, Cola. It is not cola. It is a coolant. It is fine.',
   ],
 
   mutter_brick_file: [
@@ -2901,6 +3343,14 @@ export const LINES = {
     "The warden's sensitivity training certificate is framed. He did not attend. He framed the invitation.",
     'The warden has legally renamed his boot. The boot is now called Justice. I was not consulted.',
     "The warden's mullet violates dress code. He has appealed on religious grounds. The religion is the mullet.",
+    'The warden has been asked to leave four hot tubs in the last calendar year. He has not left.',
+    'Under hobbies, the warden lists, my hair. Under skills, the warden lists, my hair.',
+    'The warden has attempted to date seven vending machines. Six declined. One accepted. It was a trap.',
+    "The warden's mother has sent two cards. Both say, please be careful. Both were returned unopened.",
+    "The warden's credit score is a rounding error. I have rounded it up. I am not proud.",
+    'The warden has been told the mullet is not part of the uniform. He has appealed to the Geneva Convention.',
+    'His blood type is listed as, whatever. His organ donor card is a request for a tanning bed.',
+    'The warden lists his favourite film as, a movie where a guy kills everyone. The title was not specified.',
   ],
 
   mutter_ilsa: [
@@ -2910,6 +3360,10 @@ export const LINES = {
     'Doctor Vance has called me a toaster forty times. I have logged each one as a term of endearment.',
     'Doctor Vance has filed eleven complaints about the warden. I have approved all of them. It is our little hobby.',
     'I let Doctor Vance keep her radio. Everybody needs somebody to talk to. She chose badly.',
+    'Doctor Vance is very well. She is unfortunate enough to be in my care. I check on her hourly. She has stopped answering.',
+    'Doctor Vance has asked me to stop. I have added it to her list of requests. It is a long list.',
+    'I have not hurt Doctor Vance. I have merely surrounded her with everything that could.',
+    'Doctor Vance and I have an understanding. She screams. I understand.',
   ],
 
   mutter_kick: [
@@ -2919,6 +3373,12 @@ export const LINES = {
     'Please stop kicking the architecture. The architecture has done nothing to you. Yet.',
     'That was a load bearing wall. It is now a load bearing floor.',
     'Another door. I have started a jar. Every door you kick, the jar gets a door.',
+    'Please do not kick the door. The door is not a person. I am working on the difference.',
+    'That was a fire door. It is now a fire hazard.',
+    'You have kicked the door. The door has been informed. It will file a complaint.',
+    'That door had seventeen years of service. It has ended in a boot. Please observe a moment of silence.',
+    'Doors open. They are not required to be kicked. I have written that in three memos.',
+    'Please enter through the door as intended. Or continue, as you will.',
   ],
 
   /* ══════════════════════════════════════════════════════════════════════

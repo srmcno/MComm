@@ -240,6 +240,7 @@ export class Hud {
       this.drawEmpStatic(buf, W, H, s, game);
     }
     this.drawSplatter(buf, W, H);
+    this.drawUseHint(buf, W, H, s, game);
     this.drawObjective(buf, W, H, s, game);
     this.drawRadio(buf, W, H, s, game);
     this.drawBottom(buf, W, H, s, game);
@@ -261,6 +262,18 @@ export class Hud {
     fillRectBuf(buf, W, H, W / 2 - m.w / 2 - 8 * s, y - opts.size * 0.95 - 3 * s,
       m.w + 16 * s, opts.size * 1.3 + 6 * s, INK, Math.min(0.62, a + 0.2));
     this.text.draw(buf, W, H, W / 2, y, str, opts);
+  }
+
+  /** What the use key would do to the thing in front of you, a little under the reticle. */
+  drawUseHint(buf, W, H, s, game) {
+    const str = game.props && game.props.hintText;
+    if (!str || game.player.dead || game.player.emp > 0) return;
+    const opts = { size: Math.round(7 * s), color: rgba(255, 236, 190, 255), align: 'center', track: Math.round(1.6 * s), alpha: 0.95 };
+    const y = H * 0.43;
+    const label = `[F]  ${str}`;
+    const m = this.text.measure(label, opts);
+    fillRectBuf(buf, W, H, W / 2 - m.w / 2 - 7 * s, y - opts.size * 0.95 - 2 * s, m.w + 14 * s, opts.size * 1.3 + 4 * s, INK, 0.55);
+    this.text.draw(buf, W, H, W / 2, y, label, opts);
   }
 
   // -------------------------------------------------------------- reticle
@@ -857,7 +870,7 @@ export class Hud {
           continue;
         }
         if (lv.wall[i] === 1) {
-          const c = lv.height[i] < 0.9 ? rgba(126, 112, 70, 255) : rgba(104, 108, 122, 255);
+          const c = lv.wallHeight(i) < 0.9 ? rgba(126, 112, 70, 255) : rgba(104, 108, 122, 255);
           fillRectBuf(buf, W, H, px, py, cell, cell, c, 0.95);
         } else if (lv.wall[i] === 2) {
           const k = lv.doorKind[i];

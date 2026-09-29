@@ -93,7 +93,8 @@ W A S D / arrows   move                SHIFT     run
 mouse              look                LMB       fire
 wheel, Z / X, [ ]  change weapon       1 - 6     pick a weapon
 V, RMB or MMB      THE BOOT            B or G    pipe bomb (again to detonate)
-SPACE / F          open doors, shove suspicious walls
+SPACE / F          use: doors, vending machines, lockers, drawers, consoles,
+                   the pinball machine, the toilet (Duke rule)
 TAB / M            automap             ESC / P   pause
 ```
 
@@ -119,7 +120,7 @@ rumble fires on shots, kicks, damage and explosions.
 | **THE BOOT** | always in hand | No ammo, no reload, its own button. Shoves things. Hard enough into a wall and the wall finishes the job. |
 | **THE WIDOW** | hand cannon | Hitscan and bottomless. Pops heads. Cannot reach the sky. |
 | **THE SPLITTER** | triple flak | The anti-missile gun, and it comes up on its own when the roof opens. Three shells that burst on whatever they pass, missiles and mutants alike. |
-| **THE NAILDRIVER** | rivet chaingun | For the things walking on your deck. Hopeless against the sky. |
+| **THE NAILDRIVER** | rivet chaingun | A real machine gun: a heavy chained thump with a sub under it, a hard kick, and rounds that take limbs off. For the things walking on your deck. Hopeless against the sky. |
 | **THE HALO** | ring launcher | Blooms into a ring of bursts at the first thing it meets. Sweeps a whole altitude. |
 | **PIPE BOMBS** | thrown | They bounce, settle, and tick faster as they run down. Press again to detonate. One bursting in the sky counts as flak. |
 | **DEADMAN'S SWITCH** | you don't want to know | Scrubs the sky. Scrubs your instruments for six seconds too. |
@@ -149,6 +150,39 @@ spin, bounce off walls, roll and settle in their own blood, and stay there.
 The boot punts them (a long punt of a head is scored accordingly). Bodies
 launched by blasts tumble, slam into walls, leave a smear, and bowl over the
 ones behind them. Spent brass bounces on the deck.
+
+## Breaking things
+
+Everything with a body in the bunker has hit points and a material, and comes
+apart in a way that suits what it was made of. Round, boot or blast: a desk
+splinters and throws its paperwork into the air (it flutters down and lies on
+the floor for a minute), a filing cabinet dents and sprays papers, a vending
+machine shatters and sprays cans and foam, a pinball machine goes off like
+a slot machine, a potted plant spreads itself over the carpet. What is left
+is the original sprite cut down to a scorched wreck. Solid furniture stops a
+bullet like a wall did, but stops being a wall once it is gone; a chair, a
+plant or a bin only takes the round on its way through. Every break goes on the
+invoice (**PROPERTY DAMAGE** on the floor card), and MUTTER has opinions on it.
+
+Some of it can be used, with **SPACE / F**, and a prompt says so when you are
+facing one:
+
+- **Vending machines** take a coin. Most of the time you get a soda that heals
+  you when you walk over it; sometimes it eats the coin and jams (kick it),
+  sometimes it pays out. A kick will also shake a can loose. Shoot it and it
+  empties itself over the floor.
+- **Water coolers** are a drink of water, five times. **Lockers** open
+  once and have ammo, a first aid kit, loose change or gym socks in them.
+  **Filing cabinets and desks** have paperwork, and now and then something
+  worth having in the drawer.
+- **Consoles** can be hacked: half the time they hand over the floor plan (the
+  automap fills in), half the time MUTTER says no. The **pinball machine** pays
+  points, or tilts.
+- **Toilets** are a medkit with a flush. Shoot one and it turns into a
+  fountain.
+- **Chairs, traffic cones and bins** fly when you kick them, and hurt whatever
+  they hit on the way. **Ceiling lamps** can be shot out.
+- **Crates** may have supplies in them. Barrels, as ever, explode.
 
 ## What is down there
 
@@ -186,7 +220,9 @@ coming for the complex you are standing on.
 
 No two stretches of wall are the same. Every wall, floor and ceiling cell picks
 from a set of variants (stains, bullet holes, graffiti, posters, fuse boxes,
-screens showing radar, error dialogs and a fish tank), each floor has its own
+screens showing radar, error dialogs and a fish tank, a whiteboard of sales
+figures that only goes one way, a wall phone off the hook, a sign asking you
+not to punch the machine, and the dent that made it necessary), each floor has its own
 palette, tint and columns, and the rooms are dressed with what a bunker staff
 leaves behind: desks and office chairs, lockers, vending machines, a water
 cooler, a pinball machine, pews and candles, and the staff themselves. The
@@ -230,7 +266,7 @@ modest hardware and sharpens up when it can.
 ## Tests
 
 ```
-node tools/playtest.js            # 79 gameplay assertions in a real browser
+node tools/playtest.js            # 106 gameplay assertions in a real browser
 node tools/audio-integration.js   # static coverage + live audio graph measurement
 node tools/speech-check.js        # voice casting, captions, timing, fallback (mocked browsers)
 node tools/campaign.js [0|1|2]    # a bot plays the whole game and reports balance
@@ -285,8 +321,11 @@ faint metallic comb. A line that has takes plays one of them (never the same one
 twice running, and the right one for the city a line names). A floor opening,
 or one of Hardigan's distracted moments, is only played when the whole exchange
 was recorded, so no scene switches voices halfway. Anything without a take is
-spoken by the browser voice as below. **CALIBRATION > VOICE** shows RECORDED
-CAST while this is on; ROBOT and OFF turn it off.
+spoken by the browser voice as below. A line with more variants than takes
+speaks the unrecorded ones in the browser voice too, so a floor's worth of kills
+is never the same five sentences; the recorded ones keep the larger share, and
+the story and the finale are always exactly as recorded. **CALIBRATION > VOICE**
+shows RECORDED CAST while this is on; ROBOT and OFF turn it off.
 
 The rest of the cast speaks through the browser's own speech engine (`src/audio/speech.js`),
 which on any desktop or phone is far easier to follow mid-firefight than
