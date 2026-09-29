@@ -905,6 +905,32 @@ const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve();
   sp.setMode('natural');
 }
 {
+  // Variants nobody recorded still get their turn, said by the browser voice;
+  // story lines are recorded or nothing.
+  const { clock, synth, sp } = rig('Windows / Edge');
+  const ctx = fakeAudio(clock);
+  const take = { r: 'mutter', k: 'boot', i: 0, a: null, t: 'Good morning. Bunker Sieben is operating normally. Please ignore the sirens. The sirens are for morale.', d: 1.2, b: b64 };
+  // Each line rolls twice: whether to use a recording (always no here), then which spare.
+  let roll = 0;
+  const bank = new ClipBank({ clips: [...TAKES.clips, take] }, { rng: () => (++roll % 2 ? 0.99 : (roll * 0.37) % 1) });
+  bank.attach(ctx, {});
+  sp.attachClips(bank);
+  const said = [];
+  for (let i = 0; i < 12; i++) { sp.cancel(); sp.sayLine('brick_kill'); said.push(sp.lastRequested); clock.advance(5); }
+  const known = new Set(TAKES.clips.filter((c) => c.k === 'brick_kill').map((c) => c.t));
+  check('a line with two takes and dozens of variants also speaks the unrecorded ones, by the browser voice',
+    said.every((t) => t && !known.has(t)) && new Set(said).size > 4 && synth.spoken.length >= 12 && ctx.started.length === 0,
+    `${new Set(said).size} distinct of ${said.length}, ${synth.spoken.length} browser lines, ${ctx.started.length} takes`);
+  sp.cancel(); clock.advance(5);
+  sp.sayLine('boot');
+  await flush();
+  check('a story line is never mixed: a recorded key with a take always plays the take', ctx.started.length === 1 && sp.lastRequested === take.t);
+  const lowRng = new ClipBank(TAKES, { rng: () => 0 });
+  check('a low roll takes the recording', lowRng.pick('brick_kill', { spare: 30 }) !== null);
+  check('the recordings keep at least half of the share', new ClipBank(TAKES, { rng: () => 0.49 }).pick('brick_kill', { spare: 300 }) !== null
+    && new ClipBank(TAKES, { rng: () => 0.51 }).pick('brick_kill', { spare: 300 }) === null);
+}
+{
   // No browser voices at all: takes still play, and a robot line never talks over one.
   const { clock, synth, sp, formant } = rig('Windows / Edge', { voices: [] });
   const ctx = fakeAudio(clock);
