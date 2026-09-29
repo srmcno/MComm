@@ -649,6 +649,8 @@ const VOICE_LABEL = { natural: 'NATURAL', robot: 'ROBOT', off: 'OFF' };
 
 function voiceLabel(game) {
   const m = VOICE_MODES.includes(game.voiceMode) ? game.voiceMode : 'natural';
+  // The recorded cast is on: say so, rather than name the browser's voices.
+  if (m === 'natural' && game.vox && game.vox.acted) return 'RECORDED CAST';
   // Asked for the browser's voices on a browser that has none: say what is
   // actually playing instead of pretending.
   if (m === 'natural' && game.vox && game.vox.engine === 'robot') {
@@ -679,6 +681,10 @@ function cycleVoice(game, d) {
   if (m !== 'off' && v.say) {
     const [who, text] = VOICE_SAMPLES[voiceSample++ % VOICE_SAMPLES.length];
     if (v.cancel) v.cancel();
-    v.say(text, { voice: who, priority: 4 });
+    // The recorded cast plays one of its own takes: the sample should sound
+    // like the game will.
+    const take = { brick: 'brick_kill', ilsa: 'ilsa_gore', mutter: 'perfect_burst' }[who];
+    if (v.acted && v.sayLine && v.hasTake && v.hasTake(take)) v.sayLine(take, { priority: 4 });
+    else v.say(text, { voice: who, priority: 4 });
   }
 }

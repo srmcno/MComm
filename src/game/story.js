@@ -827,9 +827,20 @@ export class Radio {
     return pool[order[i % n]];
   }
 
-  /** The distraction gag: he says a thing, she answers, sometimes he doubles down. */
+  /**
+   * The distraction gag: he says a thing, she answers, sometimes he doubles
+   * down. With the recorded cast speaking, only exchanges it has takes of
+   * are played, each once, so the joke never switches voices halfway.
+   */
   distract() {
-    const set = DISTRACTED[this.distractIdx % DISTRACTED.length];
+    const v = this.game.vox;
+    let set = DISTRACTED[this.distractIdx % DISTRACTED.length];
+    if (v && v.acted && typeof v.canVoice === 'function') {
+      const said = (s) => s.every((line, j) => v.canVoice(j === 1 ? 'ilsa' : 'brick', line));
+      while (this.distractIdx < DISTRACTED.length && !said(DISTRACTED[this.distractIdx])) this.distractIdx++;
+      if (this.distractIdx >= DISTRACTED.length) return false;
+      set = DISTRACTED[this.distractIdx];
+    }
     this.distractIdx++;
     // Voiced exactly as written. These used to be voiced as random picks from
     // each speaker's pool, so the caption and the joke were a matched pair but

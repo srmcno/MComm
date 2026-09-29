@@ -16,6 +16,8 @@ import { clamp, damp } from './core/math.js';
 import { Sound } from './audio/synth.js';
 import { Vox, LINES as VOX_LINES } from './audio/vox.js';
 import { Speech, loadVoiceMode } from './audio/speech.js';
+import { ClipBank } from './audio/acted.js';
+import { VOICE_PACK } from './audio/voicepack.js';
 
 // Internal render width bounds. The ceiling is generous so a fast machine gets
 // a crisp image; the adaptive controller pulls it back down on anything slower.
@@ -143,6 +145,15 @@ export async function boot() {
           else game.vox = wrapVox(v);
           game.vox.setVolume(game.volVox);
         }
+        // The recorded cast: the lines heard most, played from takes through
+        // the same bus. Lines without a take stay on the browser voice.
+        if (speech && sound.ctx && VOICE_PACK && VOICE_PACK.clips && VOICE_PACK.clips.length) {
+          try {
+            const bank = new ClipBank(VOICE_PACK);
+            bank.attach(sound.ctx, sound.sfxBus || sound.ctx.destination);
+            speech.attachClips(bank);
+          } catch (e) { console.warn('[audio] recorded cast unavailable', e); }
+        }
         if (game.state === STATE.TITLE) sound.music('title', { fadeIn: 2.0 });
       }
     } catch (e) { console.warn('[audio] init failed', e); }
@@ -173,6 +184,11 @@ export async function boot() {
         catch { return ''; }
       },
       get casting() { try { return v.casting || null; } catch { return null; } },
+      // The recorded cast: whether it is speaking, whether a line key has a
+      // take, and whether these exact words can be said in it.
+      get acted() { try { return !!v.acted; } catch { return false; } },
+      hasTake: (key) => { try { return !!(v.hasTake && v.hasTake(key)); } catch { return false; } },
+      canVoice: (who, text) => { try { return v.canVoice ? !!v.canVoice(who, text) : true; } catch { return true; } },
       // The announcer picks which variant of a line to speak. Forward it so the
       // subtitle shows the words that were actually said, not a second draw.
       get lastLine() { return v.lastLine; },

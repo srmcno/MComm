@@ -480,6 +480,7 @@ export class Speech {
     this._serial = 0;
     this._timers = new Set();
     this._born = this._now();
+    this.clips = null;         // the recorded takes (acted.js), when there are any
 
     const api = 'api' in o ? o.api : detectSpeech();
     this.synth = (api && api.synth) || null;
@@ -498,6 +499,37 @@ export class Speech {
   }
 
   /* ---------------- setup ------------------------------------------------ */
+
+  /**
+   * The recorded takes arrive with the AudioContext too. From then on a line
+   * that has a take is played from it, in NATURAL mode, and the browser voice
+   * covers the rest.
+   */
+  attachClips(bank) {
+    this.clips = bank && bank.size ? bank : null;
+  }
+
+  /** Takes are in use: NATURAL mode, and a pack wired into the audio graph. */
+  _acted() {
+    return !!(this.clips && this.clips.ready && this.mode === 'natural');
+  }
+
+  /** Is the recorded cast speaking, for the options page. */
+  get acted() { return this._acted(); }
+
+  /** Does this line key have a recorded take (false when takes are off). */
+  hasTake(key) {
+    return this._acted() && this.clips.has(key);
+  }
+
+  /**
+   * Can these exact words be said in the voice the rest of the cast is using:
+   * always without takes; with them, only if these words were recorded.
+   */
+  canVoice(role, text) {
+    if (!this._acted()) return true;
+    return !!this.clips.find(ROLES.includes(role) ? role : 'mutter', plainText(text));
+  }
 
   /** The formant synth arrives once the AudioContext exists. */
   attachFormant(vox) {
@@ -625,7 +657,7 @@ export class Speech {
     this._queue.length = 0;
     const a = this._active;
     this._active = null;
-    if (a) a.dead = true;
+    if (a) { a.dead = true; if (a.handle) a.handle.stop(); }
     for (const t of this._timers) { try { this._clearT(t); } catch { /* ignore */ } }
     this._timers.clear();
     if (this.synth) { try { this.synth.cancel(); } catch { /* ignore */ } }
@@ -640,6 +672,9 @@ export class Speech {
   sayLine(key, opts = {}) {
     try {
       const o = opts && typeof opts === 'object' ? opts : {};
+      // A recorded take of this line, when there is one: its words are the line.
+      const take = this._acted() ? this.clips.pick(key, o) : null;
+      if (take) return this.say(take.t, { ...o, voice: o.voice || voiceOf(key), take });
       let text = isNum(o.pick) ? pickLineAt(key, o.pick) : pickLine(key);
       if (!text) return 0;
       const args = o.args;
@@ -669,6 +704,8 @@ export class Speech {
       this._reqText = plain;
       const eng = this.engine;
       if (eng === 'off') return 0;
+      const take = this._acted() ? (o.take || this.clips.find(this._role(o), plain)) : null;
+      if (take) return this._sayTake(take, raw, o);
       if (eng === 'robot' || (eng === 'pending' && this.formant)) return this._sayFormant(raw, o);
 
       this._pump();
@@ -736,7 +773,7 @@ export class Speech {
     if (a) {
       const now = this._now();
       let speaking = false;
-      if (a.started && !a.ended && now < a.hardEnd) {
+      if (!a.take && a.started && !a.ended && now < a.hardEnd) {
         try { speaking = !!this.synth.speaking; } catch { speaking = false; }
       }
       if (a.ended || (now >= a.endAt && !speaking)) this._active = null;
@@ -746,16 +783,105 @@ export class Speech {
       for (let i = 1; i < this._queue.length; i++) {
         if (this._queue[i].priority > this._queue[best].priority) best = i;
       }
+      // A take waits for a robot line to finish: the formant keeps its own
+      // queue, and the two would otherwise talk over each other.
+      if (this._queue[best].take && this._formantBusy()) { this._waitFormant(); return; }
       const item = this._queue.splice(best, 1)[0];
-      if (this.engine === 'natural') this._speakNatural(item.raw, item.opts, item.priority);
+      if (item.take && this._acted()) this._playTake(item.take, item.raw, item.opts, item.priority);
+      else if (this.engine === 'natural') this._speakNatural(item.raw, item.opts, item.priority);
       else if (this.formant) this._sayFormant(item.raw, item.opts);
     }
+  }
+
+  _formantBusy() {
+    try { return !!(this.formant && this._route === 'formant' && this.formant.busy); }
+    catch { return false; }
+  }
+
+  _waitFormant() {
+    if (this._waiting) return;
+    this._waiting = true;
+    this._later(() => { this._waiting = false; this._pump(); }, 150);
+  }
+
+  /**
+   * A recorded take, on the same floor as the browser voice: a higher
+   * priority cuts in, equal or lower waits in a queue of at most two.
+   */
+  _sayTake(take, raw, o) {
+    this._pump();
+    const prio = num(o.priority, 0);
+    const est = take.d;
+    const robot = !this._active && this._formantBusy();
+    if (this._active || robot) {
+      const outranks = this._active ? prio > this._active.priority : prio > 0;
+      if (outranks) {
+        if (this._active) this._stopActive();
+        else { try { this.formant.cancel(); } catch { /* ignore */ } }
+        this._queue = this._queue.filter((q) => q.priority >= prio || (dropped(q), false));
+      } else {
+        const item = { raw, opts: o, priority: prio, est, take };
+        if (this._queue.length < 2) {
+          this._queue.push(item);
+          if (robot) this._waitFormant();
+          return est;
+        }
+        let worst = 0;
+        for (let i = 1; i < this._queue.length; i++) {
+          if (this._queue[i].priority < this._queue[worst].priority) worst = i;
+        }
+        if (prio > this._queue[worst].priority) {
+          dropped(this._queue[worst]);
+          this._queue[worst] = item;
+          if (robot) this._waitFormant();
+          return est;
+        }
+        return 0;
+      }
+    }
+    return this._playTake(take, raw, o, prio);
+  }
+
+  _playTake(take, raw, o, prio) {
+    this._serial++;
+    const role = this._role(o);
+    const now = this._now();
+    const est = take.d;
+    const a = {
+      priority: prio, role, raw, est, opts: o, start: now, endAt: now + est + 0.25,
+      hardEnd: now + est + 2, started: false, ended: false, dead: false,
+      utts: [], layered: false, id: this._serial, take, handle: null,
+    };
+    if (this._prev && this._prev !== a) this._prev.dead = true;
+    this._prev = a;
+    this._active = a;
+    this._route = 'take';
+    this._lastText = plainText(raw);
+    this._lastVoice = role;
+    lineStarted(o, est);
+    a.handle = this.clips.play(take, {
+      vol: this._vol,
+      onStart: () => { if (!a.dead) a.started = true; },
+      onEnd: () => this._finish(a),
+      onFail: () => {
+        // The take would not play: say the words the way they would have
+        // been said without it. Its start was already announced.
+        if (a.dead || this._active !== a) return;
+        a.dead = true;
+        this._active = null;
+        const rest = { ...o, onStart: null, take: null };
+        if (this.engine === 'natural') this._speakNatural(raw, rest, prio);
+        else if (this.formant) this._sayFormant(raw, rest);
+      },
+    });
+    this._later(() => this._settle(a), Math.ceil(est * 1000) + 300);
+    return est;
   }
 
   _stopActive() {
     const a = this._active;
     this._active = null;
-    if (a) a.dead = true;
+    if (a) { a.dead = true; if (a.handle) a.handle.stop(); }
     try { this.synth.cancel(); } catch { /* ignore */ }
     if (a && a.layered && this.formant) { try { this.formant.cancel(); } catch { /* ignore */ } }
   }

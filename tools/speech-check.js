@@ -15,6 +15,9 @@ import {
 } from '../src/audio/speech.js';
 import { LINES, PHONE_SET, textToPhonemes, voiceOf } from '../src/audio/vox.js';
 import { Radio, SPEAKERS } from '../src/game/story.js';
+import { ClipBank, clipKey } from '../src/audio/acted.js';
+import { VOICE_PACK } from '../src/audio/voicepack.js';
+import { DISTRACTED, LEVEL_STORY_SETS } from '../src/game/story.js';
 
 let pass = 0, fail = 0;
 const results = [];
@@ -793,6 +796,166 @@ function rig(plat, behaviour = {}, opts = {}) {
   check('speech.js uses no Math.random', !/Math\.random/.test(src));
   const raw = fs.readFileSync(new URL('../src/audio/speech.js', import.meta.url), 'utf8');
   check('no long dashes in speech.js', !raw.includes(String.fromCharCode(0x2014)));
+}
+
+/* 8. the recorded cast: takes share one floor with the browser voice */
+function fakeAudio(clock) {
+  const node = () => ({ connect() {}, disconnect() {}, gain: { value: 1 }, frequency: { value: 0 },
+    delayTime: { value: 0 }, type: '', curve: null });
+  const ctx = {
+    started: [], halted: 0, decodes: 0, failDecode: false,
+    createGain: node, createBiquadFilter: node, createWaveShaper: node, createDelay: node,
+    decodeAudioData(buf, ok, err) {
+      ctx.decodes++;
+      if (ctx.failDecode) { const e = new Error('bad mp3'); if (err) err(e); return Promise.reject(e); }
+      const b = { duration: 1.2 };
+      if (ok) ok(b);
+      return Promise.resolve(b);
+    },
+    createBufferSource() {
+      const src = { buffer: null, onended: null, halted: false, connect() {},
+        start() { ctx.started.push(src); clock.setTimeout(() => { if (!src.halted && src.onended) src.onended(); }, 1200); },
+        stop() { src.halted = true; ctx.halted++; } };
+      return src;
+    },
+  };
+  return ctx;
+}
+const b64 = Buffer.from('not really an mp3').toString('base64');
+const TAKES = { clips: [
+  { r: 'brick', k: 'brick_kill', i: 0, a: null, t: 'Sit down.', d: 1.2, b: b64 },
+  { r: 'brick', k: 'brick_kill', i: 8, a: null, t: 'Clock out, asshole.', d: 1.2, b: b64 },
+  { r: 'mutter', k: 'city_lost', i: 0, a: 'Verity', t: 'Verity has been retired. Please do not be discouraged.', d: 1.2, b: b64 },
+  { r: 'mutter', k: 'city_lost', i: 3, a: 'Ashgrove', t: 'Ashgrove is gone. I have removed it from the newsletter.', d: 1.2, b: b64 },
+  { r: 'mutter', k: 'mutter_ex_file', i: 2, a: 'Low Sabbath', t: 'Personnel note on the city Low Sabbath. Cheryl Mack lives there.', d: 1.2, b: b64 },
+  { r: 'ilsa', k: null, i: -1, a: null, t: 'Yes. Objectively. Measurably. I have a graph.', d: 1.2, b: b64 },
+] };
+const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); };
+{
+  const bank = new ClipBank(TAKES, { rng: () => 0 });
+  check('ClipBank indexes every take', bank.size === 6 && bank.has('brick_kill') && !bank.has('brick_hurt'));
+  check('a take is found by its words, whatever the case and punctuation',
+    bank.find('ilsa', 'yes objectively measurably, I have a GRAPH') === TAKES.clips[5] && !bank.find('brick', 'Yes. Objectively. Measurably. I have a graph.'));
+  const p1 = bank.pick('brick_kill'), p2 = bank.pick('brick_kill'), p3 = bank.pick('brick_kill');
+  check('a pooled line never plays the same take twice running', p1 !== p2 && p2 !== p3, `${p1.t} / ${p2.t} / ${p3.t}`);
+  check('a line that names a city plays that city\'s take',
+    bank.pick('city_lost', { args: ['ASHGROVE', '4'] }) === TAKES.clips[3] && bank.pick('city_lost', { args: ['HOLLOW BAY', '3'] }) === null);
+  check('a picked variant plays that variant\'s take',
+    bank.pick('mutter_ex_file', { pick: 2, args: ['Low Sabbath'] }) === TAKES.clips[4] && bank.pick('mutter_ex_file', { pick: 1, args: ['Ashgrove'] }) === null);
+  check('clipKey ignores case and punctuation', clipKey('brick', 'Sit down!') === clipKey('brick', 'sit   DOWN.'));
+  check('an empty or broken pack is an empty bank', new ClipBank(null).size === 0 && new ClipBank({ clips: [{ r: 'brick' }] }).size === 0);
+}
+{
+  const { clock, synth, sp, formant } = rig('Windows / Edge');
+  const ctx = fakeAudio(clock);
+  const bank = new ClipBank(TAKES, { rng: () => 0 });
+  check('no takes until the bank is wired into the audio graph', (sp.attachClips(bank), sp.acted === false));
+  bank.attach(ctx, {});
+  check('wired in, NATURAL speaks the recorded cast', sp.acted === true && sp.hasTake('brick_kill') && !sp.hasTake('brick_hurt'));
+  let started = 0;
+  const d = sp.sayLine('brick_kill', { onStart: () => { started++; } });
+  await flush();
+  check('a line with a take plays the take, not the browser voice',
+    d === 1.2 && ctx.started.length === 1 && synth.spoken.length === 0 && started === 1, `d=${d} src=${ctx.started.length} tts=${synth.spoken.length}`);
+  check('the caption is the take\'s words', sp.lastRequested === 'Sit down.' && sp.lastLine === 'Sit down.' && sp.lastVoice === 'brick');
+  check('busy while the take plays', sp.busy === true);
+  const q = sp.say('Nobody recorded this one.', { voice: 'ilsa' });
+  check('a browser-voice line waits behind a take of equal priority', q > 0 && synth.spoken.length === 0);
+  clock.advance(1.3);
+  await flush();
+  check('...and speaks when the take ends', synth.spoken.some((u) => /Nobody recorded/.test(u.text)));
+  clock.advance(10);
+  sp.sayLine('brick_kill');
+  await flush();
+  const before = ctx.halted;
+  sp.say('Urgent. Incoming.', { voice: 'ilsa', priority: 5 });
+  check('a higher priority cuts the take off', ctx.halted === before + 1 && synth.spoken.some((u) => /Urgent/.test(u.text)));
+  clock.advance(10);
+  sp.say('Yes. Objectively. Measurably. I have a graph.', { voice: 'ilsa' });
+  await flush();
+  const exact = ctx.started.length;
+  sp.cancel();
+  check('exact words with a take play it, and cancel stops it', exact === 3 && ctx.halted === before + 2 && sp.busy === false);
+  check('canVoice: recorded words yes, unrecorded no',
+    sp.canVoice('ilsa', 'Yes. Objectively. Measurably. I have a graph.') && !sp.canVoice('brick', 'Doc, you got a sister?'));
+  sp.speakCity = sp.sayLine('city_lost', { args: ['VERITY', '5'] });
+  await flush();
+  check('a city line plays that city\'s take, without the count', sp.lastRequested === 'Verity has been retired. Please do not be discouraged.');
+  sp.cancel();
+  const n0 = synth.spoken.length;
+  sp.sayLine('city_lost', { args: ['HOLLOW BAY', '3'] });
+  check('a city with no take falls back to the browser voice, count and all',
+    synth.spoken.length === n0 + 1 && /Hollow Bay|HOLLOW BAY/i.test(synth.spoken[n0].text) && /3|three/.test(synth.spoken[n0].text), synth.spoken[n0] && synth.spoken[n0].text);
+  sp.cancel();
+  clock.advance(10);
+  ctx.failDecode = true;
+  bank.cache.clear();
+  const n1 = synth.spoken.length;
+  sp.say('Clock out, asshole.', { voice: 'brick' });
+  await flush();
+  clock.advance(0.1);
+  check('a take that will not decode is said by the browser voice instead', synth.spoken.length === n1 + 1 && /Clock out/.test(synth.spoken[n1].text));
+  ctx.failDecode = false;
+  sp.cancel();
+  sp.setMode('robot');
+  const f0 = formant.said.length;
+  sp.sayLine('brick_kill');
+  await flush();
+  check('ROBOT ignores the takes', sp.acted === false && formant.said.length === f0 + 1 && sp.canVoice('brick', 'anything at all'));
+  sp.setMode('natural');
+}
+{
+  // No browser voices at all: takes still play, and a robot line never talks over one.
+  const { clock, synth, sp, formant } = rig('Windows / Edge', { voices: [] });
+  const ctx = fakeAudio(clock);
+  const bank = new ClipBank(TAKES, { rng: () => 0 });
+  bank.attach(ctx, {});
+  sp.attachClips(bank);
+  clock.advance(3);                          // past the wait for a voice list
+  const r = sp.say('The robot says this.', { voice: 'mutter' });
+  check('without browser voices the robot speaks unrecorded lines', r > 0 && formant.said.length === 1 && sp.engine === 'robot');
+  sp.sayLine('brick_kill');
+  await flush();
+  check('a take waits for the robot line instead of talking over it', ctx.started.length === 0);
+  clock.advance(r + 0.5);
+  await flush();
+  check('...and plays once the robot is done', ctx.started.length === 1 && synth.spoken.length === 0);
+}
+
+/* 9. the shipped takes match the script they claim to say */
+{
+  const clips = (VOICE_PACK && VOICE_PACK.clips) || [];
+  const norm = (t) => clipKey('x', t);
+  const bad = [], seen = new Set();
+  const gags = new Map();
+  for (const set of DISTRACTED) set.forEach((line, j) => gags.set(clipKey(j === 1 ? 'ilsa' : 'brick', plainText(line)), true));
+  for (const c of clips) {
+    const id = `${c.k || 'exact'}.${c.i}${c.a ? '.' + c.a : ''}`;
+    if (!ROLES.includes(c.r) || !c.t || !(c.d > 0.3 && c.d < 20)) { bad.push(id + ' fields'); continue; }
+    const bytes = Buffer.from(c.b || '', 'base64');
+    const mp3 = bytes.length > 400 && ((bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) || (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0));
+    if (!mp3) bad.push(id + ' audio');
+    const k = clipKey(c.r, c.t);
+    if (seen.has(k)) bad.push(id + ' duplicate');
+    seen.add(k);
+    if (c.k) {
+      const v = LINES[c.k];
+      const src = Array.isArray(v) ? v[c.i] : v;
+      if (!src || voiceOf(c.k) !== c.r) { bad.push(id + ' not in the script'); continue; }
+      let want = plainText(src.replace(/\s*%s remain\.\s*$/, '').replace('%s', c.a || ''));
+      if (norm(want) !== norm(c.t)) bad.push(id + ' words differ');
+    } else if (!gags.has(k)) {
+      bad.push(id + ' exact line not in the script');
+    }
+  }
+  check(`every take (${clips.length}) is sound, unique and says what the script says`, bad.length === 0, bad.slice(0, 6).join(', '));
+  if (clips.length) {
+    const bank = new ClipBank(VOICE_PACK);
+    const whole = LEVEL_STORY_SETS.map((sets) => sets.some((set) => set.every((b) => bank.has(b.key))));
+    check('every floor has an opening exchange the recorded cast can play whole', whole.every(Boolean), whole.join(','));
+    const kb = Math.round(clips.reduce((n, c) => n + c.b.length, 0) / 1024);
+    check('the pack stays under 6 MB of base64', kb < 6144, `${kb} KB`);
+  }
 }
 
 console.log('\nspeech-check - Web Speech casting, text, timing and fallback\n');
