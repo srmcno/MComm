@@ -126,6 +126,7 @@ export class Raycaster {
     const { w, h, buf, zbuf, wallTop, wallBot, skyTop } = this;
     const { wall, wallTex, doorOpen, doorVert, height, sky, W, H, parapet, wallTexShut } = lv;
     const atlas = art.texAtlas, emis = art.texEmissive;
+    const scrawl = lv.scrawl && lv.scrawl.size ? lv.scrawl : null;
     const projY = this.projY;
     const eye = cam.z;
     const fogFar = opts.fogFar, fogColor = opts.fogColor;
@@ -143,7 +144,7 @@ export class Raycaster {
       if (rdy < 0) { stepY = -1; sdy = (cam.y - mapY) * ddy; }
       else { stepY = 1; sdy = (mapY + 1 - cam.y) * ddy; }
 
-      let side = 0, dist = 0, tex = 0, u = 0, hit = false, wallH = CEIL_H;
+      let side = 0, dist = 0, tex = 0, u = 0, hit = false, wallH = CEIL_H, hitIdx = -1;
       // The cell the ray was standing in when it hit. You can only see the
       // horizon over a parapet if THAT cell has no roof on it right now.
       let nearIdx = -1;
@@ -194,6 +195,7 @@ export class Raycaster {
         // mirrored every face, so every stencil in the bunker read backwards.
         if ((side === 0 && rdx < 0) || (side === 1 && rdy > 0)) u = 1 - u;
         tex = wallTex[idx];
+        hitIdx = idx;
         wallH = height[idx];
         // A berm is only a berm seen from open sky. From anywhere else, and
         // from every side once the roof has shut, it is the full wall it was
@@ -254,6 +256,10 @@ export class Raycaster {
       const texBase = tex * TEX * TEX;
       let tx = (u * TEX) | 0;
       if (tx < 0) tx = 0; else if (tx >= TEX) tx = TEX - 1;
+      // Writing on this face of this cell (blood, mostly), blended over the texture.
+      const ov = scrawl && hitIdx >= 0
+        ? scrawl.get(hitIdx * 4 + (side === 0 ? (rdx < 0 ? 1 : 0) : (rdy < 0 ? 3 : 2))) : undefined;
+      const ovS = ov ? ov.strip : null, ovW = ov ? ov.ws : 0, ovX = ov ? ov.off + tx : 0;
       const stepV = TEX / spanH;
       let vpos = (drawStart - yHead) * stepV;
 
@@ -273,7 +279,17 @@ export class Raycaster {
         let k = 1;
         if (ao && v > 0.84) k = 1 - (v - 0.84) * 3.1;          // down to ~0.5 at the floor
         else if (aoTop && v < 0.07) k = 1 - (0.07 - v) * 4.3;  // down to ~0.7 at the ceiling
-        const t = atlas[texBase + ty * TEX + tx];
+        let t = atlas[texBase + ty * TEX + tx];
+        if (ovS) {
+          const o = ovS[ty * ovW + ovX], oa = o >>> 24;
+          if (oa) {
+            const a = oa / 255, ia = 1 - a;
+            const nr = ((t & 255) * ia + (o & 255) * a) | 0;
+            const ng = (((t >>> 8) & 255) * ia + ((o >>> 8) & 255) * a) | 0;
+            const nb = (((t >>> 16) & 255) * ia + ((o >>> 16) & 255) * a) | 0;
+            t = (255 << 24 | nb << 16 | ng << 8 | nr) >>> 0;
+          }
+        }
         const r = (t & 255) * lr * k, g = ((t >>> 8) & 255) * lg * k, b = ((t >>> 16) & 255) * lb * k;
         buf[y * this.w + c] =
           (255 << 24 |

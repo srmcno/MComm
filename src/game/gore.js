@@ -1147,6 +1147,8 @@ export class Gore {
         randRange(rng, 110, 175) | 0, randRange(rng, 6, 18) | 0, 16,
         5, big ? randRange(rng, 0.1, 0.35) : 0.02, false, true, 0.25, 0);
     }
+    // Now and then the splash spells something.
+    if (this.game.scrawl) this.game.scrawl.maybeCurse(x, y, z, nx, ny, heavy);
     // A few runs dripping down from it.
     const runs = heavy ? 5 : 2;
     for (let i = 0; i < runs; i++) {

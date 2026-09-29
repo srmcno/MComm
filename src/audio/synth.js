@@ -2107,7 +2107,7 @@ const MIX = Object.assign(Object.create(null), {
   radio_open: 2, radio_close: 2.5, radio_static: 1.8,
   wood_hit: 1.5, wood_break: 1.2, metal_hit: 1.2, glass_break: 1.7, coin_clink: 0.9, soda_pop: 0.9,
   pinball_play: 0.6, buzz_deny: 0.6, console_blip: 0.65, water_burst: 0.75, paper_flurry: 0.9,
-  saw_run: 1.6, saw_cut: 1.5, saw_bind: 1.4, saw_catch: 1.3, saw_wall: 1.3, saw_start: 1.3,
+  scribe_giggle: 1.3, scribe_scratch: 1.2, saw_rumble: 1.7, saw_run: 1.6, saw_cut: 1.5, saw_bind: 1.4, saw_catch: 1.3, saw_wall: 1.3, saw_start: 1.3,
 });
 
 /** How far each big hit pushes the music down (see Sound._pumpMusic). */
@@ -4874,6 +4874,55 @@ bake('saw_run', 0.2, 3, (d, sr, R) => {
   kSat(d, 2.2);
 });
 
+// The engine of THE SEVERANCE as a floor-shaker rather than a buzz: a tired two-stroke
+// loping at thirty strokes a second, every fourth one a misfire, over a 45 Hz sine that
+// is eighteen whole cycles long, so back to back it never breaks, and a brown-noise bed
+// you feel in the chest. Played faster it revs; the chain whirr rides on top.
+bake('saw_rumble', 0.4, 3, (d, sr, R) => {
+  const P = 12;
+  for (let i = 0; i < P; i++) {
+    const t0 = (i / P) * 0.4 + (R() - 0.5) * 0.004;
+    const a = (0.75 + R() * 0.25) * (i % 4 === 3 ? 0.55 : 1);
+    kThump(d, sr, t0, 118, 46, 0.008, 0.04, a, 2.6);
+    kNoise(d, sr, R, t0, 0.03, { type: 'bp', f0: 640, f1: 260, q: 1.1, atk: 0.001, tau: 0.012, amp: a * 1.1 });
+  }
+  kTone(d, sr, 0, 0.4, 45, 45, 0.6, 0.01, 0, 2);
+  kTone(d, sr, 0, 0.4, 90, 90, 0.24, 0.01, 0, 1);
+  kNoise(d, sr, R, 0, 0.4, { type: 'lp', f0: 170, f1: 170, q: 0.7, atk: 0.01, hold: 0.4, tau: 0.5, amp: 1.5, am: [30, 0.55], col: 2 });
+  kNoise(d, sr, R, 0, 0.4, { type: 'hp', f0: 4200, f1: 4200, q: 0.6, atk: 0.005, hold: 0.4, tau: 0.5, amp: 0.24, am: [150, 0.6] });
+  kSat(d, 2);
+  const fade = Math.floor(sr * 0.006);
+  for (let i = 0; i < fade; i++) { const g = i / fade; d[i] *= g; d[d.length - 1 - i] *= g; }
+});
+
+// THE SCRIBE laughing: a tall thin man, a lot of small hiccuping "hee"s climbing at the end.
+// Buzzy tones a whole octave above a person, breath on top, and nothing below 400 Hz.
+bake('scribe_giggle', 1.0, 3, (d, sr, R) => {
+  let t0 = 0.02;
+  const n = 7 + ((R() * 3) | 0);
+  for (let i = 0; i < n; i++) {
+    const last = i === n - 1;
+    const f0 = 940 * (1 + (R() - 0.5) * 0.12) * (1 + i * 0.03), f1 = last ? f0 * 1.45 : f0 * 0.78;
+    const len = last ? 0.2 : 0.06 + R() * 0.02;
+    kTone(d, sr, t0, len, f0, f1, 0.55, 0.008, last ? 0.09 : 0.03, 1, [34, 0.04]);
+    kTone(d, sr, t0, len, f0 * 2.03, f1 * 2.03, 0.2, 0.008, last ? 0.09 : 0.03, 0);
+    kNoise(d, sr, R, t0, len, { type: 'bp', f0: 3600, f1: 2600, q: 0.9, atk: 0.004, tau: 0.03, amp: 0.4 });
+    t0 += last ? 0 : 0.075 + R() * 0.045;
+  }
+  kFilt(d, sr, 0, 0, 'hp', 420, 420, 0.7);
+  kSat(d, 1.5);
+});
+
+// A finger dragged through something wet on a wall: three short, slick, gritty strokes.
+bake('scribe_scratch', 0.5, 3, (d, sr, R) => {
+  for (let i = 0; i < 3; i++) {
+    const t0 = i * 0.16 + R() * 0.02;
+    kNoise(d, sr, R, t0, 0.14, { type: 'bp', f0: 1500 + R() * 700, f1: 3300, q: 1.5, atk: 0.012, hold: 0.03, tau: 0.05, amp: 1.1, am: [36, 0.8] });
+    kSquish(d, sr, R, t0, 0.12, 9, 500, 2200, 0.1, 1);
+  }
+  kSat(d, 1.4);
+});
+
 // The chain in something wet: a rasp, an engine labouring and a lot of small red noises.
 bake('saw_cut', 0.24, 3, (d, sr, R) => {
   const j = 1 + (R() - 0.5) * 0.06;
@@ -4929,6 +4978,18 @@ bake('saw_start', 0.95, 1, (d, sr, R) => {
 });
 
 Object.assign(SFX, {
+  scribe_giggle(S, t, o) {
+    const v = V(S, o, 4, 0.3, 0.08); if (!v) return;
+    smp(S, v, t, 'scribe_giggle', { g: 0.85, rate: jr(S, o, 0.05) });
+  },
+  scribe_scratch(S, t, o) {
+    const v = V(S, o, 2, 0.1, 0); if (!v) return;
+    smp(S, v, t, 'scribe_scratch', { g: 0.8, rate: jr(S, o, 0.06) });
+  },
+  saw_rumble(S, t, o) {
+    const v = V(S, o, 3, 0.15, 0); if (!v) return;
+    smp(S, v, t, 'saw_rumble', { g: 0.9, rate: o.rate });
+  },
   saw_run(S, t, o) {
     const v = V(S, o, 3, 0.15, 0); if (!v) return;
     smp(S, v, t, 'saw_run', { g: 0.8, rate: o.rate });

@@ -59,6 +59,8 @@ for (const k of ['desk', 'chair', 'filing', 'locker', 'vending', 'cooler', 'toil
 for (const k of ['wood', 'salt', 'rust', 'tech']) expected.push(`pillar_${k}`);
 for (let i = 0; i < 3; i++) expected.push(`flare${i}`);
 expected.push('weapon_splitter', 'weapon_nailer', 'weapon_halo', 'weapon_pipebomb', 'weapon_deadman', 'weapon_saw');
+const SCRIBE = ['scribe_stand', 'scribe_write0', 'scribe_write1', 'scribe_wave0', 'scribe_wave1', 'scribe_peek'];
+expected.push(...SCRIBE);
 expected.push('wh_stick', 'wh_mirv', 'wh_smart', 'wh_screamer', 'wh_buster');
 for (let i = 0; i < 4; i++) expected.push(`skymine${i}`);
 for (let i = 0; i < 3; i++) expected.push(`blood${i}`);
@@ -104,6 +106,7 @@ for (const k of ['key_red', 'key_blue', 'key_gold', 'medkit_small', 'medkit_big'
 for (const k of ['barrel', 'barrel_lit', 'pillar']) EXACT[k] = [40, 64];
 EXACT.lamp = [32, 24];
 for (const k of ['weapon_splitter', 'weapon_nailer', 'weapon_halo', 'weapon_pipebomb', 'weapon_deadman', 'weapon_saw']) EXACT[k] = [48, 28];
+for (const k of SCRIBE) EXACT[k] = [56, 112];
 for (const k of ['wh_stick', 'wh_mirv', 'wh_smart', 'wh_screamer', 'wh_buster',
   'skymine0', 'skymine1', 'skymine2', 'skymine3']) EXACT[k] = [48, 56];
 for (const k of ['blood0', 'blood1', 'blood2', 'scorch']) EXACT[k] = [48, 24];
@@ -350,6 +353,7 @@ writeSheet(path.join(OUT, 'spr-props.png'), pick([
   'weapon_pipebomb', 'weapon_deadman', 'weapon_saw', 'barrel', 'barrel_lit', 'pillar', 'blood0', 'blood1',
   'blood2', 'scorch',
 ]), { cols: 6, scale: 3, pad: 3 });
+writeSheet(path.join(OUT, 'spr-scribe.png'), pick(SCRIBE), { cols: 6, scale: 3, pad: 3 });
 
 writeSheet(path.join(OUT, 'spr-sky.png'), pick([
   'wh_stick', 'wh_mirv', 'wh_smart', 'wh_screamer', 'wh_buster',

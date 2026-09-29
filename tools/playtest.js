@@ -1229,6 +1229,155 @@ check('letting go of the trigger slides him off alive and hurt; the Boot gets hi
 check('the saw kills what it is walked into, breaks the furniture in front of it, and cuts a sprite into two pieces that add up',
   s.sawKilled && s.deskOk && s.cutOk[0] && s.cutOk[1], `killed ${s.sawKilled}, furniture ${s.deskOk}, cut h ${s.cutOk[0]} v ${s.cutOk[1]}`);
 
+// ------ 28w. writing on the walls, and the thin man who does it (round five). A message
+// writes itself in blood a letter at a time and drips; a curse arrives whole where
+// blood hits a wall, and is rare on purpose; the Scribe turns up in front of a
+// wall, writes it, may go invisible, giggles, never hurts anybody, and is gone.
+s = await page.evaluate(async () => {
+  const { MESSAGES, Scrawl, FACE_D, faceRight } = await import('./src/game/scrawl.js');
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true; g.enemies.length = 0;
+  const p = g.player, lv = g.level, sc = g.scrawl, sb = g.scribe;
+  const run = (sec) => { for (let i = 0; i < Math.round(sec * 60); i++) g.update(1 / 60, g.input); };
+  const ink = (strip) => { let n = 0; for (let i = 0; i < strip.length; i++) if (strip[i] >>> 24) n++; return n; };
+  const out = { layer: !!lv.scrawl && lv.scrawl instanceof Map && !!sc && !!sb };
+
+  // 1. a message writes itself and drips
+  const msg = ['I FOUND A DOOR', 'IT WAS A MOUTH'];
+  const runs = sc.runs(Scrawl.cellsFor(msg, 8));
+  const r = runs[0];
+  const job = sc.write(r, msg, { size: 8, dur: 2, row: 30, seed: 42 });
+  const cell = lv.scrawl.get((r.y * lv.W + r.x) * 4 + r.f);
+  const at0 = ink(job.cur);
+  run(1);
+  const mid = ink(job.cur);
+  run(6);
+  const end = ink(job.cur);
+  out.write = { runs: runs.length, faces: lv.scrawl.size, cell: !!cell && cell.ws === r.n * 64, at0, mid, end, done: job.done, drips: job.drips.filter((d) => d.drawn > 0).length };
+  // and the raycaster reads it without falling over: face the wall and let a few frames draw
+  const d = FACE_D[r.f], rr = faceRight(r.f);
+  const mx = r.fx + 0.5 + rr[0] * (r.n - 1) / 2, my = r.fy + 0.5 + rr[1] * (r.n - 1) / 2;
+  p.x = mx - d[0] * 0.4; p.y = my - d[1] * 0.4; p.ang = Math.atan2(d[1], d[0]); p.pitch = 0;
+
+  // 2. a curse: whole at once, refused on a face that is taken, and rare
+  const face = runs.find((q) => !lv.scrawl.has((q.y * lv.W + q.x) * 4 + q.f) && q.f !== r.f) || runs[runs.length - 1];
+  const fd = FACE_D[face.f];
+  const cj = sc.curse(face.fx + 0.5 + fd[0] * 0.42, face.fy + 0.5 + fd[1] * 0.42, 0.7, -fd[0], -fd[1], 'FUCK');
+  const again = sc.curse(face.fx + 0.5 + fd[0] * 0.42, face.fy + 0.5 + fd[1] * 0.42, 0.7, -fd[0], -fd[1], 'SHIT');
+  out.curse = { made: !!cj, ink: cj ? ink(cj.cur) : 0, refused: again === null };
+  const real = g.rng;
+  g.rng = () => 0.0001;                       // the luckiest possible roll, every time
+  sc.curses = 0; sc.curseAt = -999;
+  const all = sc.runs(1);
+  let tries = 0;
+  for (let i = 0; i < all.length && i < 60; i++) {
+    const q = all[i], dq = FACE_D[q.f];
+    g.time += 40; tries++;
+    sc.maybeCurse(q.fx + 0.5 + dq[0] * 0.42, q.fy + 0.5 + dq[1] * 0.42, 0.7, -dq[0], -dq[1], true);
+  }
+  out.rare = { curses: sc.curses, tries };
+  g.time -= 40 * tries;
+  sc.curses = 0; sc.curseAt = g.time;
+  // a middling roll (0.02) is enough for a big splash and never for a light one
+  g.rng = () => 0.02;
+  let lightN = 0, heavyN = 0;
+  for (let i = 0; i < all.length && i < 60; i++) {
+    const q = all[i], dq = FACE_D[q.f];
+    g.time += 40; sc.curses = 0; sc.curseAt = -999;
+    if (sc.maybeCurse(q.fx + 0.5 + dq[0] * 0.42, q.fy + 0.5 + dq[1] * 0.42, 0.7, -dq[0], -dq[1], false)) lightN++;
+  }
+  for (let i = 0; i < all.length && i < 60; i++) {
+    const q = all[i], dq = FACE_D[q.f];
+    g.time += 40; sc.curses = 0; sc.curseAt = -999;
+    if (sc.maybeCurse(q.fx + 0.5 + dq[0] * 0.42, q.fy + 0.5 + dq[1] * 0.42, 0.7, -dq[0], -dq[1], true)) heavyN++;
+  }
+  g.rng = real;
+  out.rare.light = lightN; out.rare.heavy = heavyN;
+  // and a real splash on a real wall goes through the same door
+  g.rng = () => 0.0001; sc.curses = 0; sc.curseAt = -999; g.time += 40;
+  const sq = all.find((q) => !lv.scrawl.has((q.y * lv.W + q.x) * 4 + q.f));
+  let smeared = false;
+  if (sq) {
+    const dq = FACE_D[sq.f], before = sc.curses;
+    g.gore.smear(sq.fx + 0.5 + dq[0] * 0.44, sq.fy + 0.5 + dq[1] * 0.44, 0.7, 0.6, true, dq[0], dq[1]);
+    smeared = sc.curses === before + 1;
+  }
+  g.rng = real;
+  out.rare.smear = smeared;
+
+  // 3. the Scribe's visit
+  g.loadLevel(0); g.setState('play'); g._god = true; g.enemies.length = 0;
+  const S = g.scribe, P = g.player;
+  let hurts = 0; P.hurt = () => { hurts++; };
+  const hp0 = P.health;
+  S.next = 0;
+  for (let a = 0; a < 16 && S.state === 0; a++) { P.ang = a * Math.PI / 8; S.next = 0; run(0.05); }
+  out.visit = { began: S.state !== 0, msg: !!S.msg, run: !!S.run, ghost: S.ghost };
+  const sr = S.run;
+  if (sr) {
+    const d2 = FACE_D[sr.f], r2 = faceRight(sr.f);
+    const qx = sr.fx + 0.5 + r2[0] * (sr.n - 1) / 2, qy = sr.fy + 0.5 + r2[1] * (sr.n - 1) / 2;
+    for (let k = 4; k >= 2.2; k -= 0.2) { const x = qx - d2[0] * k, y = qy - d2[1] * k; if (!g.level.blocked(x, y) && g.level.lineOfSight(x, y, qx, qy)) { P.x = x; P.y = y; break; } }
+    P.ang = Math.atan2(d2[1], d2[0]);
+    S.ghost = false;
+    let saw = 0, states = new Set();
+    for (let i = 0; i < 60 * 14 && !(S.state === 0 && i > 60); i++) {
+      run(1 / 60);
+      states.add(S.state);
+      if (S.sprite(g.art)) saw++;
+    }
+    out.visit.states = [...states].sort().join('');
+    out.visit.sprite = saw;
+    out.visit.finished = !!S.job === false || S.job.done;
+    out.visit.gone = S.state === 0;
+    out.visit.wrote = ink(S.run ? (g.level.scrawl.get((sr.y * g.level.W + sr.x) * 4 + sr.f) || { strip: new Uint32Array(0) }).strip : new Uint32Array(0));
+  }
+  out.visit.hurt = hurts;
+  out.visit.hp = P.health === hp0;
+  out.visit.enemies = g.enemies.length;
+
+  // he goes when you come close (and the writing is finished for him), and when you shoot at him
+  S.next = 0; S.visits = 0;
+  for (let a = 0; a < 16 && S.state === 0; a++) { P.ang = a * Math.PI / 8; S.next = 0; run(0.05); }
+  out.close = { began: S.state !== 0 };
+  if (S.state !== 0) {
+    S.ghost = false; S.state = 2; S.t = 0; S.alpha = 1; S._vis = true; S.blink = 9;
+    P.x = S.x - 1.2 * Math.cos(P.ang); P.y = S.y - 1.2 * Math.sin(P.ang);
+    const near = g.level.blocked(P.x, P.y);
+    if (near) { P.x = S.x; P.y = S.y; }
+    run(0.1);
+    out.close.faded = S.state === 4 || S.state === 0;
+    out.close.finished = S.job ? S.job.done : true;
+  }
+  S.state = 0; S.next = 999;
+  const sc3 = g.scrawl; void sc3;
+  // shot: put him in front of the muzzle and fire the aim vector through him
+  S.run = sr || S.run;
+  S.state = 2; S.t = 0; S.alpha = 1; S.x = P.x + Math.cos(P.ang) * 2; S.y = P.y + Math.sin(P.ang) * 2; S.job = null;
+  P.pitch = 0; P.z = 0.56;
+  const aim = P.aimVector(g.rc.projY);
+  out.shot = { hit: S.onShot(aim), faded: S.state === 4 };
+  S.state = 2; S.alpha = 1; S.x = P.x - Math.cos(P.ang) * 2; S.y = P.y - Math.sin(P.ang) * 2;
+  out.shot.behind = S.onShot(aim) === false;
+  S.state = 0;
+  delete P.hurt;                                // the stub was ours; the player's own method comes back
+  return out;
+});
+check('a message writes itself in blood, letter by letter, then drips; the wall face carries it',
+  s.layer && s.write.runs > 20 && s.write.cell && s.write.mid > s.write.at0 && s.write.end > s.write.mid && s.write.done && s.write.drips >= 2,
+  JSON.stringify(s.write));
+check('a curse arrives whole, is refused on a wall that is already written on, and is rare: at most five a floor, and only a big splash on a middling roll',
+  s.curse.made && s.curse.ink > 100 && s.curse.refused && s.rare.curses > 0 && s.rare.curses <= 5 && s.rare.light === 0 && s.rare.heavy > 0 && s.rare.smear,
+  JSON.stringify({ curse: s.curse, rare: s.rare }));
+check('the Scribe comes to a wall, is drawn while he works, writes the message, and is gone; nobody is hurt and no enemy is made',
+  s.visit.began && s.visit.msg && s.visit.run && s.visit.sprite > 30 && s.visit.finished && s.visit.gone && s.visit.wrote > 100
+  && s.visit.hurt === 0 && s.visit.hp && s.visit.enemies === 0,
+  JSON.stringify(s.visit));
+check('come close and he is gone with the writing finished; shoot through him and he giggles off; a shot behind you is nothing',
+  s.close.began && s.close.faded && s.close.finished && s.shot.hit && s.shot.faded && s.shot.behind,
+  JSON.stringify({ close: s.close, shot: s.shot }));
+await sleep(500);
+
 // ------ 28b. the wheel changes guns on a real notch, not on the trickle a
 // touch-surface mouse or trackpad sends while the hand is only aiming
 s = await page.evaluate(() => {

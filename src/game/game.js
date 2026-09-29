@@ -8,6 +8,7 @@ import { Player, EYE_HEIGHT, FUSE_MAX } from './player.js';
 import { Enemy, Bolt, PipeBomb, Acid, ENEMY_TYPES, ST } from './entities.js';
 import { Particles } from './particles.js';
 import { Props } from './props.js';
+import { Scrawl, Scribe } from './scrawl.js';
 import { Gore, HEAD, ARM_R, ARM_L, EXPLOSION_GORE, SLAM_GORE } from './gore.js';
 import { SkyWar, City, WARHEAD_TYPES, CITY_MAX_HP } from './sky.js';
 import { WEAPONS, WEAPON_ORDER, AMMO_FLAK, AMMO_NAIL, AMMO_CHARGE, AMMO_BOMB, BOOT, weaponBySlot } from './weapons.js';
@@ -245,6 +246,9 @@ export class Game {
     this.enemies.length = 0;
     this.items.length = 0;
     this.props.load(this.level);
+    // Writing on the walls, and the thin man who does it.
+    this.scrawl = new Scrawl(this);
+    this.scribe = new Scribe(this);
     this.levelDamage = 0;
     this.saw = this.freshSaw();
     this.bolts.length = 0;
@@ -945,6 +949,8 @@ export class Game {
     this.updateVitals(dt);
     this.updateItems(dt);
     this.props.update(dt);
+    this.scrawl.update(dt);
+    this.scribe.update(dt);
     this.updateTriggers(dt);
     this.updateWave(dt);
     lv.markVisited(p.x, p.y, 5);
@@ -1746,8 +1752,8 @@ export class Game {
   // or down the middle, whichever way the warden is aiming.
 
   freshSaw() {
-    return { rev: 0, dull: 0.25, audioT: 0, tickT: 0, cutT: 0, contact: 0, stuck: null, pose: 'idle',
-      poseT: 0, phase: 0, seen: new Set(), hint: '', wallT: 0 };
+    return { rev: 0, dull: 0.25, audioT: 0, runT: 0, smokeT: 0, padT: 0, puffs: [], tickT: 0, cutT: 0, contact: 0, stuck: null,
+      pose: 'idle', poseT: 0, phase: 0, seen: new Set(), hint: '', wallT: 0 };
   }
 
   /** Where the blade is aimed: 'v' (skull to crotch) high, 'h' (across the waist) low, or a coin. */
@@ -1767,18 +1773,54 @@ export class Game {
     if (!held) {
       if (S.stuck) this.unpin(S.stuck.e);
       S.rev = Math.max(0, S.rev - dt * 3);
+      S.puffs.length = 0;
       S.hint = '';
       this.hud.sawHint = '';
       return;
     }
     // The engine spools up on the button and drops to a mutter off it.
     S.rev += ((firing ? 1 : 0.28) - S.rev) * Math.min(1, dt * (firing ? 7 : 3));
+    const ca = Math.cos(p.ang), sa = Math.sin(p.ang);
+    // The engine is always going while it is in your hands: a floor-shaking lope at
+    // idle, a scream with the chain whirring over it on the button.
+    const rate = 0.8 + S.rev * 0.6;
     S.audioT -= dt;
     if (S.audioT <= 0) {
-      const r = 0.72 + S.rev * 0.55;
-      S.audioT = 0.19 / r;
-      this.sound.sfx('saw_run', { rate: r, vol: 0.32 + S.rev * 0.55 });
+      S.audioT = 0.376 / rate;
+      this.sound.sfx('saw_rumble', { rate, vol: 0.5 + S.rev * 0.5 });
     }
+    S.runT -= dt;
+    if (S.rev > 0.5 && S.runT <= 0) {
+      S.runT = 0.19 / rate;
+      this.sound.sfx('saw_run', { rate, vol: (S.rev - 0.4) * 0.6 });
+    }
+    // Blue two-stroke smoke off the exhaust stub, and more of it when the throttle
+    // is open; it is drawn on the screen over the gun (render.js), because a world
+    // puff this close to the lens is either enormous or invisible.
+    const P = S.puffs;
+    for (let i = P.length - 1; i >= 0; i--) {
+      const q = P[i];
+      q.age += dt; q.x += q.vx * dt; q.y += q.vy * dt;
+      if (q.age >= q.life) P.splice(i, 1);
+    }
+    S.smokeT -= dt;
+    if (S.smokeT <= 0 && P.length < 48) {
+      const R = this.rng;
+      S.smokeT = firing ? 0.045 : 0.2;
+      P.push({ src: 'ex', x: (R() - 0.5) * 0.012, y: 0, vx: 0.015 + R() * 0.05, vy: -(0.1 + R() * 0.1) * (firing ? 1.7 : 1),
+        age: 0, life: 1.0 + R() * 0.9, s0: 0.05, s1: firing ? 0.3 : 0.19, alpha: firing ? 1 : 0.7, k: (R() * 6) | 0 });
+      if (firing && R() < 0.55) {
+        P.push({ src: 'mz', x: 0, y: 0, vx: -(0.02 + R() * 0.06), vy: -(0.03 + R() * 0.06), age: 0, life: 0.6 + R() * 0.5,
+          s0: 0.04, s1: 0.16, alpha: 0.7, k: (R() * 6) | 0 });
+      }
+    }
+    // The pad shakes with it.
+    S.padT -= dt;
+    if (S.padT <= 0) {
+      S.padT = 0.12;
+      this.input.rumble(0.18 + S.rev * 0.42, 0.06 + S.rev * 0.34, 150);
+    }
+    this.shake = Math.max(this.shake, S.rev * 0.14);
     S.poseT += dt;
     if (firing) {
       this.shake = Math.max(this.shake, 0.4);
@@ -1789,7 +1831,6 @@ export class Game {
     this.hud.sawHint = '';
     if (!firing || S.rev < 0.55) { this.sawPose(firing, false); return; }
 
-    const ca = Math.cos(p.ang), sa = Math.sin(p.ang);
     const reach = spec.reach;
     const a = p.aimVector(this.rc.projY);
     const flat = Math.hypot(a.x, a.y) || 1;
@@ -2051,6 +2092,7 @@ export class Game {
     // you were pointing, and the kick moves the view afterwards. The other way
     // round throws every shot high by the recoil of the shot itself.
     const a = p.aimVector(this.rc.projY);
+    if (this.scribe) this.scribe.onShot(a);
     const muzzle = {
       x: p.x + a.x * 0.35, y: p.y + a.y * 0.35, z: p.z + a.z * 0.35 - 0.08,
     };

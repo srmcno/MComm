@@ -159,6 +159,8 @@ export function renderWorld(game, W, H) {
       if (spr) S.push(spr);
     }
   }
+  // The thin man, when he is there to be seen.
+  if (game.scribe) { const sr = game.scribe.sprite(art); if (sr) S.push(sr); }
   // Papers in the air, cans, coins: the litter of a room that has been visited.
   game.props.collect(S);
 
@@ -331,8 +333,10 @@ export function drawViewmodel(game, buf, W, H) {
 
   // Walk bob traces a lazy figure-eight: side to side once per stride, down
   // on every footfall. Recoil shoves the gun down and toward the camera.
-  const bobX = Math.sin(p.bobPhase) * 10 * s * p.bob;
-  const bobY = Math.abs(Math.cos(p.bobPhase)) * 8 * s * p.bob + p.swayY * s + breathe;
+  // A running saw shakes the hands that hold it.
+  const sv = spec.kind === 'saw' && vm === spec.vm ? game.saw.rev : 0, tv = game.time || 0;
+  const bobX = Math.sin(p.bobPhase) * 10 * s * p.bob + (Math.sin(tv * 71) + 0.6 * Math.sin(tv * 113)) * 1.7 * s * sv;
+  const bobY = Math.abs(Math.cos(p.bobPhase)) * 8 * s * p.bob + p.swayY * s + breathe + Math.cos(tv * 97) * 1.5 * s * sv;
   const kick = Math.max(0, p.kick);
   const punch = 1 + Math.min(0.09, kick * 0.0062);
   const L = game.lights.sample(p.x, p.y);
@@ -360,6 +364,21 @@ export function drawViewmodel(game, buf, W, H) {
     y = H - f.h * scale + bobY + kick * 1.4 * s + swapOff + f.h * scale * 0.13;
   }
   blitFrame(buf, W, H, f, x, y, { scale, lum });
+
+  // The saw's exhaust and hot chain, as smoke on the screen.
+  if (sv > 0 && game.saw.puffs.length) {
+    for (const q of game.saw.puffs) {
+      const an = q.src === 'ex' ? f.ex : f.mz;
+      const fr = art.vm['smoke' + q.k];
+      if (!an || !fr) continue;
+      const k = q.age / q.life;
+      const size = (q.s0 + (q.s1 - q.s0) * Math.sqrt(k)) * H;
+      blitFrame(buf, W, H, fr, x + an[0] * scale + q.x * H - size / 2, y + an[1] * scale + q.y * H - size / 2, {
+        scale: size / fr.w, alpha: q.alpha * (1 - k) * (k < 0.12 ? k / 0.12 : 1), lum: 0.7 + Lk * 0.25,
+        tint: rgba(96, 112, 150, 110),
+      });
+    }
+  }
 
   if (p.flashTimer > 0 && vm === spec.vm) {
     const fl = art.vm[spec.flash] || art.vm.flash_medium;
