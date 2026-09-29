@@ -91,7 +91,7 @@ placed in the middle of a flight cascades. Chains are where the score is.
 ```
 W A S D / arrows   move                SHIFT     run
 mouse              look                LMB       fire
-wheel, Z / X, [ ]  change weapon       1 - 6     pick a weapon
+wheel, Z / X, [ ]  change weapon       1 - 7     pick a weapon
 V, RMB or MMB      THE BOOT            B or G    pipe bomb (again to detonate)
 SPACE / F          use: doors, vending machines, lockers, drawers, consoles,
                    the pinball machine, the toilet (Duke rule)
@@ -124,8 +124,19 @@ rumble fires on shots, kicks, damage and explosions.
 | **THE HALO** | ring launcher | Blooms into a ring of bursts at the first thing it meets. Sweeps a whole altitude. |
 | **PIPE BOMBS** | thrown | They bounce, settle, and tick faster as they run down. Press again to detonate. One bursting in the sky counts as flak. |
 | **DEADMAN'S SWITCH** | you don't want to know | Scrubs the sky. Scrubs your instruments for six seconds too. |
+| **THE SEVERANCE** | diamond-chain saw | Slot 7, lying in the first corridor of floor one. No ammo. Hold fire and it bites. See below. |
 
 Punting a live pipe bomb with the boot is available and inadvisable.
+
+**THE SEVERANCE** is a concrete saw somebody left in the corridor, and the chain
+is dull. Hold fire and it grinds through whatever is in front of it: furniture,
+doors, mutants, with the noise to match. Sometimes a mutant catches on the
+teeth and hangs there, screaming complaints at you in the staff voice while the
+blade works up to it. Keep the trigger down and it bites through. Aim high and
+the cut runs down the middle, aim low and it goes across the waist; either way
+you get two halves, spurting, that land on the floor separately. **V** boots
+the victim off the blade, letting go of the trigger or changing weapon slides
+him off, and what you hung is still standing there afterwards, cross.
 
 The guns are built as real perspective geometry and held in real hands: the
 barrel runs away from you toward the crosshair, the slide kicks back, brass
@@ -266,7 +277,7 @@ modest hardware and sharpens up when it can.
 ## Tests
 
 ```
-node tools/playtest.js            # 106 gameplay assertions in a real browser
+node tools/playtest.js            # 110 gameplay assertions in a real browser
 node tools/audio-integration.js   # static coverage + live audio graph measurement
 node tools/speech-check.js        # voice casting, captions, timing, fallback (mocked browsers)
 node tools/campaign.js [0|1|2]    # a bot plays the whole game and reports balance
@@ -337,6 +348,10 @@ cheapest real accent there is, and MUTTER gets a measured British man pitched
 into the basement, with the old formant synthesiser murmuring underneath. No
 two characters share a voice while there is an alternative. Durations are
 estimated from syllables and rate, because `onend` is not to be trusted.
+
+Whoever is hanging on the saw is a fourth voice, the staff member: it is
+Hardigan's browser voice pitched up and sped up, and it is never recorded, since
+nobody could tell one panicking maintenance man from the next.
 
 **CALIBRATION > VOICE** switches between NATURAL, ROBOT (the formant
 synthesiser for everything) and OFF, and is remembered. Where the browser has

@@ -561,6 +561,11 @@ export class Props {
     return best;
   }
 
+  /** The nearest thing the saw can chew on, straight ahead. */
+  sawFront(p, reach) {
+    return this._front(p, reach, 0.72, (d) => d.def.hp !== Infinity);
+  }
+
   /** The boot. True if it found something to hit. */
   kick(p, range, cosArc) {
     const g = this.g;

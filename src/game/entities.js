@@ -260,10 +260,20 @@ export class Enemy {
   }
 
   update(dt, game) {
+    // Cut in half and thrown about the room: there is nothing left to think.
+    if (this.vanish) return;
     const p = game.player;
     const lv = game.level;
     const d = this.def;
     this.stateT += dt;
+    // Hung on the blade. Someone else is in charge of where it is; it only thrashes.
+    if (this.pinned) {
+      this.painFlash = 0.16 + 0.1 * Math.sin(this.stateT * 26);
+      this.state = ST.PAIN;
+      this._pinT = (this._pinT || 0) - dt;
+      if (this._pinT <= 0) { this._pinT = 0.13; this.painVar ^= 1; }
+      return;
+    }
     this.painFlash = damp(this.painFlash, 0, 6, dt);
     if (this._clangAt) { this._clangAt -= dt; if (this._clangAt <= 0) this._clangAt = 0; }
     this.spawnGrace = Math.max(0, this.spawnGrace - dt);

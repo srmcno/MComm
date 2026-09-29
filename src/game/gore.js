@@ -12,6 +12,7 @@
 import { clamp, randRange, makeRng, TAU, wrapAngle } from '../core/math.js';
 import { rgba, makeFrame } from '../core/pixels.js';
 import { ST } from './entities.js';
+import { CEIL_H } from '../core/world.js';
 
 // Mask bits, as the sprite generator understands them. R/L are the
 // CHARACTER'S own right and left, not the screen's.
@@ -209,6 +210,78 @@ function paintCasing(kind) {
   return f;
 }
 
+// ------------------------------------------------------------ cutting a body
+
+const pk = (r, g, b, a = 255) => ((a << 24) | (b << 16) | (g << 8) | r) >>> 0;
+
+/** The tight box round what is drawn in a frame, or null if nothing is. */
+function drawnBox(f) {
+  let x0 = f.w, y0 = f.h, x1 = -1, y1 = -1;
+  for (let y = 0; y < f.h; y++) {
+    for (let x = 0; x < f.w; x++) {
+      if (!(f.data[y * f.w + x] >>> 24)) continue;
+      if (x < x0) x0 = x; if (x > x1) x1 = x;
+      if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+  }
+  return x1 < 0 ? null : { x0, y0, x1, y1 };
+}
+
+function cropTo(f, b) {
+  const w = b.x1 - b.x0 + 1, h = b.y1 - b.y0 + 1;
+  const o = makeFrame(w, h);
+  for (let y = 0; y < h; y++) o.data.set(f.data.subarray((b.y0 + y) * f.w + b.x0, (b.y0 + y) * f.w + b.x0 + w), y * w);
+  return { frame: o, ox: b.x0, oy: b.y0 };
+}
+
+/**
+ * Cut a sprite in two along a ragged line: `h` across the body at `cutFrac` of
+ * the way up from the feet, or `v` down the middle of what is drawn. Both
+ * halves keep their own pixels, and the pixels along the cut are turned into
+ * what is inside (wet red, a dark run of gut, a pale fleck of bone), so the
+ * face of the cut reads as a cut. Returns [first, second] (upper/lower or
+ * left/right), each { frame, ox, oy } with the offset of its top-left corner
+ * in the source frame, or a null where a half came out empty.
+ */
+export function splitFrame(src, mode, cutFrac, seed) {
+  const w = src.w, h = src.h;
+  const rng = makeRng(seed >>> 0);
+  const box = drawnBox(src);
+  if (!box) return [null, null];
+  const along = mode === 'h' ? w : h;
+  const jag = new Float32Array(along);
+  const ph = rng() * TAU;
+  for (let i = 0; i < along; i++) jag[i] = Math.sin(i * 0.55 + ph) * 1.1 + (rng() - 0.5) * 2.6;
+  const cut = mode === 'h' ? Math.round(h * (1 - cutFrac)) : Math.round((box.x0 + box.x1 + 1) / 2);
+  const A = makeFrame(w, h), B = makeFrame(w, h);
+  const mid = mode === 'h' ? (box.x0 + box.x1) / 2 : 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const c = src.data[y * w + x];
+      if (!(c >>> 24)) continue;
+      const line = cut + (mode === 'h' ? jag[x] : jag[y]);
+      const d = (mode === 'h' ? y : x) - line;
+      const edge = Math.abs(d);
+      let out = c;
+      if (edge < 2.6) {
+        // What is under the skin: mostly red, a run of something darker, and
+        // in the middle of a waist the pale ring of the spine.
+        const r = (c & 255), g = (c >>> 8) & 255, b = (c >>> 16) & 255;
+        const t = edge < 1.2 ? 0.9 : 0.62;
+        let R = 168, G = 26, B2 = 34;
+        const n = ((x * 73856093) ^ (y * 19349663)) & 15;
+        if (n < 3) { R = 96; G = 12; B2 = 20; }
+        else if (n > 13) { R = 226; G = 92; B2 = 98; }
+        if (mode === 'h' && Math.abs(x - mid) < 1.6 && edge < 1.4) { R = 236; G = 226; B2 = 206; }
+        out = pk(r + (R - r) * t, g + (G - g) * t, b + (B2 - b) * t);
+      }
+      (d < 0 ? A : B).data[y * w + x] = out;
+    }
+  }
+  const ba = drawnBox(A), bb = drawnBox(B);
+  return [ba ? cropTo(A, ba) : null, bb ? cropTo(B, bb) : null];
+}
+
 // ---------------------------------------------------------------- pools
 
 function blankChunk() {
@@ -218,6 +291,7 @@ function blankChunk() {
     age: 0, life: 0, fade: 0, settled: false, stuck: 0, snx: 0, sny: 0, slide: 0,
     trail: 0, trailT: 0, punted: false, px0: 0, py0: 0, landed: false, bounces: 0,
     rest: 0.3, head: false, bone: false, hitId: 0, dead: false, dripT: 0,
+    spurt: 0, spurtT: 0, sdx: 0, sdy: 0, sdz: 1,
   };
 }
 
@@ -486,6 +560,95 @@ export class Gore {
     return true;
   }
 
+  /**
+   * Cut a body in two, and throw both halves. `mode` is 'h' (across the waist:
+   * the top comes off the legs) or 'v' (down the middle: it comes apart like a
+   * book). The pieces are the body's own picture, cut where it is standing,
+   * and each one pumps for a while from where it was cut. (dx, dy) is the way
+   * the blade was travelling. The body itself is finished and gone.
+   */
+  bisect(e, mode, dx, dy) {
+    if (!this.canMaim(e) || e._bisected) return false;
+    const game = this.game, art = this.art, rng = this.rng, p = game.player;
+    const key = e.frameKey(p.x, p.y);
+    const src = this.maimFrame(key, e.maim) || (art.sprites || {})[key];
+    if (!src) return false;
+    const rig = this.rigOf(e.kind) || RIG_DEFAULT.wrencher;
+    const quad = QUADRUPED[e.kind];
+    const cutFrac = mode === 'h' ? (quad ? 0.5 : Math.min(0.62, rig.hip + 0.07)) : 0;
+    const halves = splitFrame(src, mode, cutFrac, (e.id * 7919 + (mode === 'h' ? 1 : 2)) >>> 0);
+    const k = e.height / src.h;
+    const R = { x: -Math.sin(p.ang), y: Math.cos(p.ang) };       // screen-right, in the world
+    const L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
+    const z0 = e.z + (e.zOff || 0);
+    e._bisected = true; e._gibbed = true; e.gibbed = true; e.shielded = false;
+    for (let n = 0; n < 2; n++) {
+      const H = halves[n];
+      if (!H) continue;
+      const cx = (H.ox + H.frame.w / 2 - src.w / 2) * k, cy = H.oy + H.frame.h / 2;
+      const c = this._take(this.parts, MAX_PARTS);
+      c.type = T_PART; c.kind = e.kind; c.part = 'half'; c.head = false;
+      c.keys = null; c.base = H.frame;
+      c.h = H.frame.h * k;
+      c.rad = clamp(Math.max(H.frame.w, H.frame.h) * k * 0.2, 0.12, 0.3);
+      c.x = e.x + R.x * cx; c.y = e.y + R.y * cx;
+      c.z = Math.max(c.rad, z0 + (src.h - cy) * k);
+      const side = n === 0 ? -1 : 1;
+      let vx, vy, vz;
+      if (mode === 'v') {
+        // like a book falling open
+        const s = randRange(rng, 2.2, 3.6);
+        vx = R.x * side * s + ux * 0.8; vy = R.y * side * s + uy * 0.8; vz = randRange(rng, 1.6, 3.0);
+        c.spurtDir = null;
+        c.sdx = -R.x * side; c.sdy = -R.y * side; c.sdz = 0.25;
+      } else if (n === 0) {
+        // the top half goes back over the shoulder, spinning
+        vx = ux * randRange(rng, 1.5, 3.2) + R.x * randRange(rng, -1.6, 1.6);
+        vy = uy * randRange(rng, 1.5, 3.2) + R.y * randRange(rng, -1.6, 1.6);
+        vz = randRange(rng, 3.4, 5.2);
+        c.sdx = 0; c.sdy = 0; c.sdz = -0.6;
+      } else {
+        // the legs stay about where they were, and go over
+        vx = ux * 1.4 + R.x * randRange(rng, -0.5, 0.5); vy = uy * 1.4 + R.y * randRange(rng, -0.5, 0.5);
+        vz = randRange(rng, 1.0, 1.8);
+        c.sdx = 0; c.sdy = 0; c.sdz = 1;
+      }
+      c.vx = vx; c.vy = vy; c.vz = vz;
+      c.ang = 0;
+      c.spin = (mode === 'v' ? side : (n === 0 ? side : 0.3)) * randRange(rng, 3, 8) * (n === 0 && mode === 'h' ? (rng() < 0.5 ? -1 : 1) : 1);
+      c.rest = 0.22;
+      c.life = randRange(rng, 55, 80);
+      c.trail = randRange(rng, 1.4, 2.2);
+      c.hitId = e.id;
+      c.spurt = randRange(rng, 1.8, 2.8); c.spurtT = 0;
+    }
+    e.vanish = true;
+    e.kvx = e.kvy = 0;
+    // The wet part, all at once: a cloud where it happened and a lot of red.
+    const P = game.particles;
+    const cz = z0 + e.height * (mode === 'h' ? cutFrac : 0.5);
+    for (let i = 0; i < 70; i++) {
+      const a = rng() * TAU, s = randRange(rng, 1, 6.5);
+      P.emit(e.x, e.y, cz + randRange(rng, -0.12, 0.12), Math.cos(a) * s + ux * 1.4, Math.sin(a) * s + uy * 1.4,
+        randRange(rng, 0.6, 4.6), randRange(rng, 0.5, 1.1), randRange(rng, 0.03, 0.09), randRange(rng, 130, 220) | 0, 14, 22,
+        1.0, 9, false, true, 0.6, 0);
+    }
+    P.effect({
+      x: e.x, y: e.y, z: cz, keys: ['gib_burst0', 'gib_burst1', 'gib_burst2', 'gib_burst3', 'gib_burst4'],
+      fps: 22, size: e.height * 1.5, additive: false, alpha: 0.9,
+    });
+    this.stats.severed += 2;
+    this.stats.bisected = (this.stats.bisected || 0) + 1;
+    this.smear(e.x, e.y, cz, 0.6, true, ux, uy);
+    for (let i = 0; i < 6; i++) game.addDecal(e.x + randRange(rng, -0.7, 0.7), e.y + randRange(rng, -0.7, 0.7), 'blood');
+    game.addDecal(e.x, e.y, e.def.mutant ? 'gore' : 'blood');
+    const d = Math.hypot(e.x - p.x, e.y - p.y);
+    if (d < 5) game.hud.splatter(clamp(Math.round(8 - d), 3, 8));
+    game.hitStop = Math.max(game.hitStop, 0.14);
+    game.shake = Math.max(game.shake, 2.4);
+    return true;
+  }
+
   /** Everything off at once: explosions and the like. */
   explode(e, dx, dy, force) {
     if (!this.canMaim(e)) return 0;
@@ -707,6 +870,7 @@ export class Gore {
     c.ang = 0; c.spin = 0; c.age = 0; c.life = 0; c.fade = 0; c.settled = false; c.stuck = 0;
     c.trail = 0; c.trailT = 0; c.punted = false; c.landed = false; c.bounces = 0; c.hitId = 0;
     c.dead = false; c.keys = null; c.base = null; c.head = false; c.bone = false; c.dripT = 0; c.slide = 0;
+    c.spurt = 0; c.spurtT = 0;
     list.push(c);
     return c;
   }
@@ -1036,6 +1200,7 @@ export class Gore {
         this._dribble(f);
       }
     }
+    for (let i = 0; i < this.parts.length; i++) if (this.parts[i].spurt > 0) this._spurt(this.parts[i], dt);
     this._stepList(this.parts, dt);
     this._stepList(this.gibs, dt);
     this._stepList(this.casings, dt);
@@ -1045,6 +1210,31 @@ export class Gore {
     for (let i = 0; i < en.length; i++) {
       const e = en[i];
       if (!e.alive && e.launched) this._bowl(e, dt);
+    }
+  }
+
+  /** A cut half keeps pumping for a while, from the cut, and the pumping slows. */
+  _spurt(c, dt) {
+    c.spurt -= dt;
+    c.spurtT -= dt;
+    const rng = this.rng, P = this.game.particles;
+    const frac = clamp(c.spurt / 2.4, 0, 1);
+    if (c.spurtT <= 0) {
+      c.spurtT = 0.22 + 0.3 * (1 - frac);
+      const n = Math.round(9 + 9 * frac);
+      for (let i = 0; i < n; i++) {
+        const a = rng() * TAU, s = randRange(rng, 0.4, 1.6);
+        P.emit(c.x, c.y, c.z + c.h * 0.3, c.sdx * randRange(rng, 1.5, 4.2) + Math.cos(a) * s,
+          c.sdy * randRange(rng, 1.5, 4.2) + Math.sin(a) * s, c.sdz * randRange(rng, 2.5, 6.2) + randRange(rng, -0.6, 1.4),
+          randRange(rng, 0.5, 1.0), randRange(rng, 0.03, 0.08), randRange(rng, 150, 220) | 0, 14, 22, 1.0, 9, false, true, 0.6, 0);
+      }
+      if (this.sndT.spurt <= 0) {
+        this.sndT.spurt = 0.12;
+        this.game.sound.sfx('blood_spurt', { pan: this.game.panAt(c.x, c.y), vol: this.volAt(c.x, c.y, 0.6) });
+      }
+    } else if (!c.settled) {
+      P.emit(c.x, c.y, c.z + c.h * 0.25, (rng() - 0.5) * 0.8, (rng() - 0.5) * 0.8, randRange(rng, 0.2, 1.0),
+        randRange(rng, 0.3, 0.6), randRange(rng, 0.025, 0.05), 170, 14, 22, 1.2, 8, false, true, 0.6, 0);
     }
   }
 
@@ -1186,8 +1376,8 @@ export class Gore {
       if (c.stuck) break;
       c.z += c.vz * h;
       // Under a roof the ceiling is at one cell; out on a deck it is the sky.
-      if (c.z > 0.97 - c.rad && c.vz > 0 && lv.inBounds(c.x, c.y) && !lv.sky[lv.idx(c.x, c.y)]) {
-        c.z = 0.97 - c.rad;
+      if (c.z > CEIL_H - 0.03 - c.rad && c.vz > 0 && lv.inBounds(c.x, c.y) && !lv.sky[lv.idx(c.x, c.y)]) {
+        c.z = CEIL_H - 0.03 - c.rad;
         c.vz = -c.vz * 0.3;
       }
       if (c.z <= c.rad) { c.z = c.rad; this._floor(c, h); continue; }

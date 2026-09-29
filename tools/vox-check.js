@@ -504,7 +504,7 @@ check('persistent chains are small (3 voices, <= 70 nodes)',
 
   // VOICE_OF must cover every key and follow the documented prefix rule
   const wrong = Object.keys(LINES).filter((k) => {
-    const want = k.startsWith('brick_') ? 'brick' : k.startsWith('ilsa_') ? 'ilsa' : 'mutter';
+    const want = k.startsWith('brick_') ? 'brick' : k.startsWith('ilsa_') ? 'ilsa' : k.startsWith('victim_') ? 'victim' : 'mutter';
     return VOICE_OF[k] !== want || voiceOf(k) !== want;
   });
   check('VOICE_OF covers every key and matches the prefix rule',

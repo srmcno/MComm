@@ -27,7 +27,7 @@ export class Player {
     this.keys = [false, false, false];
     // The Splitter comes with the job: it is the anti-missile gun, and the
     // first flight can arrive before the pickup on the first floor is found.
-    this.owned = { pistol: true, splitter: true, nailer: false, halo: false, deadman: false };
+    this.owned = { pistol: true, splitter: true, nailer: false, halo: false, deadman: false, saw: false };
     this.ammo = { [AMMO_FLAK]: 90, [AMMO_NAIL]: 0, [AMMO_CHARGE]: 0, [AMMO_BOMB]: 0 };
     this.weapon = 'pistol';
     this.pendingWeapon = null;
@@ -94,7 +94,8 @@ export class Player {
     const isNew = !this.owned[key];
     this.owned[key] = true;
     const s = WEAPONS[key];
-    if (s.ammo === AMMO_NAIL) this.giveAmmo(AMMO_NAIL, 90);
+    if (s.kind === 'saw') { /* a tool: it has no ammunition to give */ }
+    else if (s.ammo === AMMO_NAIL) this.giveAmmo(AMMO_NAIL, 90);
     else if (s.ammo === AMMO_CHARGE) this.giveAmmo(AMMO_CHARGE, 1);
     else if (s.ammo === AMMO_BOMB) this.giveAmmo(AMMO_BOMB, 5);
     else this.giveAmmo(AMMO_FLAK, 24);

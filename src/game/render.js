@@ -97,6 +97,7 @@ export function renderWorld(game, W, H) {
   S.length = 0;
 
   for (const e of game.enemies) {
+    if (e.vanish) continue;
     const key = e.frameKey(cam.x, cam.y);
     let f = art.sprites[key];
     if (!f) continue;
@@ -316,6 +317,8 @@ export function drawViewmodel(game, buf, W, H) {
   } else if (p.cooldown > spec.refire * 0.45 && spec.refire > 0.5) {
     stateKey = p.cooldown > spec.refire * 0.7 ? 'reload0' : 'reload1';
   }
+  // The saw is held, not fired: the game says which frame of the blade to show.
+  if (spec.kind === 'saw' && vm === spec.vm) stateKey = game.saw.pose;
   const f = art.vm[vm + '_' + stateKey] || art.vm[vm + '_idle'];
   if (!f) return;
 

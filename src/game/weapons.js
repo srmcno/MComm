@@ -71,6 +71,19 @@ export const WEAPONS = {
     sfx: 'pipebomb_throw', groundDamage: 130,
     gore: { sever: 1.0, head: 0.7, parts: 5, knock: 20, gib: 60, lift: 5.5 },
   },
+  // The demolition crew's concrete saw. A diamond chain on a bar as long as an
+  // arm, water-cooled, meant for blast doors and rebar. You hold the button and
+  // walk it into things. It has no ammunition and no range to speak of, and the
+  // rules for what it does to a person live in game.js (updateSaw).
+  saw: {
+    id: 'saw', slot: 7, name: 'THE SEVERANCE',
+    blurb: 'A diamond-chain concrete saw. Cuts blast doors, rebar and personnel. The chain is dull for a bit. So is the personnel.',
+    kind: 'saw', vm: 'saw',
+    ammo: null, cost: 0, refire: 0.1,
+    reach: 1.3, dps: 58, kick: 0, shakeAmount: 0.5,
+    sfx: 'saw_run',
+    gore: { sever: 1.0, head: 0.8, parts: 2, knock: 3, gib: 0, lift: 0 },
+  },
   deadman: {
     id: 'deadman', slot: 6, name: "DEADMAN'S SWITCH",
     blurb: 'Scrubs the sky. Scrubs your instruments too. Use it once and regret it.',
@@ -84,7 +97,7 @@ export const WEAPONS = {
   },
 };
 
-export const WEAPON_ORDER = ['pistol', 'splitter', 'nailer', 'halo', 'pipebomb', 'deadman'];
+export const WEAPON_ORDER = ['pistol', 'splitter', 'nailer', 'halo', 'pipebomb', 'deadman', 'saw'];
 
 /**
  * The Boot is not in the weapon order because it is never selected — it is
