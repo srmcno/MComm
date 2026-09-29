@@ -2562,7 +2562,7 @@ export class Game {
     this.hud.setFace('face_hurt', 2.2);
     this.player.score = Math.max(0, this.player.score - 2000);
     if (left === 0) {
-      this.speak('all_cities_lost', {}, 'That was the last one. You are relieved of duty.');
+      this.speak('all_cities_lost', { args: [city.name] }, 'That was the last one. You are relieved of duty.');
       this.after(2.6, () => {
         if (!this.sky.livingCities().length) this.gameOver('cities');
       });
@@ -2654,6 +2654,8 @@ export class Game {
       this.brick(e.def.mutant ? 'brick_kill_mutant' : 'brick_kill',
         e.def.mutant ? BRICK_LINES.kill_mutant : BRICK_LINES.kill);
     }
+    // MUTTER knew every one of them by name, and has notes.
+    if (e.def.mutant && !e.def.boss) this.chat('mutter', 'mutter_mutant_kill', { chance: 0.12, cooldown: 45, delay: 1.6 });
     if (e.def.explodes) {
       this.explodeAt(e.x, e.y, 0.5, 4.2, 46);
       this.sound.sfx('barrel_explode', { pan: this.panOf(e) });
