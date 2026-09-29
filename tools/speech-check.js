@@ -948,6 +948,21 @@ const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve();
   check('...and plays once the robot is done', ctx.started.length === 1 && synth.spoken.length === 0);
 }
 
+{
+  // The staff on the saw are a recorded voice too, once their lines have takes.
+  const { clock, synth, sp } = rig('Windows / Edge');
+  const ctx = fakeAudio(clock);
+  const take = { r: 'victim', k: 'victim_stuck', i: 0, a: null, t: "I'm just the maintenance guy! I came in for the donuts! There were no donuts! Nobody told me there'd be no fucking donuts!", d: 1.2, b: b64 };
+  const bank = new ClipBank({ clips: [take] }, { rng: () => 0 });
+  bank.attach(ctx, {});
+  sp.attachClips(bank);
+  sp.sayLine('victim_stuck', { voice: 'victim' });
+  await flush();
+  check('the staff on the saw speak from their own takes, not the pitched-up browser voice',
+    ctx.started.length === 1 && sp.lastRequested === take.t && synth.spoken.length === 0,
+    `${ctx.started.length} takes started, ${synth.spoken.length} browser lines`);
+}
+
 /* 9. the shipped takes match the script they claim to say */
 {
   const clips = (VOICE_PACK && VOICE_PACK.clips) || [];
