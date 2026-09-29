@@ -983,7 +983,7 @@ const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve();
       const v = LINES[c.k];
       const src = Array.isArray(v) ? v[c.i] : v;
       if (!src || voiceOf(c.k) !== c.r) { bad.push(id + ' not in the script'); continue; }
-      let want = plainText(src.replace(/\s*%s remain\.\s*$/, '').replace('%s', c.a || ''));
+      let want = plainText(src.replace(/\s*(?:That leaves %s|%s (?:remain|left))\.\s*$/, '').replace('%s', c.a || ''));
       if (norm(want) !== norm(c.t)) bad.push(id + ' words differ');
     } else if (!gags.has(k)) {
       bad.push(id + ' exact line not in the script');
