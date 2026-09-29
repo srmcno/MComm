@@ -14,7 +14,7 @@
 // enemy's world height whatever its pixel size, so K buys detail, not size.
 //
 // Every enemy kind shares one key pattern: `${id}_walk{D}_{0..7}` (an eight-
-// frame walk per facing), `${id}_idle{D}_{0..1}` (breathing out and in),
+// frame walk per facing), `${id}_idle{D}_{0..2}` (breathing out, half, in),
 // `${id}_aim0|aim1|fire0|fire1|recover` (the attack in five beats, facing the
 // camera), `${id}_pain0|pain1` (two flinches), `${id}_die{0..5}` and
 // `${id}_dead`. Frames of one kind share a height and are trimmed to their
@@ -24,7 +24,8 @@
 // that takes a mask of missing parts (1 head, 2 armR, 4 armL, 8 legR, 16 legL,
 // the character's own right and left). buildSprites() returns maim(), which
 // re-runs a recipe with a mask on demand and keeps the result in a bounded
-// cache, and rig, the joint heights the gore code needs to launch the parts.
+// cache, and rig, the joint heights the gore code needs to launch the parts
+// and how far each walk cycle carries the body.
 
 import {
   rgba, mix, shade, clamp, lerp, makeRng, makeNoise, fbm,
@@ -216,7 +217,7 @@ function capsule(f, x0, y0, x1, y1, r0, r1, ramp, o = {}) {
     const ew = o.edgeW === undefined ? 1.0 : o.edgeW;
     capsule(f, x0, y0, x1, y1, r0 + ew, r1 + ew, flat(o.edge), { hole: ew });
   }
-  const shift = o.shift || 0, grain = o.grain || 0, seed = o.seed || 11, hole = o.hole || 0, weave = o.weave || 0;
+  const shift = o.shift || 0, grain = o.grain || 0, seed = o.seed || 11, hole = o.hole || 0;
   const spec = o.spec, specT = o.specT || 0.965;
   const dx = x1 - x0, dy = y1 - y0;
   const len = Math.hypot(dx, dy) || 1e-4;
@@ -241,7 +242,6 @@ function capsule(f, x0, y0, x1, y1, r0, r1, ramp, o = {}) {
       if (spec && nx * HX + ny * HY + nz * HZ > specT) { px(f, x, y, spec); continue; }
       let b = band(lamOf(nx, ny, nz)) + shift;
       if (grain && hash2(x, y, seed) < grain) b -= 1;
-      if (weave && b >= 2 && (x + 2 * y) % weave === 0) b -= 1;
       px(f, x, y, ramp[clamp(b | 0, 0, 4)]);
     }
   }
@@ -258,7 +258,7 @@ function blob(f, cx, cy, rx, ry, ramp, o = {}) {
   }
   const hole = o.hole || 0;
   const hx = hole ? rx / Math.max(0.01, rx - hole) : 0, hy = hole ? ry / Math.max(0.01, ry - hole) : 0;
-  const shift = o.shift || 0, grain = o.grain || 0, seed = o.seed || 5, weave = o.weave || 0;
+  const shift = o.shift || 0, grain = o.grain || 0, seed = o.seed || 5;
   const spec = o.spec, specT = o.specT || 0.965;
   const cyl = o.mode === 'cyl';
   const nyB = o.nyBias === undefined ? -0.16 : o.nyBias;
@@ -284,7 +284,6 @@ function blob(f, cx, cy, rx, ry, ramp, o = {}) {
       if (spec && nx * HX + ny * HY + nz * HZ > specT) { px(f, x, y, spec); continue; }
       let b = band(lamOf(nx, ny, nz)) + shift;
       if (grain && hash2(x, y, seed) < grain) b -= 1;
-      if (weave && b >= 2 && (x + 2 * y) % weave === 0) b -= 1;
       px(f, x, y, ramp[clamp(b | 0, 0, 4)]);
     }
   }
@@ -795,7 +794,7 @@ function humanoid(f, ch, pose, D, mask = 0) {
       const p = U(0, lerp(ch.hipY - 1.5, ch.shoulderY + 1 + shrug * t, t), 0);
       const s2 = P(p);
       const rx = Math.sqrt(Math.pow(pr.w * Math.cos(theta), 2) + Math.pow(pr.d * Math.sin(theta), 2)) * k;
-      blob(f, s2.x, s2.y, rx, 1.9 * k, R.torso, { mode: 'cyl', nyBias: lerp(-0.05, -0.4, t), grain: 0.06, seed: 33 + i, rot, sy, weave: ch.weave });
+      blob(f, s2.x, s2.y, rx, 1.9 * k, R.torso, { mode: 'cyl', nyBias: lerp(-0.05, -0.4, t), grain: 0.06, seed: 33 + i, rot, sy });
     }
     if (ch.torsoDetail) ch.torsoDetail(ctx);
   });
@@ -852,8 +851,8 @@ function humanoid(f, ch, pose, D, mask = 0) {
 function paintLeg(c, L, h2, k2, f2, sft) {
   const { f, ch, R, k, P, E } = c;
   const t = ch.legThick * k;
-  capsule(f, h2.x, h2.y, k2.x, k2.y, t, t * 0.9, R.trouser, { shift: sft, grain: 0.05, seed: 21, ...E, weave: ch.weave });
-  capsule(f, k2.x, k2.y, f2.x, f2.y, t * 0.9, t * 0.74, R.trouser, { shift: sft, grain: 0.05, seed: 22, ...E, weave: ch.weave });
+  capsule(f, h2.x, h2.y, k2.x, k2.y, t, t * 0.9, R.trouser, { shift: sft, grain: 0.05, seed: 21, ...E });
+  capsule(f, k2.x, k2.y, f2.x, f2.y, t * 0.9, t * 0.74, R.trouser, { shift: sft, grain: 0.05, seed: 22, ...E });
   creases(f, h2, k2, t, 2, R.trouser[0], 0.72, 0.9, 0.5);
   creases(f, k2, f2, t * 0.9, 1, R.trouser[1], 0.35, 0.35, 0.45);
   if (R.kneePad) blob(f, k2.x, k2.y, t * 0.82, t * 0.72, R.kneePad, { shift: sft, spec: R.kneePad[4], ...E });
@@ -884,7 +883,7 @@ function paintArm(c, A, s2, e2, h2, sft, noDeltoid) {
   const { f, ch, R, k, E } = c;
   const t = ch.armThick * k;
   if (!noDeltoid) blob(f, s2.x, s2.y + 0.3 * k, t * 1.3, t * 1.2, R.shoulder || R.sleeve, { shift: sft, spec: (R.shoulder || R.sleeve)[4], ...E });
-  capsule(f, s2.x, s2.y, e2.x, e2.y, t * 1.05, t * 0.9, R.sleeve, { shift: sft, grain: 0.05, seed: 41, ...E, weave: ch.weave });
+  capsule(f, s2.x, s2.y, e2.x, e2.y, t * 1.05, t * 0.9, R.sleeve, { shift: sft, grain: 0.05, seed: 41, ...E });
   capsule(f, e2.x, e2.y, h2.x, h2.y, t * 0.92, t * 0.8, R.forearm || R.sleeve, { shift: sft, grain: 0.05, seed: 42, ...E });
   creases(f, s2, e2, t, 2, R.sleeve[0], 0.78, 0.92, 0.45);
   if (ch.armDetail) ch.armDetail(c, A, s2, e2, h2, sft);
@@ -922,8 +921,10 @@ function footRaise(ch, p) {
  * down (the weight lands and the hip bottoms out), 2 passing (left leg swings
  * through), 3 up (the right leg pushes the body to the top of its arc), then
  * the same again on the other foot. A foot is planted for `duty` of the cycle
- * and slides back at a constant rate while it is, so it never skates, and at
- * least one foot is always down. `ch.gait` gives each body its own way of
+ * and slides back at a constant rate while it is; rig.cycle tells the game
+ * how fast, so the body can keep pace with it. Under half a cycle of duty is a
+ * run, with both feet off the floor between the painted frames but never on
+ * one. `ch.gait` gives each body its own way of
  * getting about: how far it drops, rolls, sways and twists doing it.
  */
 function walkPose(ch, F) {
@@ -995,18 +996,28 @@ function standPose(ch, o = {}) {
   return p;
 }
 
-/** Idle: planted, breathing. F 0 breathes out, 1 in: chest and shoulders up, head up. */
+/** Frames in the breathing loop; the game plays them 0 1 2 1. */
+const IDLE_N = 3;
+
+/**
+ * Idle: planted, breathing. F 0 is all the way out, IDLE_N - 1 all the way
+ * in: chest and shoulders up, head up. pose.breath carries the same 0..1 to
+ * whatever the character fidgets with.
+ */
 function idlePose(ch, F) {
   const g = ch.gait || {};
-  return standPose(ch, {
+  const b = F / (IDLE_N - 1);
+  const p = standPose(ch, {
     fz0: 1.6, fz1: -1.4, fx0: 0.6, fx1: 0.6,
-    lean: ch.lean * 0.7 + (F ? -0.02 : 0.02),
-    shrug: F ? pick(g.breath, 0.7) : 0,
-    hipDrop: F ? 0 : 0.35,
-    headBob: F ? 0.35 : -0.1,
-    headTilt: F ? pick(g.jitter, 0) * 0.5 : 0,
-    phase: F ? 1.2 : 0,
+    lean: ch.lean * 0.7 + lerp(0.02, -0.02, b),
+    shrug: b * pick(g.breath, 0.7),
+    hipDrop: (1 - b) * 0.35,
+    headBob: lerp(-0.1, 0.35, b),
+    headTilt: b * pick(g.jitter, 0) * 0.5,
+    phase: b * 1.2,
   });
+  p.breath = b;
+  return p;
 }
 
 /**
@@ -1138,9 +1149,31 @@ function keyRim(f, c, t0, t1) {
   }
 }
 
+/**
+ * A hit: the outer two pixels of the silhouette flare brighter in their own
+ * colour. A red wash here turned a green mutant brown for a frame, and the
+ * renderer tints a struck body red anyway.
+ */
+function hitRim(f, s) {
+  const { w, h, data } = f;
+  const edge = (x, y) => x < 0 || y < 0 || x >= w || y >= h || !(data[y * w + x] >>> 24);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x, c = data[i];
+      if (!(c >>> 24)) continue;
+      let near = 0;
+      for (let d = 1; d <= 2 && !near; d++) if (edge(x - d, y) || edge(x + d, y) || edge(x, y - d) || edge(x, y + d)) near = d;
+      if (!near) continue;
+      const m = near === 1 ? s : 1 + (s - 1) * 0.5;
+      data[i] = rgba(Math.min(255, (c & 255) * m) | 0, Math.min(255, ((c >>> 8) & 255) * m) | 0, Math.min(255, ((c >>> 16) & 255) * m) | 0, 255);
+    }
+  }
+}
+
 function finishEnemy(f, o = {}) {
   if (o.flash) wash(f, rgba(228, 70, 58, 255), o.flash);
   if (o.grade !== false) grade(f);
+  if (o.hit) hitRim(f, 1.45);
   topRim(f, WARM, 0.14, 0.06);
   keyRim(f, WARM, 0.2, 0.07);
   if (o.rim !== false) sideRim(f, o.rimC || RIM, 0.36, 0.14);
@@ -1322,13 +1355,14 @@ function makeWrencher() {
     tape: mat(rgba(236, 200, 40, 255), { contrast: 1.2 }),
   };
   const ch = {
-    id: 'wrencher', w: 64, h: 72, dieW: 104, k: K, weave: 5,
+    id: 'wrencher', w: 64, h: 72, dieW: 104, k: K,
     hipY: 31, shoulderY: 50, neckY: 52.6, headY: 58.4, neckZ: 1.2, headZ: 2.0,
     shoulderHalf: 11.6, legHalf: 5.1, ankleY: 4.0, footLen: 5.8,
     thigh: 14.6, shin: 14.2, upper: 12, fore: 11.4,
-    armThick: 3.5, legThick: 4.4, stride: 10, lift: 5.4, hipDip: 2.4, lean: 0.16,
-    // a heavy trudge: lands hard, rolls over the planted boot, shoulders swinging
-    gait: { duty: 0.6, sway: 1.2, tilt: 0.05, twist: 0.14, bob: 0.5, leanBob: 0.05, wide: 1.08, strike: 0.2, push: 0.36 },
+    armThick: 3.5, legThick: 4.4, stride: 13, lift: 7, hipDip: 2.4, lean: 0.2,
+    // a heavy jog: long flat-footed strides, lands hard, rolls over the
+    // planted boot, shoulders swinging
+    gait: { duty: 0.46, sway: 1.2, tilt: 0.05, twist: 0.14, bob: 0.5, leanBob: 0.05, wide: 1.08, strike: 0.2, push: 0.36 },
     neckR: 3.1, lieH: 17, handScale: 1.02,
     edge: rgba(34, 14, 6, 255), ink: rgba(10, 5, 4, 255),
     profile: [[0, 9.4, 7.0], [0.2, 10.8, 9.6], [0.42, 10.6, 8.8], [0.78, 12.8, 7.8], [1, 11.6, 7.0]],
@@ -1555,13 +1589,13 @@ function makeSparker() {
     pack: mat(rgba(90, 100, 84, 255), { contrast: 1.25 }),
   };
   const ch = {
-    id: 'sparker', w: 64, h: 72, dieW: 104, k: K, weave: 6,
+    id: 'sparker', w: 64, h: 72, dieW: 104, k: K,
     hipY: 33, shoulderY: 51, neckY: 54.4, headY: 59.8, neckZ: 0.8, headZ: 1.6,
     shoulderHalf: 9.2, legHalf: 4.2, ankleY: 3.4, footLen: 5.0,
     thigh: 15.4, shin: 15, upper: 12, fore: 11.5,
-    armThick: 2.7, legThick: 3.3, stride: 9, lift: 7, hipDip: 1.6, lean: 0.12,
-    // a twitchy trot: high knees, quick feet, head never quite still
-    gait: { duty: 0.5, twist: 0.16, bob: 0.8, jitter: 1.1, leanBob: 0.05, strike: 0.26, push: 0.55, breath: 0.9 },
+    armThick: 2.7, legThick: 3.3, stride: 14, lift: 9.5, hipDip: 1.6, lean: 0.2,
+    // a twitchy sprint: high knees, long bounding steps, head never quite still
+    gait: { duty: 0.4, twist: 0.16, bob: 0.8, jitter: 1.1, leanBob: 0.05, strike: 0.26, push: 0.55, breath: 0.9 },
     neckR: 1.9, lieH: 14, handScale: 1.05, bootScale: 0.9,
     edge: rgba(16, 16, 24, 255),
     profile: [[0, 6.6, 4.8], [0.4, 6.8, 5.0], [0.78, 8.8, 5.6], [1, 8.4, 5.0]],
@@ -1783,6 +1817,30 @@ function flare(f, x, y, r, n, hot, cool, seed) {
   blob(f, x, y, r * 0.22, r * 0.22, flat(hot));
 }
 
+/**
+ * A ball of rolling fire, opaque: white-hot in the middle, then yellow,
+ * orange and a sooty red lip, with a ragged edge. heat 0..1 shrinks the hot
+ * middle as the fire cools on its way out.
+ */
+function fireBall(f, cx, cy, r, heat, seed) {
+  const R2 = r * 1.25;
+  for (let y = Math.floor(cy - R2); y <= Math.ceil(cy + R2); y++) {
+    for (let x = Math.floor(cx - R2); x <= Math.ceil(cx + R2); x++) {
+      const a = Math.atan2(y - cy, x - cx);
+      const rag = r * (0.86 + 0.26 * hash2(Math.round(a * 5 + 9), seed, 5) + 0.12 * vnoise(seed, x * 0.35, y * 0.35));
+      const d = Math.hypot(x - cx, y - cy) / rag;
+      if (d > 1) continue;
+      const q = d + (vnoise(seed + 1, x * 0.5, y * 0.5) - 0.5) * 0.3;
+      const hot = 0.2 + 0.25 * heat;
+      const c = q < hot ? rgba(255, 252, 226, 255)
+        : q < hot + 0.22 ? rgba(255, 222, 96, 255)
+        : q < hot + 0.42 ? rgba(250, 150, 40, 255)
+        : q < 0.93 ? rgba(206, 70, 18, 255) : rgba(96, 30, 14, 255);
+      px(f, x, y, c);
+    }
+  }
+}
+
 /** A stack of dirty smoke puffs drifting up and a little sideways. */
 function puffs(f, x, y, k, n, seed, c) {
   for (let i = 0; i < n; i++) {
@@ -1857,9 +1915,9 @@ function makeBellows() {
     hipY: 27, shoulderY: 46, neckY: 48.2, headY: 53.8, neckZ: 1.0, headZ: 1.8,
     shoulderHalf: 14, legHalf: 6.9, ankleY: 4.4, footLen: 6.0,
     thigh: 12.4, shin: 11.6, upper: 11, fore: 10.5,
-    armThick: 4.5, legThick: 5.6, stride: 6.4, lift: 3.4, hipDip: 2.0, lean: 0.05,
-    // a tank's walk: short heavy steps, the whole barrel rocking over each one
-    gait: { duty: 0.64, sway: 2.0, tilt: 0.09, twist: 0.05, bob: 0.3, wide: 1.1, strike: 0.12, push: 0.25 },
+    armThick: 4.5, legThick: 5.6, stride: 10, lift: 4.4, hipDip: 2.0, lean: 0.07,
+    // a tank's walk: heavy stomping steps, the whole barrel rocking over each one
+    gait: { duty: 0.52, sway: 2.0, tilt: 0.09, twist: 0.05, bob: 0.3, wide: 1.1, strike: 0.12, push: 0.25 },
     slices: 16, neckR: 4.4, lieH: 21, handScale: 1.1,
     edge: rgba(26, 22, 18, 255),
     profile: [[0, 13.2, 9.8], [0.3, 15.8, 12.0], [0.58, 15.4, 11.4], [0.85, 13.6, 9.6], [1, 12.4, 8.6]],
@@ -1988,6 +2046,29 @@ function makeBellows() {
       }
       const hand = arms[0].hand;
       const hp = P(hand);
+      let gout = null;
+      if (pose.flame) {
+        // The gout. He only fires it at you, so it comes straight out of the
+        // screen: a cone of rolling fire that swells as it gets nearer and
+        // swings in toward his middle, where your line of sight goes through
+        // him, the near end biggest and in front of everything he has.
+        add(1e3, () => {
+          if (!gout) return;
+          const fl = pose.flame, fs = pose.flameSeed || 0;
+          const mid = P(c.U(0, ch.shoulderY - 7, 0));
+          const n = 14;
+          for (let i = 0; i <= n; i++) {
+            const t = i / n, e = t * t;
+            const x = lerp(gout.x, mid.x, 0.5 * e) + Math.sin(i * 2.3 + fs) * t * 2.2 * k;
+            const y = lerp(gout.y, mid.y, 0.35 * e) + Math.cos(i * 1.7 + fs) * t * 1.6 * k;
+            fireBall(f, x, y, (1.6 + 10.5 * fl * Math.pow(t, 1.5)) * k, 1 - t * 0.55, 0x7a0 + i * 13 + Math.round(fs * 10));
+          }
+          const near = { x: lerp(gout.x, mid.x, 0.5), y: lerp(gout.y, mid.y, 0.35) };
+          // tongues licking out of the lip of it
+          flare(f, near.x, near.y, 15 * fl * k, 9, rgba(255, 214, 90, 255), rgba(214, 70, 16, 255), 0x7b + Math.round(fs * 7));
+          fireBall(f, near.x, near.y, 8 * fl * k, 0.9, 0x7c0 + Math.round(fs * 10));
+        });
+      }
       add(hp.z + 3.2, () => {
         const a2 = P(c.U(4, ch.shoulderY - 12, -9));
         const pts = [a2, P(c.U(8, ch.hipY + 1, -4)), P(vadd(hand, V(0, -3, -2))), hp];
@@ -2012,26 +2093,8 @@ function makeBellows() {
         const tipv = nlen < 5 * k ? vadd(hand, V(0, -1, 2)) : vadd(hand, vmul(d, 12));
         const pf = P(tipv);
         if (pose.flame) {
-          // the gout: it comes at you, so it grows as it comes, rolling and
-          // billowing, white at the nozzle and dirty orange at the edges
-          const fl = pose.flame, fs = pose.flameSeed || 0;
-          const tip3 = vadd(hand, vmul(d, 12 + 26 * fl));
-          const pe = P(tip3);
-          const toward = clamp(d.z, 0, 1);
-          for (let i = 34; i >= 0; i--) {
-            const t = i / 34;
-            const wob = Math.sin(i * 2.3 + fs) * t;
-            const q = {
-              x: lerp(pf.x, pe.x, t) + wob * (5 + 5 * fl) * k,
-              y: lerp(pf.y, pe.y, t) + Math.cos(i * 1.7 + fs) * t * 4 * k - t * t * 6 * k * fl,
-            };
-            const r = (2.6 + t * (7 + 9 * toward) * fl) * k * (1 + 0.22 * Math.sin(i * 2.1 + fs));
-            const col = t < 0.3 ? mix(rgba(255, 255, 240, 255), rgba(255, 214, 90, 255), t / 0.3)
-              : mix(rgba(255, 196, 60, 255), rgba(206, 56, 14, 255), (t - 0.3) / 0.7);
-            glow(f, q.x, q.y, r, col, { halo: 1, seed: 120 + i, base: rgba(90, 26, 8, 255), core: 0.45 });
-          }
-          // greasy black smoke rolling off the top of it
-          puffs(f, pe.x, pe.y - 6 * k * fl, k * (1 + fl * 0.6), 5, 121 + Math.round(fs * 3), rgba(70, 58, 52, 255));
+          // the gout is painted last, over everything: see below
+          gout = pf;
           glow(f, pf.x, pf.y, 5.5 * k, rgba(255, 255, 246, 255), { halo: 1, seed: 119, base: rgba(140, 70, 22, 255) });
         } else {
           // the pilot: a blue tongue that grows into a roar as he winds up
@@ -2347,8 +2410,8 @@ function wrencherHands(ch, pose, mode) {
     case 'walk':
     case 'idle': {
       // wrench cocked over the right shoulder, both hands on the grip; at rest
-      // he gives it a thoughtful little bounce on the shoulder pad
-      const tap = mode === 'idle' && pose.shrug ? 1 : 0;
+      // it rides up and down on the shoulder pad with his breathing
+      const tap = mode === 'idle' ? pose.breath * 0.5 : 0;
       pose.hands = [V(9.5, Y - 4 - sw * 0.5, 6.2 + sw * 0.9), V(4.0, Y - 8 - sw * 0.4, 7.6 + sw * 0.7)];
       pose.wrenchTip = V(15.5 + tap * 1.5, Y + 14 - tap * 3 + Math.abs(sw) * 1.2, -2.5 - sw * 1.6);
       break;
@@ -2411,9 +2474,9 @@ function sparkerHands(ch, pose, mode) {
       pose.charge = 0.22 + 0.1 * Math.abs(sw);
       break;
     case 'idle':
-      // gun hanging, and on the in-breath he pushes his glasses back up his nose
-      pose.hands = [V(7.5, Y - 16, 3), pose.shrug ? V(-1.6, Y + 5.5, 6.5) : V(-8, Y - 16, 1)];
-      pose.gunDir = V(0.3, -0.85, 0.45);
+      // gun hanging, the off hand twitching at his side
+      pose.hands = [V(7.5, Y - 16, 3), V(-8 + pose.breath * 1.2, Y - 16 + pose.breath * 2, 1 + pose.breath * 1.5)];
+      pose.gunDir = V(0.3 + pose.breath * 0.08, -0.85, 0.45);
       pose.charge = 0.18;
       break;
     case 'aim0':
@@ -2472,7 +2535,7 @@ function bellowsHands(ch, pose, mode) {
       // nozzle at the floor, the pilot light breathing with him
       pose.hands = [V(12, Y - 13, 4), V(-12.5, Y - 14, 1)];
       pose.gunDir = V(0.7, -0.6, 0.35);
-      pose.pilot = pose.shrug ? 1.3 : 0.8;
+      pose.pilot = 0.8 + pose.breath * 0.5;
       break;
     case 'aim0':
       pose.hands = [V(10, Y - 8, 9), V(-4, Y - 10, 7)];
@@ -2529,8 +2592,8 @@ function priestHands(ch, pose, mode) {
       break;
     case 'idle':
       pose.hands = [V(5.5, Y - 20, 7), V(-6, Y - 19, 6)];
-      pose.censer = pose.shrug ? 0.45 : -0.35;
-      pose.eyeGlow = pose.shrug ? 0.8 : 0.5;
+      pose.censer = lerp(-0.35, 0.45, pose.breath);
+      pose.eyeGlow = lerp(0.5, 0.8, pose.breath);
       break;
     case 'aim0':
       // the hands come up, and something gold starts to take shape between them
@@ -2577,7 +2640,7 @@ function gorgerHands(ch, pose, mode) {
       break;
     case 'idle':
       pose.hands = [V(15, Y - 12, 8), V(-15, Y - 12, 7)];
-      pose.funnel = pose.shrug ? 0.3 : 0;
+      pose.funnel = pose.breath * 0.3;
       break;
     case 'aim0':
       pose.hands = [V(17, Y - 5, 10), V(-17, Y - 6, 9)];
@@ -2623,7 +2686,7 @@ function howlerHands(ch, pose, mode) {
       break;
     case 'idle':
       pose.hands = [V(10, Y - 18, 2), V(-10, Y - 18, 1)];
-      pose.open = pose.shrug ? 0.3 : 0.1;
+      pose.open = lerp(0.1, 0.3, pose.breath);
       break;
     case 'aim0':
       pose.hands = [V(12, Y - 4, 4), V(-12, Y - 3, 3)];
@@ -2674,7 +2737,7 @@ const ATTACK = ['aim0', 'aim1', 'fire0', 'fire1', 'recover'];
  * a recipe so maim() can repaint it with parts missing, plus its rig heights
  * and the severed-part frames:
  *   walk{D}_{0..7}  eight-frame walk per facing
- *   idle{D}_{0..1}  breathing out and in, per facing
+ *   idle{D}_{0..2}  breathing out, half and in, per facing
  *   aim0 aim1 fire0 fire1 recover   the attack, facing the camera
  *   pain0 pain1     two different flinches
  *   die0..die5, dead
@@ -2697,7 +2760,7 @@ function paintHumanoidSet(out, ch, hands, recipes, rig) {
         finishEnemy(f, { ink });
       });
     }
-    for (let F = 0; F < 2; F++) {
+    for (let F = 0; F < IDLE_N; F++) {
       register(out, recipes, `${id}_idle${D}_${F}`, W, H, (f, mask) => {
         const pose = idlePose(ch, F);
         prep(pose, 'idle', F);
@@ -2723,7 +2786,7 @@ function paintHumanoidSet(out, ch, hands, recipes, rig) {
       // where it went in, and what came out
       const at = v ? b.gut : b.chest;
       spurt(f, at.x, at.y, v ? 1 : -0.8, v ? -0.3 : -1, (v ? 10 : 12) * k, k, 0x3a1 + v * 71 + id.length, ch.blood);
-      finishEnemy(f, { flash: 0.12, ink });
+      finishEnemy(f, { hit: 1, ink });
     });
   }
   for (let kk = 0; kk < DIE_N; kk++) {
@@ -2735,14 +2798,13 @@ function paintHumanoidSet(out, ch, hands, recipes, rig) {
       if (kk >= 4) gorePool(f, WD / 2 - 6 * k, H - 3 * k, (12 + (kk - 4) * 8) * k, (2.6 + (kk - 4)) * k, seed, { spots: 12 + kk * 2, ...ch.pool });
       const b = humanoid(f, ch, pose, 0, mask);
       if (kk === 0) {
-        wash(f, rgba(228, 70, 58, 255), 0.16);
         spurt(f, b.chest.x, b.chest.y, -0.4, -1, 16 * k, k, seed, ch.blood);
       }
       if (kk >= 1 && kk <= 3) bloodArc(f, WD / 2, H - (ch.hipY - 6) * k, kk, k, 0x51e0 + id.length * 977, ch.blood);
       if (kk === 4) splash(f, WD / 2 - 4 * k, H - 2 * k, 22 * k, k, seed, ch.blood);
       if (kk === 5) bloodArc(f, WD / 2 - 6 * k, H - 8 * k, 1, k, 0x52e0 + id.length * 977, ch.blood);
       if (ch.dieFx) ch.dieFx(f, kk, t, mask, b);
-      finishEnemy(f, { ink });
+      finishEnemy(f, { ink, hit: kk === 0 });
     });
   }
   register(out, recipes, `${id}_dead`, WD, H, (f, mask) => {
@@ -2759,6 +2821,11 @@ function paintHumanoidSet(out, ch, hands, recipes, rig) {
   rig[id] = {
     hip: ch.hipY / ch.h, shoulder: ch.shoulderY / ch.h,
     neck: ch.neckY / ch.h, head: ch.headY / ch.h,
+    // How far the body goes per walk cycle, as a fraction of the frame
+    // height: a planted foot slides back 2 * stride over `duty` of the cycle.
+    // The game advances the walk by distance against this. A robe has no feet
+    // to skate, so it has no say.
+    cycle: ch.robed ? 0 : 2 * ch.stride / pick((ch.gait || {}).duty, 0.56) / ch.h,
   };
   paintHumanoidParts(out, ch);
 }
@@ -3110,7 +3177,7 @@ function paintWaspSet(out) {
   for (let D = 0; D < 4; D++) {
     for (let F = 0; F < WALK_N; F++) out[`wasp_walk${D}_${F}`] = fin(paintWasp(D, F, 'walk'));
     // it never stops hovering: the idle loop is the walk, held
-    for (let F = 0; F < 2; F++) out[`wasp_idle${D}_${F}`] = out[`wasp_walk${D}_${F * 4}`];
+    for (let F = 0; F < IDLE_N; F++) out[`wasp_idle${D}_${F}`] = out[`wasp_walk${D}_${F * 3}`];
   }
   out.wasp_aim0 = fin(paintWasp(0, 1, 'aim0'));
   out.wasp_aim1 = fin(paintWasp(0, 2, 'aim1'));
@@ -5442,8 +5509,9 @@ function paintQuadLeg(c, L, a, b, cc, d, sft) {
  * Quadruped walk, eight frames, generated from a footfall pattern: each paw
  * is planted for `duty` of the cycle starting at its own offset (front right,
  * front left, hind right, hind left) and slides back at a constant rate while
- * it is, so something is always on the floor and nothing skates. The spine
- * rises and pitches on top of it, and the head bobs against it.
+ * it is; rig.cycle hands that rate to the game so the body keeps pace. Every
+ * painted frame has a paw down. The spine rises and pitches on top of it, and
+ * the head bobs against it.
  */
 function quadPose(ch, F, o = {}) {
   const g = ch.qgait;
@@ -5484,7 +5552,7 @@ function makeGhoul() {
     rag: RR.rag, bone: RR.bone, bruise: RR.bruise,
   };
   return {
-    id: 'ghoul', w: 56, h: 66, k: K,
+    id: 'ghoul', w: 60, h: 66, k: K,
     hipY: 33, shoulderY: 26.5, bodyLen: 23, shoulderT: 0.86, hipT: 0.14,
     body: [[0, 8.2, 6.8], [0.32, 9.6, 7.8], [0.66, 7.4, 6.2], [1, 5.2, 4.6]],
     bodySlices: 12,
@@ -5493,12 +5561,13 @@ function makeGhoul() {
     armThick: 2.5, legThick: 3.0,
     neckSegs: 5, neckR0: 3.4, neckR1: 3.8, headUp: -1.6, headFwd: 7.6,
     edge: rgba(18, 18, 14, 255), ramps: R,
-    // a scuttle: one paw at a time, hind leg then the front leg on the same
-    // side, the spine rolling over it and the head hanging, bobbing, drooling
+    // a scrabbling bound, like something that learned to run on all fours
+    // yesterday: the hind pair shove, the hands slap down one after the
+    // other, the spine humps and flattens and the head hangs, bobbing, drooling
     qgait: {
-      offs: [0.75, 0.25, 0.5, 0.0], duty: 0.66, freq: 2,
-      zF: 8.5, zR: -9.5, strideF: 4.6, strideR: 4.4, liftF: 4.6, liftR: 3.8,
-      rise: 1.1, risePh: 0.4, pitch: 0.04, pitchPh: 1.2, hu: 0.9, hf: 0.8, jaw: 0.28, jawAmp: 0.22,
+      offs: [0.58, 0.47, 0.1, 0.0], duty: 0.26, freq: 1,
+      zF: 9, zR: -6.5, standF: 8.5, standR: -9.5, strideF: 12, strideR: 12, liftF: 7, liftR: 6,
+      rise: 2.0, risePh: 0.4, pitch: 0.12, pitchPh: 1.2, hu: 0.9, hf: 0.8, jaw: 0.28, jawAmp: 0.22,
     },
     paw(f, c) {
       const { p, front, sft, E, k } = c;
@@ -5577,8 +5646,10 @@ function makeGhoul() {
       // crouches, gathers, rears, throws itself, lands in a heap
       aim0: { f: [{ y: 0, z: 8 }, { y: 0, z: 7 }, { y: 0, z: -7 }, { y: 0, z: -9 }], pitch: -0.12, rise: -3.5, hu: -1.2, hf: 1, jaw: 0.5 },
       aim1: { f: [{ y: 17, z: 6 }, { y: 15, z: 4 }, { y: 0, z: -6 }, { y: 0, z: -9 }], pitch: 1.02, rise: -1, hu: 1, jaw: 0.7 },
-      fire0: { f: [{ y: 21, z: 13 }, { y: 19, z: 11 }, { y: 0, z: -7 }, { y: 0, z: -10 }], pitch: 1.16, rise: -1, hu: 2.5, hf: 2, jaw: 1.0 },
-      fire1: { f: [{ y: 9, z: 17 }, { y: 8, z: 15 }, { y: 2, z: -13 }, { y: 1, z: -15 }], pitch: 0.28, rise: 3.5, hu: 1, hf: 3, jaw: 1.0 },
+      // the leap: reared right up, hands thrown wide to grab
+      fire0: { f: [{ y: 38, z: 10, x: 10 }, { y: 36, z: 9, x: 10 }, { y: 0, z: -7 }, { y: 0, z: -10 }], pitch: 1.16, rise: -1, hu: 2.5, hf: 2, jaw: 1.0 },
+      // coming down on you: arms out, face first, back legs trailing
+      fire1: { f: [{ y: 22, z: 17, x: 12 }, { y: 20, z: 15, x: 12 }, { y: 6, z: -15 }, { y: 5, z: -17 }], pitch: 0.4, rise: 5, hu: -0.5, hf: 6, jaw: 1.0 },
       recover: { f: [{ y: 0, z: 11 }, { y: 0, z: 9 }, { y: 0, z: -9 }, { y: 0, z: -11 }], pitch: -0.05, rise: -2.5, hu: -0.5, jaw: 0.6 },
       pain0: { f: [{ y: 8, z: 4 }, { y: 6, z: 2 }, { y: 0, z: -9, x: 3 }, { y: 0, z: -12, x: 3 }], pitch: 0.62, rise: -3, hu: 1.5, jaw: 0.85 },
       pain1: { f: [{ y: 0, z: 9, x: -2 }, { y: 3, z: 6, x: 3 }, { y: 0, z: -10, x: -2 }, { y: 0, z: -12, x: 2 }], pitch: -0.15, rise: -4, hu: -2, hf: -1, jaw: 0.95 },
@@ -5655,7 +5726,7 @@ function makeStalker() {
     sinew: RR.muscle, bone: RR.bone,
   };
   return {
-    id: 'stalker', w: 52, h: 60, k: K,
+    id: 'stalker', w: 62, h: 60, k: K,
     hipY: 27, shoulderY: 20.5, bodyLen: 21, shoulderT: 0.84, hipT: 0.16,
     body: [[0, 8.6, 7.2], [0.3, 9.4, 7.8], [0.66, 7.2, 6.4], [1, 5.0, 4.4]],
     bodySlices: 12,
@@ -5665,10 +5736,11 @@ function makeStalker() {
     neckSegs: 4, neckR0: 3.0, neckR1: 3.2, headUp: -2.8, headFwd: 6.6,
     edge: rgba(12, 11, 15, 255), ramps: R,
     // a rotary gallop: the hind pair drive, the spine flexes and stretches,
-    // the front pair strike, and it is never more than a paw on the floor
+    // the front pair strike round the other way, and it is never more than
+    // one paw on the floor, for about as long as it takes to push off it
     qgait: {
-      offs: [0.62, 0.5, 0.12, 0.0], duty: 0.44, freq: 1,
-      zF: 9, zR: -9, strideF: 5.5, strideR: 5.2, liftF: 7, liftR: 5,
+      offs: [0.75, 0.5, 0.0, 0.25], duty: 0.2, freq: 1,
+      zF: 9, zR: -5, standF: 9, standR: -9, strideF: 15, strideR: 15, liftF: 9, liftR: 7,
       rise: 2.4, risePh: -0.6, pitch: 0.18, pitchPh: 0.9, hu: 0.9, hf: 1.2, jaw: 0.2, jawAmp: 0.35,
     },
     paw(f, c) {
@@ -5752,8 +5824,10 @@ function makeStalker() {
       // low, lower, coiled, then the spring and the scythes coming down
       aim0: { f: [{ y: 0, z: 9 }, { y: 0, z: 7 }, { y: 0, z: -9 }, { y: 0, z: -11 }], pitch: -0.1, rise: -1.5, hu: -0.8, hf: 1, jaw: 0.4, eye: 1 },
       aim1: { f: [{ y: 0, z: 8 }, { y: 0, z: 6 }, { y: 0, z: -10 }, { y: 0, z: -12 }], pitch: -0.2, rise: -3.5, hu: -1.5, hf: 2, jaw: 0.6, eye: 1 },
-      fire0: { f: [{ y: 9, z: 15, x: 4 }, { y: 8, z: 13, x: 4 }, { y: 0, z: -9 }, { y: 1, z: -12 }], pitch: 0.3, rise: 2.5, hu: 1.5, hf: 4, jaw: 1.0, eye: 1 },
-      fire1: { f: [{ y: 2, z: 16, x: 1 }, { y: 5, z: 12, x: 5 }, { y: 3, z: -12 }, { y: 4, z: -14 }], pitch: -0.05, rise: 3, hu: 0, hf: 5, jaw: 1.0, eye: 1 },
+      // the spring: scythes up and flung wide, head thrown back to bite
+      fire0: { f: [{ y: 17, z: 12, x: 9 }, { y: 15, z: 10, x: 9 }, { y: 0, z: -8 }, { y: 0, z: -10 }], pitch: 0.62, rise: 2, hu: 2.5, hf: 4, jaw: 1.0, eye: 1 },
+      // the strike: off the floor, scythes slashing down and across, jaws first
+      fire1: { f: [{ y: 5, z: 17, x: -4 }, { y: 8, z: 15, x: -5 }, { y: 4, z: -14 }, { y: 5, z: -16 }], pitch: -0.12, rise: 4.5, hu: -1.5, hf: 7, jaw: 1.0, eye: 1 },
       recover: { f: [{ y: 0, z: 10 }, { y: 0, z: 8 }, { y: 0, z: -10 }, { y: 0, z: -12 }], pitch: 0.05, rise: -1, hu: 0.3, jaw: 0.5, eye: 0.8 },
       pain0: { f: [{ y: 5, z: 4, x: 4 }, { y: 4, z: 2, x: 4 }, { y: 0, z: -11, x: 3 }, { y: 0, z: -13, x: 3 }], pitch: -0.34, rise: -2, hu: 2, jaw: 0.85, eye: 1 },
       pain1: { f: [{ y: 6, z: 7, x: -3 }, { y: 0, z: 9, x: 4 }, { y: 0, z: -12, x: -2 }, { y: 2, z: -11, x: 3 }], pitch: 0.2, rise: -2.5, hu: 2.5, hf: -1, jaw: 0.9, eye: 1 },
@@ -5835,10 +5909,11 @@ function quadKey(ch, kf, xform) {
 /** Standing on all fours and breathing: b 0 out, 1 in. */
 function quadStand(ch, b) {
   const g = ch.qgait;
-  const zF = g.zF, zR = g.zR;
+  // the stance is its own, not wherever the gallop happens to put the paws
+  const zF = pick(g.standF, g.zF), zR = pick(g.standR, g.zR);
   return quadKey(ch, {
     f: [{ y: 0, z: zF + 1 }, { y: 0, z: zF - 1 }, { y: 0, z: zR + 1 }, { y: 0, z: zR - 1 }],
-    rise: b ? 0.7 : -0.3, pitch: b ? 0.04 : 0, hu: b ? 0.9 : -0.3, jaw: b ? 0.45 : 0.22, eye: 0.7,
+    rise: lerp(-0.3, 0.7, b), pitch: 0.04 * b, hu: lerp(-0.3, 0.9, b), jaw: lerp(0.22, 0.45, b), eye: 0.7,
   });
 }
 
@@ -5855,9 +5930,9 @@ function paintQuadSet(out, ch, recipes, rig) {
         finishEnemy(f, { ink });
       });
     }
-    for (let F = 0; F < 2; F++) {
+    for (let F = 0; F < IDLE_N; F++) {
       register(out, recipes, `${id}_idle${D}_${F}`, W, H, (f, mask) => {
-        quadruped(f, ch, quadStand(ch, F), D, mask);
+        quadruped(f, ch, quadStand(ch, F / (IDLE_N - 1)), D, mask);
         finishEnemy(f, { ink });
       });
     }
@@ -5874,7 +5949,7 @@ function paintQuadSet(out, ch, recipes, rig) {
     register(out, recipes, `${id}_pain${v}`, W, H, (f, mask) => {
       const b = quadruped(f, ch, quadKey(ch, ch.poses[`pain${v}`]), 0, mask);
       spurt(f, b.body.x + (v ? 3 : -2) * k, b.body.y - (v ? 1 : 3) * k, v ? 1 : -0.7, -1, 11 * k, k, 0x3b1 + v * 53 + id.length, MUTANT_BLOOD);
-      finishEnemy(f, { flash: 0.12, ink });
+      finishEnemy(f, { hit: 1, ink });
     });
   }
   for (let kk = 0; kk < DIE_N; kk++) {
@@ -5889,12 +5964,11 @@ function paintQuadSet(out, ch, recipes, rig) {
       pose.dead = t > 0.9 ? 1 : 0;
       const b = quadruped(f, ch, pose, 0, mask);
       if (kk === 0) {
-        wash(f, rgba(228, 70, 58, 255), 0.16);
         spurt(f, b.body.x, b.body.y - 2 * k, -0.5, -1, 14 * k, k, 0x61e + id.length, MUTANT_BLOOD);
       }
       if (kk >= 1 && kk <= 3) bloodArc(f, WD / 2, H - 14 * k, kk, k, 0x61 + kk, MUTANT_BLOOD);
       if (kk === 4) splash(f, WD / 2, H - 2 * k, 18 * k, k, 0x62 + id.length, MUTANT_BLOOD);
-      finishEnemy(f, { ink });
+      finishEnemy(f, { ink, hit: kk === 0 });
     });
   }
   register(out, recipes, `${id}_dead`, WD, H, (f, mask) => {
@@ -5910,6 +5984,7 @@ function paintQuadSet(out, ch, recipes, rig) {
   rig[id] = {
     hip: ch.hipY / ch.h, shoulder: ch.shoulderY / ch.h,
     neck: ch.shoulderY / ch.h, head: clamp((ch.shoulderY + ch.headUp) / ch.h, 0, 1),
+    cycle: (ch.qgait.strideF + ch.qgait.strideR) / ch.qgait.duty / ch.h,
   };
   paintQuadParts(out, ch);
 }
@@ -5964,9 +6039,9 @@ function makeGorger() {
     hipY: 23, shoulderY: 45, neckY: 47, headY: 51, neckZ: 2.0, headZ: 5.0,
     shoulderHalf: 13, legHalf: 8.5, ankleY: 4.4, footLen: 5.6,
     thigh: 11.5, shin: 10.5, upper: 9.5, fore: 9,
-    armThick: 4.2, legThick: 6.2, stride: 5, lift: 3.0, hipDip: 1.8, lean: 0.04,
-    // a waddle: side to side more than forward, everything wobbling after it
-    gait: { duty: 0.62, sway: 2.6, tilt: 0.13, twist: 0.04, bob: 0.7, wide: 1.05, strike: 0.1, push: 0.2 },
+    armThick: 4.2, legThick: 6.2, stride: 8, lift: 4.0, hipDip: 1.8, lean: 0.04,
+    // a waddle: side to side as much as forward, everything wobbling after it
+    gait: { duty: 0.5, sway: 2.6, tilt: 0.13, twist: 0.04, bob: 0.7, wide: 1.05, strike: 0.1, push: 0.2 },
     slices: 20, edge: rgba(24, 22, 18, 255), lieH: 24, neckR: 4.5,
     profile: baseProfile, baseProfile, ramps: R,
     swell(t) {
@@ -6184,7 +6259,7 @@ function makeGorger() {
       } else {
         // the belly lags the step and slops about after it
         const jig = mode === 'walk' ? 0.07 * Math.sin(2 * pose.phase - 1.2)
-          : mode === 'idle' ? (pose.shrug ? 0.05 : 0) : mode === 'fire0' ? 0.06 : mode === 'pain1' ? -0.05 : 0;
+          : mode === 'idle' ? pose.breath * 0.05 : mode === 'fire0' ? 0.06 : mode === 'pain1' ? -0.05 : 0;
         this.swell(jig);
         pose.burst = 0;
       }
@@ -6247,9 +6322,9 @@ function makeHowler() {
     hipY: 32, shoulderY: 50, neckY: 53, headY: 61, neckZ: -1.0, headZ: -3.2,
     shoulderHalf: 10, legHalf: 4.6, ankleY: 3.2, footLen: 5.4,
     thigh: 16, shin: 15.5, upper: 13, fore: 12.5,
-    armThick: 2.4, legThick: 3.2, stride: 11, lift: 7, hipDip: 2.4, lean: 0.06,
+    armThick: 2.4, legThick: 3.2, stride: 13, lift: 8.5, hipDip: 2.4, lean: 0.08,
     // a long loping stride, pitched forward, arms swinging loose
-    gait: { duty: 0.5, twist: 0.18, bob: 1.1, leanBob: 0.08, strike: 0.3, push: 0.55, tilt: 0.04 },
+    gait: { duty: 0.44, twist: 0.18, bob: 1.1, leanBob: 0.08, strike: 0.3, push: 0.55, tilt: 0.04 },
     slices: 16, edge: rgba(16, 14, 18, 255), lieH: 15, neckR: 2.6,
     profile: [[0, 6.2, 4.8], [0.4, 7.2, 5.4], [0.78, 9.4, 6.2], [1, 8.4, 5.6]],
     ramps: R,

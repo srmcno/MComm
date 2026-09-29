@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
 import { buildSprites } from '../src/engine/sprites.js';
+import { ENEMY_TYPES } from '../src/game/entities.js';
 import { writeSheet, writePng } from './png.js';
 
 const OUT = process.env.SPRITE_OUT ||
@@ -25,7 +26,7 @@ const second = secondBuild.frames;
 const ENEMIES = ['wrencher', 'sparker', 'bellows', 'wasp', 'priest'];
 const MUTANTS = ['ghoul', 'gorger', 'howler', 'stalker'];
 const expected = [];
-// Every enemy on the common key pattern: an eight-frame walk and a two-frame
+// Every enemy on the common key pattern: an eight-frame walk and a three-frame
 // breathing idle per facing, the attack in five beats, two flinches, six
 // death frames and the corpse.
 const WALK_N = 8, DIE_N = 6;
@@ -34,7 +35,7 @@ function enemyKeys(id) {
   const a = [];
   for (let d = 0; d < 4; d++) {
     for (let f = 0; f < WALK_N; f++) a.push(`${id}_walk${d}_${f}`);
-    for (let f = 0; f < 2; f++) a.push(`${id}_idle${d}_${f}`);
+    for (let f = 0; f < 3; f++) a.push(`${id}_idle${d}_${f}`);
   }
   for (const m of ATTACK) a.push(`${id}_${m}`);
   a.push(`${id}_pain0`, `${id}_pain1`);
@@ -84,10 +85,10 @@ for (let i = 0; i < 3; i++) expected.push(`acid${i}`);
 const SIZES = {
   wrencher: [96, 108], sparker: [96, 108], bellows: [96, 108], priest: [96, 120],
   wasp: [84, 60], mutter: [192, 160],
-  ghoul: [84, 99], gorger: [114, 111], howler: [90, 117], stalker: [78, 90], maw: [176, 150],
+  ghoul: [90, 99], gorger: [114, 111], howler: [90, 117], stalker: [93, 90], maw: [176, 150],
 };
-const DIE_W = { wrencher: 156, sparker: 156, bellows: 162, priest: 168, gorger: 174, howler: 162, ghoul: 109, stalker: 101 };
-const ATK_W = { wrencher: 154, sparker: 154, bellows: 154, priest: 154, gorger: 182, howler: 144, ghoul: 118, stalker: 109 };
+const DIE_W = { wrencher: 156, sparker: 156, bellows: 162, priest: 168, gorger: 174, howler: 162, ghoul: 117, stalker: 121 };
+const ATK_W = { wrencher: 154, sparker: 154, bellows: 154, priest: 154, gorger: 182, howler: 144, ghoul: 126, stalker: 130 };
 const MAIMABLE = ['wrencher', 'sparker', 'bellows', 'priest', 'gorger', 'howler', 'ghoul', 'stalker'];
 const PARTS = ['head', 'arm', 'leg'];
 for (const id of MAIMABLE) for (const p of PARTS) for (let r = 0; r < 8; r++) expected.push(`${id}_part_${p}_${r}`);
@@ -253,6 +254,18 @@ if (typeof maim === 'function') {
         check(Number.isFinite(r[j]) && r[j] > 0 && r[j] < 1, `rig.${id}.${j} = ${r[j]} is not a fraction`);
       }
       check(r.neck >= r.shoulder - 0.05 && r.head >= r.neck - 0.05, `rig.${id}: joints out of order (${JSON.stringify(r)})`);
+      // the walk's length on the floor: the game's hand-worked stride must be
+      // the art's, or the feet skate by the difference
+      const d = ENEMY_TYPES[id];
+      if (id === 'priest') check(!r.cycle, 'rig.priest.cycle: a robe has no feet to plant');
+      else {
+        check(r.cycle > 0.3 && r.cycle < 4, `rig.${id}.cycle = ${r.cycle} is not a walk`);
+        const want = r.cycle * d.height * (d.slip || 1);
+        check(Math.abs(d.stride / want - 1) < 0.03, `ENEMY_TYPES.${id}.stride ${d.stride} is not the art's ${want.toFixed(3)}`);
+        check(d.slip >= 1 && d.slip <= 1.35, `ENEMY_TYPES.${id}.slip ${d.slip}: the feet skate`);
+        const fps = 8 * d.speed / want;
+        check(fps < 28, `${id} walks at ${fps.toFixed(1)} frames a second`);
+      }
     }
     const keys = [`${id}_walk0_0`, `${id}_walk1_2`, `${id}_walk2_5`, `${id}_walk3_7`, `${id}_idle0_1`,
       `${id}_aim1`, `${id}_fire0`, `${id}_recover`, `${id}_pain1`, `${id}_die1`, `${id}_die4`, `${id}_dead`];

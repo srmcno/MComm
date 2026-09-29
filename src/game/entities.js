@@ -2,24 +2,31 @@
 
 import { clamp, damp, dist, wrapAngle, makeRng, randRange, TAU } from '../core/math.js';
 
+// The walk runs off distance. The sprite generator publishes how far its
+// painted feet push the floor back per cycle (rig.cycle, a fraction of the
+// frame height), and a body covers that times `slip` per cycle: 1 is a foot
+// glued to the floor, which at these speeds would run the legs at 30 to 35
+// frames a second, and anything past about 1.35 reads as skating rather than a
+// scramble. `stride` is the same product worked out by hand, for a build
+// with no rig, and for the priest, whose robe has no feet to plant.
 export const ENEMY_TYPES = {
   wrencher: {
     hp: 44, speed: 2.55, radius: 0.32, height: 0.86, eye: 0.5,
     sight: 15, attack: 'melee', range: 1.35, damage: 19, windup: 0.42, cooldown: 1.05,
     score: 100, alert: 'wrencher_alert', pain: 0.28, gib: 3,
-    z: 0, walkFps: 7, deathFps: 12, stride: 1.45,
+    z: 0, walkFps: 7, deathFps: 12, stride: 0.88, slip: 1.3,
   },
   sparker: {
     hp: 28, speed: 2.9, radius: 0.28, height: 0.8, eye: 0.52,
     sight: 20, attack: 'bolt', range: 15, damage: 9, windup: 0.34, cooldown: 1.35,
     score: 120, alert: 'wrencher_alert', pain: 0.34, gib: 2,
-    z: 0, walkFps: 8, deathFps: 13, stride: 1.3, strafes: true,
+    z: 0, walkFps: 8, deathFps: 13, stride: 1.01, slip: 1.3, strafes: true,
   },
   bellows: {
     hp: 118, speed: 1.55, radius: 0.40, height: 0.94, eye: 0.55,
     sight: 14, attack: 'flame', range: 5.2, damage: 26, windup: 0.55, cooldown: 0.9,
     score: 300, alert: 'bellows_flame', pain: 0.14, gib: 5, explodes: true,
-    z: 0, walkFps: 5, deathFps: 10, stride: 1.05,
+    z: 0, walkFps: 5, deathFps: 10, stride: 0.65, slip: 1.3,
   },
   wasp: {
     hp: 22, speed: 4.4, radius: 0.24, height: 0.44, eye: 0.1,
@@ -39,14 +46,14 @@ export const ENEMY_TYPES = {
     hp: 34, speed: 4.2, radius: 0.28, height: 0.74, eye: 0.42,
     sight: 18, attack: 'lunge', range: 2.2, damage: 16, windup: 0.30, cooldown: 0.85,
     score: 180, alert: 'ghoul_alert', die: 'ghoul_die', pain: 0.34, gib: 5, mutant: true,
-    z: 0, walkFps: 12, deathFps: 14, stride: 1.25, strafes: true, lungeSpeed: 11,
+    z: 0, walkFps: 12, deathFps: 14, stride: 1.35, slip: 1.3, strafes: true, lungeSpeed: 11,
   },
   gorger: {
     hp: 190, speed: 1.25, radius: 0.46, height: 0.92, eye: 0.5,
     sight: 13, attack: 'chomp', range: 1.7, damage: 30, windup: 0.62, cooldown: 1.35,
     score: 450, alert: 'gorger_alert', die: 'gorger_burst', pain: 0.06, gib: 9,
     mutant: true, bursts: true,
-    z: 0, walkFps: 4, deathFps: 9, stride: 0.95,
+    z: 0, walkFps: 4, deathFps: 9, stride: 0.52, slip: 1.3,
   },
   howler: {
     hp: 70, speed: 2.1, radius: 0.30, height: 1.02, eye: 0.72,
@@ -57,14 +64,14 @@ export const ENEMY_TYPES = {
     sight: 24, attack: 'spit', range: 17, damage: 9, windup: 0.72, cooldown: 2.6,
     score: 380, alert: 'howler_alert', die: 'howler_die', pain: 0.24, gib: 6,
     mutant: true, acid: true,
-    z: 0, walkFps: 6, deathFps: 11, stride: 1.6, strafes: true,
+    z: 0, walkFps: 6, deathFps: 11, stride: 0.89, slip: 1.15, strafes: true,
   },
   stalker: {
     hp: 46, speed: 5.6, radius: 0.26, height: 0.52, eye: 0.3,
     sight: 26, attack: 'rend', range: 1.9, damage: 22, windup: 0.22, cooldown: 0.7,
     score: 300, alert: 'stalker_alert', die: 'stalker_die', pain: 0.18, gib: 5,
     mutant: true, charger: true,
-    z: 0, walkFps: 16, deathFps: 15, stride: 2.2, strafes: true, lungeSpeed: 15,
+    z: 0, walkFps: 16, deathFps: 15, stride: 1.69, slip: 1.3, strafes: true, lungeSpeed: 15,
   },
   maw: {
     hp: 1500, speed: 0.9, radius: 0.9, height: 1.9, eye: 1.1,
@@ -120,6 +127,7 @@ export class Enemy {
     // standing about (the breathing loop), which flinch is showing, and the
     // beat after an attack when the weight comes back.
     this.walkDist = Math.random() * 4;
+    this.gaitLen = -1;
     this.idleT = 0;
     this.stillT = 0;
     this.painVar = 0;
@@ -177,23 +185,23 @@ export class Enemy {
     if (this.state === ST.DYING) return K.die[clamp(this.deathFrame | 0, 0, DIE_FRAMES - 1)];
     if (this.painFlash > 0.001 && this.state === ST.PAIN) return K.pain[this.painVar];
     // The attack in beats: wind up, wind all the way up, the strike, the
-    // follow-through, and a moment to get the weight back. A lunger shows
-    // the strike for as long as it is in the air.
+    // follow-through, and a moment standing still to get the weight back. A
+    // lunger stays in the attack for as long as it is in the air.
     if (this.state === ST.WINDUP) return this.stateT < this.def.windup * 0.45 ? K.aim0 : K.aim1;
     if (this.state === ST.ATTACK) return this.stateT < 0.09 ? K.fire0 : K.fire1;
-    if (this.lungeT > 0) return K.fire1;
-    if (this.recoverT > 0) return K.recover;
+    if (this.recoverT > 0 && this.state === ST.CHASE) return K.recover;
     const D = this.facing(camX, camY);
     // A hovering drone never stands still: its rotors are the walk.
     if (!this.def.flying && (this.state === ST.IDLE || this.state === ST.ALERT || this.stillT > 0.2)) {
-      return K.idle[D][((this.idleT * 1.25 + this.bobPhase) | 0) & 1];
+      // out, half, in, half: a breath every two seconds or so
+      return K.idle[D][IDLE_SEQ[((this.idleT * 2 + this.bobPhase) | 0) & 3]];
     }
     return K.walk[D][this.walkFrame()];
   }
 
   /** Walk frame from distance covered, so the feet keep pace with the floor. */
   walkFrame() {
-    const st = this.def.stride;
+    const st = this.gaitLen > 0 ? this.gaitLen : this.def.stride;
     if (!st) return this.animFrame % WALK_FRAMES;
     return ((this.walkDist / st) * WALK_FRAMES | 0) % WALK_FRAMES;
   }
@@ -263,6 +271,7 @@ export class Enemy {
     if (this.animT > 1 / d.walkFps) { this.animT = 0; this.animFrame++; }
     this.idleT += dt;
     if (this.recoverT > 0) this.recoverT -= dt;
+    if (this.gaitLen < 0) this.gaitLen = gaitLength(this, game);
 
     // Knockback runs whatever the state, so a corpse still slides.
     const floorZ = this.alive ? d.z : (d.flying ? 0 : d.z);
@@ -317,6 +326,8 @@ export class Enemy {
       return;
     }
     if (this.state === ST.PAIN) {
+      // hit out of a lunge: it comes straight down
+      if (!d.flying) this.z = d.z + this.airborne * 0.10;
       if (this.stateT > 0.28) { this.state = ST.CHASE; this.stateT = 0; }
       return;
     }
@@ -350,10 +361,15 @@ export class Enemy {
       return;
     }
     if (this.state === ST.ATTACK) {
-      if (this.stateT > 0.22) {
+      // A lunge is over when the body has come down and mostly stopped, not
+      // when the swing would have been.
+      const aloft = this.lungeT > 0 && this.stateT < 0.42 && Math.hypot(this.kvx, this.kvy) > d.speed * 0.4;
+      // and it leaves the floor to do it
+      if (this.lungeT > 0 && !d.flying) this.z = d.z + Math.sin(Math.PI * clamp(this.stateT / 0.3, 0, 1)) * 0.14 * d.height;
+      if (this.stateT > 0.22 && !aloft) {
         this.state = ST.CHASE;
         this.stateT = 0;
-        this.recoverT = 0.24;
+        this.recoverT = RECOVER_T;
         // One hand is slower than two, and no hands is slower still.
         this.cooldown = d.cooldown * randRange(this.rng, 0.85, 1.25) *
           (this.armless ? 1.4 : (this.maim & 6) && d.attack !== 'bless' ? 1.25 : 1);
@@ -375,6 +391,14 @@ export class Enemy {
 
     this.turnToward(this.lastSeen ? this.lastSeen.x : p.x, this.lastSeen ? this.lastSeen.y : p.y, dt, 5);
     if (d.speed <= 0) return;
+    // Getting the weight back after a swing: planted, not gliding off in the
+    // recovery pose. The cooldown is already running, so this costs no shots.
+    if (this.recoverT > 0) {
+      // come down off a lunge and dig the claws in, rather than skid
+      if (this.lungeT > 0) { const b = Math.exp(-16 * dt); this.kvx *= b; this.kvy *= b; }
+      this._settle(toP, dt);
+      return;
+    }
 
     // Keep a preferred standoff distance rather than piling onto the player.
     const want = (d.attack === 'melee' || this.armless) ? range * 0.72 : range * 0.62;
@@ -424,6 +448,12 @@ export class Enemy {
     this.walkDist += walked;
     if (walked < d.speed * dt * 0.2) this.stillT += dt; else this.stillT = 0;
 
+    this._settle(toP, dt);
+  }
+
+  /** Height off the floor: a knocked body's hop, a drone's bob. */
+  _settle(toP, dt) {
+    const d = this.def;
     if (this.airborne > 0 && !d.flying) this.z = d.z + this.airborne * 0.10;
     else if (!d.flying) this.z = d.z;
     if (d.flying) {
@@ -673,6 +703,15 @@ export class PipeBomb {
 
 const WALK_FRAMES = 8;
 const DIE_FRAMES = 6;
+const RECOVER_T = 0.2;
+const IDLE_SEQ = [0, 1, 2, 1];
+
+/** World units per walk cycle for a body: the art's own, or the table's. */
+function gaitLength(e, game) {
+  const d = e.def;
+  const rig = game.gore && game.gore.rigOf ? game.gore.rigOf(e.kind) : null;
+  return rig && rig.cycle > 0 ? rig.cycle * d.height * (d.slip || 1) : d.stride;
+}
 
 // Frame keys per kind, built once: frameKey() runs for every enemy every
 // frame and should not be making strings to do it.
@@ -685,7 +724,7 @@ function keysOf(k) {
   for (let d = 0; d < 4; d++) {
     const w = [], i = [];
     for (let f = 0; f < WALK_FRAMES; f++) w.push(`${k}_walk${d}_${f}`);
-    for (let f = 0; f < 2; f++) i.push(`${k}_idle${d}_${f}`);
+    for (let f = 0; f < 3; f++) i.push(`${k}_idle${d}_${f}`);
     K.walk.push(w); K.idle.push(i);
   }
   for (let f = 0; f < DIE_FRAMES; f++) K.die.push(`${k}_die${f}`);
