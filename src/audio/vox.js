@@ -2055,11 +2055,11 @@ export const LINES = {
   ],
 
   perfect_burst: [
-    'Fuse perfect. Airburst logged. I am, briefly, impressed.',
+    'Dead centre. Airburst logged. I am, briefly, impressed.',
     'Textbook. My text. My book.',
     'Perfect burst. I have recorded it so I can study where I went wrong.',
     'Clean airburst. Do not let it go to your head. There is so little room up there.',
-    'Exactly on the fuse. Doctor Vance will be insufferable about this.',
+    'Right on the nose. Doctor Vance will be insufferable about this.',
     'Perfect. I hate it when you read the manual.',
   ],
 
@@ -2489,6 +2489,14 @@ export const LINES = {
     "Now you're only mostly a guy.",
     'Lost and found is on level two, pal. Bring ID. Bring a cooler.',
     'No refunds on missing parts. Read the warranty.',
+    'Detachable! Nobody told me they came detachable!',
+    'Pieces of shit. Plural. Look at all the pieces.',
+    "Flat pack mutant. Some parts may be missing. That one. That one's missing.",
+    'Say goodbye to your little friend!',
+    "It's only a flesh wound! A big, floppy, flying flesh wound!",
+    "Anybody lose a thing? I've got a thing here. It's still wet.",
+    "Hold still, I'm redesigning you!",
+    "Damn it, now there's two of you. One of you is just a lot smaller.",
   ],
 
   // A head pops.
@@ -2505,6 +2513,14 @@ export const LINES = {
     'Cranium, meet momentum.',
     'And his thoughts are now on the ceiling. Deep thoughts.',
     'Holy crap, it went pop! Somebody do that again!',
+    'Headshot! Somebody tell the scoreboard. And the janitor.',
+    "Your head called. It's not coming back.",
+    "Shit, that's a lot of skull. Where were you keeping all that?",
+    'Pop! Like bubble wrap full of bad decisions.',
+    "That's what you get for thinking. Nobody asked you to think.",
+    "Well, that's a weight off your shoulders.",
+    'Bless you! Wow. That was a big one.',
+    "Somebody's gonna need dental records. And a mop. And a bigger mop.",
   ],
 
   // A legless enemy keeps crawling at him.
@@ -2519,6 +2535,13 @@ export const LINES = {
     "He's still coming! Respect. Now die.",
     'Look at that. A self propelled mop.',
     "You've got guts, kid. Mostly on the outside.",
+    'Look at you, doing the worm. Nobody asked for the worm.',
+    'Guess somebody skipped leg day. Permanently.',
+    "Shit, he's gaining on me. Slowly. Very, very slowly.",
+    "Keep crawling, sport. You'll make it by Christmas.",
+    'Aw, he wants a hug. Nope. No. Bad crawler.',
+    'Half the man he used to be, and twice the attitude.',
+    "It's like one of those robot vacuums. One that hates me.",
   ],
 
   // He kicks a severed part across the room: a head, an arm or a leg, so no
@@ -2534,6 +2557,12 @@ export const LINES = {
     "Coach said I'd never kick anything important. Look at me now, coach!",
     "Dropkick! And it's still dripping!",
     "Somebody's gonna need a new ball. And a new, uh. Whatever that was.",
+    'And the kick is up! And it is gross!',
+    'Hardigan scores! The crowd goes wild! The crowd is also dead!',
+    'Goal! Get the hell in there! Goal!',
+    "Man, I miss football. This is almost as good. It's wetter.",
+    'Somebody catch that! No? Okay. Nobody catch that.',
+    'Instant replay! Look at that spiral!',
   ],
 
   // A headless enemy is still running around.
@@ -2548,6 +2577,39 @@ export const LINES = {
     'Go on. Lead with the neck.',
     "Holy shit, it's still running! Somebody call a doctor! Or a chef!",
     "Somebody get that man a hat. Nowhere to put it, but still. It's the thought.",
+    'Somebody get this man a sneaker deal!',
+    "Damn, he's faster without it. Should I try that? No. No, Brick.",
+    "No head, no problem. That's the spirit, buddy.",
+    "Left! Left! Your other left! Ah, he can't hear me.",
+    "He's looking for his head. With what, buddy? With what?",
+    "That's the most productive thing he's done all day.",
+  ],
+
+  // A body comes apart all at once: a blast, a big burst, a pipe bomb.
+  brick_gibbed: [
+    'Chunky style!',
+    "Well, he's everywhere now. Really spread himself thin.",
+    'Holy shit, he popped! Like a pinata full of soup!',
+    'Ew. Ew! Some of that is in my mouth!',
+    'Clean up on aisle everywhere!',
+    "That's a lot of guy for one room.",
+    'Meat confetti! Happy birthday to me!',
+    'Aw, man. I just had this vest cleaned.',
+    'He went to pieces. Poor guy was under a lot of pressure.',
+    'Damn. I only meant to hurt him a lot.',
+  ],
+
+  // A body thrown into a wall hard enough to paint it.
+  brick_splat: [
+    'Splat! Like a bug on a windshield!',
+    'And he sticks the landing. On the wall.',
+    'Somebody hang that up. Oh. He did it himself.',
+    'Very modern. I call it Mutant on Concrete.',
+    'Wall one, mutant zero.',
+    "Hope you like the wall, pal. You're part of it now.",
+    "That wall's gonna need a new coat of paint. Or a new coat of guy.",
+    'Holy shit, he stuck!',
+    'Redecorating! Mostly in red.',
   ],
 
   /* ══════════════════════════════════════════════════════════════════════
@@ -2572,9 +2634,9 @@ export const LINES = {
   // Floor 1, third beat: she deflates whichever brick_boot boast she just
   // heard, then briefs the tutorial floor.
   ilsa_level1: [
-    'Wonderful. Now stop narrating, and learn the fuse on this floor while nothing important is on fire.',
+    'Wonderful. Now stop narrating, and learn to lead a missile on this floor while nothing important is on fire.',
     'Please say less. This is the easy floor. If you die on the tutorial floor, Hardigan, I am telling everyone.',
-    'I have heard that speech. The mutants have heard that speech. Take the flak battery and learn your ranges.',
+    'I have heard that speech. The mutants have heard that speech. Take the flak battery and learn to lead a missile.',
     'Noted, and ignored. The wrench men on this floor were plumbers. They are still plumbers. They are now also angry.',
     'Lovely. The mutants can hear you on this channel and they are embarrassed for you. Intake deck. Clear it.',
     'Every word of that is going in my report. Level one: wide corridors, poor cover, one flak battery. Learn it.',
@@ -2619,15 +2681,15 @@ export const LINES = {
     'Last floor. If this goes badly, you are an idiot. If it goes well, you are still an idiot. Go.',
   ],
 
-  // Heard the first time a burst goes badly long or short, so it must
-  // work for either.
-  ilsa_fuse_tip: [
-    'The shell detonates where you set it, not where it hits. Contact does nothing. Range first, then aim.',
-    'You are shooting a fuse, not a bullet. Decide where the explosion goes and the gun does the rest.',
-    'Wheel sets range. When the ring meets the bracket, fire. I built this to be simple and I stand by that.',
-    'Your bursts are missing the bracket. Match the ring to the bracket. It is not modern art, Hardigan.',
-    'Your fuse is wrong, Dummkopf. The ring is the range. The ring is not a decoration.',
-    'You are painting the sky with bad fuses. Dial until the ring sits on the bracket. Then fire. Genau.',
+  // Heard once, when a run of flak shots has found nothing: he is shooting
+  // where the missiles are, not where they will be.
+  ilsa_lead_tip: [
+    'You are shooting where they are. By the time the shell gets there, they are not. Lead them.',
+    'Aim at the bracket, not the missile. The bracket is where it will be. I did the math so you do not have to.',
+    'The shell is fast, not magic. Put the cross on the bracket, then fire.',
+    'You are missing behind them, Hardigan. Every time. Aim ahead, where the bracket is. Genau.',
+    'Dummkopf. The little bracket in front of the missile. Shoot the bracket.',
+    'Stop chasing them with the gun. Get in front of them and let them fly into it.',
   ],
 
   ilsa_chain_tip: [
@@ -2679,7 +2741,7 @@ export const LINES = {
     'Launch detected. I will call the ranges. Point the gun where I tell you.',
     'They come down the same corridor every time. MUTTER is efficient, not clever. Use that.',
     'Inbound. Do not panic and do not improvise. One of those you are good at.',
-    'Flight inbound. Fuse first, aim second. The ring is your range, Hardigan, not a decoration.',
+    'Flight inbound. Lead them, Hardigan. Aim where they will be, not where they are.',
     'Here they come. Stop admiring yourself and look up.',
     'Warheads, Hardigan. Many. Please do the thing I built you a gun for.',
   ],
@@ -2772,6 +2834,18 @@ export const LINES = {
     'Get up. I am not spending the apocalypse alone with human resources.',
   ],
 
+  // Ilsa on the mess, now and then, after Brick has had his say about it.
+  ilsa_gore: [
+    'Hardigan, that was a person. Mostly. Now it is several.',
+    'Scheisse. I will be seeing that when I close my eyes.',
+    'Please stop playing with them. They are not toys, they are evidence.',
+    'I designed that gun to shoot down missiles, not to make soup.',
+    'Mein Gott. Why is there something on the ceiling? Why is it waving?',
+    'You are enjoying this far too much, Hardigan.',
+    'I have a camera in that corridor. I am turning it off now.',
+    'Hardigan, wipe your visor. You are dripping on my floor plans.',
+  ],
+
   /* ══════════════════════════════════════════════════════════════════════
      MUTTER, on the subject of the personnel                              */
 
@@ -2796,6 +2870,18 @@ export const LINES = {
     'Please do not make eye contact with the maintenance team. They find it encouraging.',
     'That used to be Karl from Dosimetry. Karl is doing well. Karl has more mouths now.',
     'They are not hostile. They are hungry and have lost their inhibitions. Much like the Christmas party.',
+  ],
+
+  // MUTTER on the mess, now and then, after Brick has had his say about it.
+  mutter_gore: [
+    'Cleanup requested on this level. The cleanup crew is also on this level. In several places.',
+    'That was a biohazard. It is now several smaller biohazards. Thank you, warden.',
+    'Please return all limbs to their original owners, or to lost property.',
+    'Your conduct has been logged under enthusiasm, excessive.',
+    'The cleaning budget for this quarter was nineteen dollars. You have spent it.',
+    'I have added the ceiling to the cleaning rota. I never expected to say that.',
+    'Warden, please stop sorting the staff by size.',
+    'Health and safety would like a word. Health and safety is on the wall behind you.',
   ],
 
   mutter_brick_file: [
@@ -2851,7 +2937,7 @@ export const LINES = {
   ilsa_story2c_reply: 'It is Thursday, and the lady in trouble has a doctorate and a long memory. Mind the steam.',
 
   brick_story3: "Doc, anybody ever tell you you're beautiful when you do math?",
-  ilsa_story3_reply: 'Everybody is beautiful when they do math. You should try it some time. Watch your fuse.',
+  ilsa_story3_reply: 'Everybody is beautiful when they do math. You should try it some time. Lead your targets.',
   brick_story3b: "Two decks, one Brick. Honestly, doc, I like those odds. I like any odds with me in them.",
   ilsa_story3b_reply: 'You like any odds you cannot count. Pick a deck, Hardigan.',
   brick_story3c: "Doc, you've got a real sexy way of saying tactical.",

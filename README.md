@@ -67,40 +67,33 @@ adapts its internal resolution to whatever hardware it lands on.
 
 ## The mechanic
 
-Your flak does **no contact damage**. Only the airburst kills. That turns every
-shot into a three-axis problem instead of a two-axis one:
+Point at it and pull the trigger. On the deck, **THE WIDOW** is a hitscan hand
+cannon: bottomless, loud, and a round to the head does more than double. When
+the roof grinds open the Widow goes back in its holster and **THE SPLITTER**,
+the anti-missile gun, comes up on its own. When the sky is clear you get the
+Widow back.
 
-| Axis | Mouse | Controller |
-|---|---|---|
-| Azimuth, elevation | Mouse | Right stick |
-| **Range: the fuse** | Wheel, or `Z` / `X` | D-pad up/down |
-
-The ring around your crosshair *is* the armed range. Dial out and it grows. When
-a warhead is in your sights the ranger paints a lock bracket on the **intercept
-point** (not on the warhead, on where it is going to be) with the true range
-above it. Match your fuse to that and you get an `AIRBURST` bonus worth double.
+Flak shells carry a **proximity fuse**. They burst at their closest pass to the
+first thing they meet: a warhead, a mutant, a wall. So the sky is not about
+range, it is about **lead**. When a warhead is in your sights the ranger paints
+a bracket on the **intercept point** (not on the warhead, on where it is going
+to be). Put the cross on the bracket and it turns green; fire, and the shell
+meets it. A shell that bursts right on its target is a `BULLSEYE`, worth double.
 
 A warhead caught in a burst cooks off its own payload, and that second burst is
 **bigger than the shell that lit it**. Warheads arrive in salvos, so a burst
 placed in the middle of a flight cascades. Chains are where the score is.
-
-Auto-ranging will dial the fuse for you, and in a busy sky you will want it. It
-does not pay the precision bonus. Turning it off doubles a clean burst.
 
 ## Controls
 
 ```
 W A S D / arrows   move                SHIFT     run
 mouse              look                LMB       fire
-wheel, Z / X       fuse range          C / RMB   auto-ranging on/off
-V or middle-click  THE BOOT            B or G    pipe bomb (again to detonate)
+wheel, Z / X, [ ]  change weapon       1 - 6     pick a weapon
+V, RMB or MMB      THE BOOT            B or G    pipe bomb (again to detonate)
 SPACE / F          open doors, shove suspicious walls
-1 - 6              weapons             TAB / M   automap
-ESC / P            pause
+TAB / M            automap             ESC / P   pause
 ```
-
-Manual fuses score double on a clean burst. Auto-ranging is there for when the
-sky is too busy to count.
 
 ### Controllers
 
@@ -110,8 +103,8 @@ prompts switch to that pad's own glyphs.
 ```
 left stick  move          right stick  look         L2/LT  fine aim
 R2/RT       fire          Y/△ or R3    the boot     X/□    pipe bomb
-A/✕         use           B/○          auto-ranging
-D-pad ↑↓    fuse          LB/RB        weapons      START  pause
+A/✕         use           B/○          next weapon
+D-pad       weapons       LB/RB        weapons      START  pause
 ```
 
 Sticks use a squared response curve with deadzones, the triggers are analog, and
@@ -122,10 +115,10 @@ rumble fires on shots, kicks, damage and explosions.
 | | | |
 |---|---|---|
 | **THE BOOT** | always in hand | No ammo, no reload, its own button. Shoves things. Hard enough into a wall and the wall finishes the job. |
-| **THE WIDOW** | flak pistol | Regenerates. Never leaves you empty. |
-| **THE SPLITTER** | triple launcher | Three shells, one fuse. Brackets instead of threading. |
+| **THE WIDOW** | hand cannon | Hitscan and bottomless. Pops heads. Cannot reach the sky. |
+| **THE SPLITTER** | triple flak | The anti-missile gun, and it comes up on its own when the roof opens. Three shells that burst on whatever they pass, missiles and mutants alike. |
 | **THE NAILDRIVER** | rivet chaingun | For the things walking on your deck. Hopeless against the sky. |
-| **THE HALO** | ring launcher | Blooms into a ring of bursts at your fuse range. Sweeps a whole altitude. |
+| **THE HALO** | ring launcher | Blooms into a ring of bursts at the first thing it meets. Sweeps a whole altitude. |
 | **PIPE BOMBS** | thrown | They bounce, settle, and tick faster as they run down. Press again to detonate. One bursting in the sky counts as flak. |
 | **DEADMAN'S SWITCH** | you don't want to know | Scrubs the sky. Scrubs your instruments for six seconds too. |
 
@@ -137,9 +130,11 @@ flips out, and the boot you kick with is your own boot, seen from above.
 
 ## Taking them apart
 
-Parts come off where they are hit. A Widow round at the hat pops the head; a
-nail to the knee takes the leg; the Splitter at close range takes two or three
-things at once; a pipe bomb takes most of the rest and throws what is left.
+Parts come off where they are hit, and they come off a lot. A Widow round at the
+hat pops the head; a nail to the knee takes the leg; the Splitter at close range
+takes two or three things at once; a pipe bomb takes most of the rest and
+throws what is left. Hardigan has something to say about most of it, and now
+and then Ilsa or MUTTER has something to say about him.
 Losing a part does not have to be fatal, and it is rarely dignified:
 
 - **No head:** the body sprints a panicked zigzag with a fountain where the
@@ -245,14 +240,16 @@ node tools/preview-textures.js / preview-sprites.js / preview-vm.js / preview-ma
 ```
 
 `playtest.js` drives the actual game systems and checks the things that matter:
-that contact alone does not kill, that a burst chains through a flight, that one
-leak burns a city and two destroy it, that a hand-dialled fuse pays double and
-auto-ranging does not, that keycards gate their doors, that a wave can be fought
+that a flak shell bursts on the warhead it passes and not on one it misses, that
+one Widow round hurts and a headshot hurts double, that a burst chains through a
+flight, that a shell put right on a warhead pays double, that the roof opening
+hands over the Splitter and the sky closing hands back the Widow, that one leak
+burns a city and two destroy it, that keycards gate their doors, that a wave can be fought
 and cleared, that every level is fully reachable with live collision in place,
 and that two minutes of continuous combat leaks no memory and produces no NaN.
 
 It also drives a **synthetic standard-layout gamepad** through look, movement,
-the trigger, the boot and the fuse, so controller support is covered by the
+the trigger, the boot and the weapon buttons, so controller support is covered by the
 suite rather than by hope; and it checks the boot's shove and cooldown, wall
 slams, pipe bombs from throw to detonation, mutants breaching in off camera,
 each mutant's own attack, the radio queue never talking over itself, kill

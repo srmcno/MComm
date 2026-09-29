@@ -108,7 +108,6 @@ await page.evaluate(() => {
   window.S.lookAt(az, 9);
   window.S.flight(0.02, 4, 78, 34);
   window.S.flight(0.5, 3, 92, 48, 'mirv');
-  g.player.autoFuse = true;
   window.S.step(0.5);
   window.S.clearHud();
 });
@@ -132,10 +131,11 @@ await page.evaluate(() => {
   const f = window.S.flight(0, 5, 62, 26);
   const t = f[0];
   const p = g.player;
-  const d = Math.hypot(t.x - p.x, t.y - p.y, t.z - p.z);
   p.ang = Math.atan2(t.y - p.y, t.x - p.x);
   p.pitch = ((t.z - p.z) / Math.hypot(t.x - p.x, t.y - p.y)) * g.rc.projY;
-  p.fuse = d; p.autoFuse = false;
+  // The Splitter is the gun for the sky: the Widow cannot reach it.
+  p.owned.splitter = true; p.weapon = 'splitter'; p.pendingWeapon = null; p.swapT = 0;
+  p.ammo.flak = Math.max(p.ammo.flak, 30); p.cooldown = 0;
   g.tryFire();
   window.S.step(0.72);
   window.S.clearHud();

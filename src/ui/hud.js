@@ -5,7 +5,6 @@
 import { rgba, mix } from '../core/pixels.js';
 import { clamp, lerp, commas, mmss, wrapAngle, TAU } from '../core/math.js';
 import { Text, fillRectBuf, addRectBuf, lineBuf, circleBuf, blitFrame } from './text.js';
-import { FUSE_MIN, FUSE_MAX } from '../game/player.js';
 import { WEAPONS, WEAPON_ORDER, AMMO_FLAK, AMMO_NAIL, AMMO_CHARGE } from '../game/weapons.js';
 
 const AMBER = rgba(255, 186, 64, 255);
@@ -237,7 +236,6 @@ export class Hud {
       this.drawReticle(buf, W, H, s, game);
       this.drawThreatRing(buf, W, H, s, game);
       this.drawCities(buf, W, H, s, game);
-      this.drawFuseLadder(buf, W, H, s, game);
     } else {
       this.drawEmpStatic(buf, W, H, s, game);
     }
@@ -314,7 +312,7 @@ export class Hud {
     const lock = game.rangeLock;
 
     if (spec.kind === 'kinetic' || spec.kind === 'throw') {
-      // Simple two-axis cross; nothing to fuse.
+      // A plain cross for the guns that hit what they point at.
       const g = 4 * s + p.kick * 0.6;
       const L = 7 * s;
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
@@ -325,20 +323,16 @@ export class Hud {
       return;
     }
 
-    // The fuse ring: its radius IS the armed range. Dial out, the ring grows.
-    const t = (p.fuse - FUSE_MIN) / (FUSE_MAX - FUSE_MIN);
-    const R = (7 + t * 46) * s;
+    // The flak sight: a fixed ring for the proximity fuse's reach at a
+    // typical intercept, the cross, and the lead bracket on the warhead the
+    // ranger has, which is the point to put the cross on.
+    const R = 13 * s;
     const armed = p.canFire();
-    const col = armed ? (p.autoFuse ? CYAN : AMBER) : rgba(150, 60, 54, 255);
+    const col = armed ? CYAN : rgba(150, 60, 54, 255);
     circleBuf(buf, W, H, cx, cy, R, col, 0.5, true, 1);
-
-    // Ticks every 20 units so the ring is a readable scale, not just a circle.
-    for (let d = 20; d <= FUSE_MAX; d += 20) {
-      const rr = (7 + ((d - FUSE_MIN) / (FUSE_MAX - FUSE_MIN)) * 46) * s;
-      for (let i = 0; i < 4; i++) {
-        const a = i * Math.PI / 2 + Math.PI / 4;
-        addRectBuf(buf, W, H, cx + Math.cos(a) * rr - 0.5, cy + Math.sin(a) * rr - 0.5, 1, 1, AMBER_DIM, 0.55);
-      }
+    for (let i = 0; i < 4; i++) {
+      const a = i * Math.PI / 2 + Math.PI / 4;
+      addRectBuf(buf, W, H, cx + Math.cos(a) * R - 0.5, cy + Math.sin(a) * R - 0.5, 1, 1, AMBER_DIM, 0.55);
     }
 
     // Crosshair core.
@@ -348,12 +342,13 @@ export class Hud {
     }
 
     // Lock bracket on whatever the ranger has, plus the lead point to aim at.
+    // It goes green when the cross is on the lead point: fire then.
     if (lock) {
       const pr = game.projectWorld(lock.lead.x, lock.lead.y, lock.lead.z);
       if (pr) {
         const b = clamp(16 * s * (28 / Math.max(8, lock.range)), 5 * s, 34 * s);
-        const good = Math.abs(p.fuse - lock.range) / Math.max(1, lock.range) < 0.12;
-        const lc = good ? GREEN : CYAN;
+        const on = Math.hypot(pr.x - cx, pr.y - cy) < Math.max(b, R);
+        const lc = on ? GREEN : CYAN;
         const a = 0.55 + 0.35 * Math.sin(this.tick * 9);
         for (const [ox, oy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
           lineBuf(buf, W, H, pr.x + ox * b, pr.y + oy * b, pr.x + ox * b * 0.45, pr.y + oy * b, lc, a, true);
@@ -362,26 +357,10 @@ export class Hud {
         T.draw(buf, W, H, pr.x, pr.y - b - 3 * s, `${lock.range.toFixed(0)}`, {
           size: Math.round(9 * s), color: lc, align: 'center', glow: 0.8, glowColor: lc,
         });
-        if (good && !p.autoFuse) {
-          T.draw(buf, W, H, pr.x, pr.y + b + 10 * s, 'FUSE MATCHED  ×2', {
-            size: Math.round(7 * s), color: GREEN, align: 'center', track: 1.4,
-          });
-        }
       }
     }
 
     this.drawHitMark(buf, W, H, s, cx, cy);
-
-    // Numeric fuse readout under the ring.
-    T.draw(buf, W, H, cx, cy + R + 12 * s, `${p.fuse.toFixed(0)}m`, {
-      size: Math.round(10 * s), color: col, align: 'center', glow: 0.7, glowColor: col, track: 0.5,
-    });
-    // Clear of the readout above: 10*s of glyph plus its glow needs more than
-    // a 10*s gap, or the ranging mode sits inside the metres.
-    T.draw(buf, W, H, cx, cy + R + 30 * s, p.autoFuse ? 'AUTO-RANGING' : 'MANUAL  ×2', {
-      size: Math.round(7 * s), color: p.autoFuse ? CYAN : GREEN, align: 'center',
-      track: 2, alpha: 0.8,
-    });
   }
 
   drawSplatter(buf, W, H) {
@@ -483,40 +462,6 @@ export class Hud {
       });
       x += bw + gap;
     }
-  }
-
-  // ---------------------------------------------------------- fuse ladder
-
-  drawFuseLadder(buf, W, H, s, game) {
-    const p = game.player;
-    if (p.spec.kind === 'kinetic') return;
-    const x = W - 26 * s, y0 = H * 0.28, y1 = H * 0.70;
-    fillRectBuf(buf, W, H, x - 6 * s, y0 - 6 * s, 12 * s, (y1 - y0) + 12 * s, INK, 0.35);
-    lineBuf(buf, W, H, x, y0, x, y1, AMBER_DIM, 0.55);
-    for (let d = 0; d <= FUSE_MAX; d += 25) {
-      const t = (d - FUSE_MIN) / (FUSE_MAX - FUSE_MIN);
-      const yy = lerp(y1, y0, clamp(t, 0, 1));
-      fillRectBuf(buf, W, H, x - 3 * s, yy, 6 * s, 1, AMBER_DIM, 0.6);
-    }
-    // Where the ranger says the target is.
-    if (game.rangeLock) {
-      const t = (game.rangeLock.range - FUSE_MIN) / (FUSE_MAX - FUSE_MIN);
-      const yy = lerp(y1, y0, clamp(t, 0, 1));
-      for (let i = 0; i < 3; i++) {
-        addRectBuf(buf, W, H, x - 9 * s + i, yy - 1, 2, 2, CYAN, 0.85 - i * 0.2);
-      }
-      lineBuf(buf, W, H, x - 7 * s, yy, x + 7 * s, yy, CYAN, 0.7, true);
-    }
-    // Where you have it set.
-    const t = (p.fuse - FUSE_MIN) / (FUSE_MAX - FUSE_MIN);
-    const yy = lerp(y1, y0, clamp(t, 0, 1));
-    for (let i = -3; i <= 3; i++) {
-      const w = 5 * s - Math.abs(i) * 1.2 * s;
-      addRectBuf(buf, W, H, x - w / 2, yy + i, w, 1, AMBER, 0.95);
-    }
-    this.text.draw(buf, W, H, x, y0 - 10 * s, 'FUSE', {
-      size: Math.round(7 * s), color: AMBER, align: 'center', track: 1.6, alpha: 0.8,
-    });
   }
 
   drawEmpStatic(buf, W, H, s, game) {
@@ -651,8 +596,9 @@ export class Hud {
       size: Math.round(8 * s), color: AMBER, align: 'right', track: 2.2,
     });
     const ammo = p.ammoFor(p.weapon);
-    const acol = ammo < spec.cost ? RED : ammo < 20 ? AMBER : BONE;
-    const label = spec.ammo === AMMO_CHARGE ? `${ammo} CHG` : String(ammo);
+    // The Widow costs nothing to fire, so there is no count to show for it.
+    const acol = spec.cost === 0 ? BONE : ammo < spec.cost ? RED : ammo < 20 ? AMBER : BONE;
+    const label = spec.cost === 0 ? '--' : spec.ammo === AMMO_CHARGE ? `${ammo} CHG` : String(ammo);
     T.draw(buf, W, H, ax, y + 36 * s, label, {
       size: Math.round(20 * s), color: acol, align: 'right', glow: 0.7, glowColor: acol,
     });

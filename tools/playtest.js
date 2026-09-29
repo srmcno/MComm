@@ -42,15 +42,20 @@ const check = (name, ok, detail = '') => {
 await page.evaluate(() => {
   const g = window.NUKEHAUS.game;
   window.T = {
-    // Point the camera at a world point and set the fuse to the true range.
-    aimAt(x, y, z, exact = true) {
+    // Point the camera at a world point.
+    aimAt(x, y, z) {
       const p = g.player;
       const dx = x - p.x, dy = y - p.y, dz = z - p.z;
       p.ang = Math.atan2(dy, dx);
       const horiz = Math.hypot(dx, dy);
       p.pitch = Math.tan(Math.atan2(dz, horiz)) * g.rc.projY;
-      if (exact) { p.fuse = Math.hypot(dx, dy, dz); p.autoFuse = false; }
       return Math.hypot(dx, dy, dz);
+    },
+    // Aim `off` metres to the side of a point, square to the line of fire.
+    aimBeside(x, y, z, off) {
+      const p = g.player;
+      const dx = x - p.x, dy = y - p.y, L = Math.hypot(dx, dy) || 1;
+      return this.aimAt(x - dy / L * off, y + dx / L * off, z);
     },
     // Aim at the intercept point, which is what the lock bracket shows a player.
     aimLead(w, spec) {
@@ -70,7 +75,7 @@ await page.evaluate(() => {
       g.player.owned[key] = true;
       g.player.weapon = key; g.player.pendingWeapon = null; g.player.swapT = 0;
       g.player.ammo.flak = ammo; g.player.ammo.nail = ammo; g.player.ammo.charge = 3;
-      g.player.cooldown = 0; g.player.autoFuse = false;
+      g.player.cooldown = 0;
     },
     step(seconds, dt = 1 / 60) {
       for (let i = 0; i < Math.round(seconds / dt); i++) g.update(dt, g.input);
@@ -153,7 +158,7 @@ for (const L of s) {
 // -------------------------------------------------- 3. flak kills a warhead
 s = await page.evaluate(() => {
   const g = window.NUKEHAUS.game;
-  g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('pistol');
+  g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('splitter');
   const w = g.sky.spawnWarhead('stick', 1);
   const before = g.sky.warheads.length;
   let range = 0, tries = 0;
@@ -168,35 +173,84 @@ s = await page.evaluate(() => {
 check('flak airburst kills a warhead', s.after < s.before && s.score > 0,
   `${s.tries} shot${s.tries === 1 ? '' : 's'} at ${s.range}m, score ${s.score}`);
 
-// ----------------------------------------------- 4. contact does NOT kill
+// ------------------ 4. the proximity fuse: a shell bursts on what it passes
 s = await page.evaluate(() => {
   const g = window.NUKEHAUS.game;
-  g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('pistol');
-  g.player.score = 0;
-  const w = g.sky.spawnWarhead('stick', 1);
-  w.vx = w.vy = w.vz = 0;                    // park it
-  window.T.aimAt(w.x, w.y, w.z, false);
-  g.player.fuse = 6;                          // burst right at the muzzle
-  g.player.autoFuse = false;
-  window.T.fire();
-  window.T.step(4);
-  return { alive: g.sky.warheads.length, score: g.player.score };
+  const shoot = (over) => {
+    g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('splitter');
+    g.player.score = 0;
+    const w = g.sky.spawnWarhead('stick', 1);
+    w.vx = w.vy = w.vz = 0;                  // park it
+    // Over the top rather than beside it: the Splitter fans its outer shells
+    // sideways, so a shot aimed wide of it can still put one on it.
+    window.T.aimAt(w.x, w.y, w.z + over);
+    window.T.fireNow();
+    window.T.step(4);
+    return { alive: g.sky.warheads.length, score: g.player.score };
+  };
+  return { on: shoot(0), wide: shoot(14) };
 });
-check('contact alone does not kill (fuse matters)', s.alive === 1 && s.score === 0,
-  `warheads ${s.alive}, score ${s.score}`);
+check('a flak shell bursts on the warhead it passes, and one 14 m over it does nothing',
+  s.on.alive === 0 && s.on.score > 0 && s.wide.alive === 1 && s.wide.score === 0,
+  `on target: ${s.on.alive} left, ${s.on.score} pts; wide: ${s.wide.alive} left, ${s.wide.score} pts`);
+
+// ------------- 4b. the Widow puts a man down, and a head takes it faster
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  const shoot = (zFrac) => {
+    g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('pistol');
+    const e = g.enemies.find((x) => x.kind === 'wrencher');
+    if (!e) return { err: 'no wrencher' };
+    window.T.standNear(e.x, e.y, 3, 6);
+    e.hp = e.maxHp = 999;                    // count the damage, do not end it
+    e.state = 5; e.stateT = -99;
+    window.T.aimAt(e.x, e.y, e.z + e.height * zFrac);
+    const hp0 = e.hp;
+    window.T.fireNow();
+    return { dmg: hp0 - e.hp, spent: g.player.ammo.flak };
+  };
+  const body = shoot(0.45), head = shoot(0.9);
+  return { body: body.dmg, head: head.dmg, err: body.err || head.err, cost: 200 - body.spent };
+});
+check('one Widow round to the body hurts, one to the head hurts twice as much, and it costs nothing',
+  !s.err && s.body >= 30 && s.head >= s.body * 2 && s.cost === 0,
+  s.err || `body ${s.body}, head ${s.head}, flak spent ${s.cost}`);
+
+// ------------------ 4c. a flak shell bursts on a body instead of flying past
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('splitter');
+  const e = g.enemies.find((x) => x.kind === 'wrencher');
+  if (!e) return { err: 'no wrencher' };
+  window.T.standNear(e.x, e.y, 4, 7);
+  e.hp = e.maxHp = 999; e.state = 5; e.stateT = -99;
+  window.T.aimAt(e.x, e.y, e.z + e.height * 0.5);
+  const hp0 = e.hp;
+  const contact = [];
+  const burst = g.onFlakBurst.bind(g);
+  g.onFlakBurst = (b, f) => { contact.push(!!b.contact); return burst(b, f); };
+  window.T.fireNow();
+  window.T.step(0.5);
+  delete g.onFlakBurst;
+  return { dmg: hp0 - e.hp, bursts: contact.length, onBody: contact.filter(Boolean).length };
+});
+check('a Splitter shell bursts on the body in front of it',
+  !s.err && s.dmg > 0 && s.onBody >= 1, s.err || `${s.bursts} bursts, ${s.onBody} on the body, ${s.dmg} damage`);
 
 // ------------------------------------------------------- 5. chain reaction
 s = await page.evaluate(() => {
   const g = window.NUKEHAUS.game;
-  g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('pistol');
+  g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('splitter');
   g.player.score = 0; g.sky.bestChain = 0;
-  // A tight cluster: one burst should cook off the rest.
+  // A tight cluster strung out behind the first one: one burst on the near
+  // warhead should cook off the rest. Spaced for the Splitter's 5 m burst.
   const base = g.sky.spawnWarhead('stick', 1);
   base.vx = base.vy = base.vz = 0;
+  const bx = base.x - g.player.x, by = base.y - g.player.y, bL = Math.hypot(bx, by) || 1;
   for (let i = 0; i < 5; i++) {
     const w = g.sky.spawnWarhead('stick', 1);
-    w.x = base.x + (i + 1) * 4.6;
-    w.y = base.y + (i % 2) * 1.2;
+    w.x = base.x + bx / bL * (i + 1) * 4.2 - by / bL * (i % 2) * 1.2;
+    w.y = base.y + by / bL * (i + 1) * 4.2 + bx / bL * (i % 2) * 1.2;
     w.z = base.z + (i % 3) * 1.4;
     w.vx = w.vy = w.vz = 0;
   }
@@ -252,7 +306,7 @@ s = await page.evaluate(() => {
   window.T.step(1.2);
   const woke = e.state !== 0;
   window.T.arm('nailer');
-  window.T.aimAt(e.x, e.y, e.z + 0.4, false);
+  window.T.aimAt(e.x, e.y, e.z + 0.4);
   let shots = 0;
   for (let i = 0; i < 40 && e.alive; i++) { window.T.fireNow(); window.T.step(0.1); shots++; }
   return { startState, woke, dead: !e.alive, shots, kills: g.player.kills };
@@ -311,7 +365,7 @@ check('keycard doors respect keys', s.stayedLocked && s.openedWithKey);
 // ------------------------------------------------- 10. siege end to end
 s = await page.evaluate(() => {
   const g = window.NUKEHAUS.game;
-  g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('pistol', 999);
+  g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('splitter', 999);
   g.triggersFired.add(-1);
   g.beginSiege();
   const opened = [];
@@ -337,51 +391,48 @@ check('roof grinds open on the trigger', s.roofOpen > 0.95, `roofOpen ${s.roofOp
 check('a wave can be fought and cleared', !s.active && s.killed > 0,
   `killed ${s.killed}, leaked ${s.leaked}, peak ${s.maxAlive} alive, ${s.cities}/6 cities, score ${s.score}`);
 
-// ---------------------------------------- 11. auto-range produces a lock
+// --------------- 11. the flak reticle leads a warhead; the Widow's does not
 s = await page.evaluate(() => {
   const g = window.NUKEHAUS.game;
-  g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('pistol');
-  g.player.fuse = 52;
+  g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('splitter');
   const w = g.sky.spawnWarhead('stick', 1);
-  window.T.aimAt(w.x, w.y, w.z, false);
-  g.player.autoFuse = true;
-  window.T.step(0.6);
-  const lock = g.rangeLock;
-  return { has: !!lock, range: lock ? +lock.range.toFixed(1) : 0,
-    fuse: +g.player.fuse.toFixed(1),
-    err: lock ? Math.abs(g.player.fuse - lock.range) / lock.range : 1 };
+  window.T.aimAt(w.x, w.y, w.z);
+  window.T.step(0.1);
+  const flak = g.rangeLock ? +g.rangeLock.range.toFixed(1) : 0;
+  window.T.arm('pistol');
+  window.T.aimAt(w.x, w.y, w.z);
+  window.T.step(0.1);
+  return { flak, pistol: !!g.rangeLock };
 });
-check('auto-ranging locks and dials the fuse', s.has && s.err < 0.15,
-  `lock ${s.range}m, fuse ${s.fuse}m`);
+check('the Splitter gets a lead on a warhead in its sights, the Widow does not',
+  s.flak > 0 && !s.pistol, `flak lock at ${s.flak}m, Widow lock ${s.pistol}`);
 
-// -------------------------- 11b. the precision bonus is for manual fuses only
+// ------------ 11b. BULLSEYE: a shell put right on a warhead pays double
 s = await page.evaluate(() => {
   const g = window.NUKEHAUS.game;
-  const shoot = (auto) => {
-    g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('pistol');
+  const shoot = (off) => {
+    g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('splitter');
     g.player.score = 0;
+    const spec = g.player.spec, spread = spec.spread;
+    spec.spread = 0;                         // all three shells where they are aimed
     const w = g.sky.spawnWarhead('stick', 1);
-    window.T.aimLead(w);
-    g.player.autoFuse = auto;
-    window.T.step(0.1);
-    // Both shots are equally well aimed; only the source of the fuse differs.
-    window.T.aimLead(w);
-    g.player.autoFuse = auto;
-    if (auto && g.rangeLock) g.player.fuse = g.rangeLock.range;
+    w.vx = w.vy = w.vz = 0;
+    window.T.aimBeside(w.x, w.y, w.z, off);
     window.T.fireNow();
     window.T.step(3);
-    return g.player.score;
+    spec.spread = spread;
+    return { score: g.player.score, left: g.sky.warheads.length };
   };
-  return { manual: shoot(false), auto: shoot(true) };
+  return { on: shoot(0), near: shoot(2.1) };
 });
-check('a hand-dialled fuse pays double, auto-ranging does not',
-  s.manual >= 200 && s.auto > 0 && s.auto < s.manual,
-  `manual ${s.manual}, auto ${s.auto}`);
+check('a shell put right on a warhead pays double, a near miss that still kills does not',
+  s.on.left === 0 && s.near.left === 0 && s.near.score > 0 && s.on.score > s.near.score,
+  `dead on ${s.on.score}, 2.1 m off ${s.near.score}`);
 
 // ---------------------------------------- 12. long soak: no leaks, no NaN
 s = await page.evaluate(() => {
   const g = window.NUKEHAUS.game;
-  g.loadLevel(2); g.setState('play'); g._god = true; window.T.arm('pistol', 999);
+  g.loadLevel(2); g.setState('play'); g._god = true; window.T.arm('splitter', 999);
   g.triggersFired.add(-1); g.beginSiege();
   let bad = null;
   for (let i = 0; i < 60 * 120; i++) {
@@ -731,7 +782,6 @@ s = await page.evaluate(() => {
   const inp = g.input;
   inp.padIndex = -1;
   window.T.arm('pistol');
-  g.player.fuse = 60; g.player.autoFuse = false;
   const ang0 = g.player.ang;
 
   pad.axes[2] = 1;                       // right stick fully right
@@ -745,10 +795,9 @@ s = await page.evaluate(() => {
 
   pad.axes[1] = 0;
   pad.buttons[7] = { pressed: true, value: 1 };   // right trigger
-  const ammo0 = g.player.ammo.flak;
-  g.player.cooldown = 0;
+  g.player.cooldown = 0; g.player.fireAnim = 0;
   for (let i = 0; i < 6; i++) { inp.update(1 / 60); g.update(1 / 60, inp); inp.endFrame(); }
-  const fired = g.player.ammo.flak < ammo0;
+  const fired = g.player.fireAnim > 0;           // the Widow is bottomless: no ammo to count
 
   pad.buttons[7] = { pressed: false, value: 0 };
   pad.buttons[3] = { pressed: true, value: 1 };   // Y = kick
@@ -757,20 +806,20 @@ s = await page.evaluate(() => {
   const kicked = g.player.kickAnim > 0;
 
   pad.buttons[3] = { pressed: false, value: 0 };
-  pad.buttons[12] = { pressed: true, value: 1 };  // d-pad up = fuse up
-  const fuse0 = g.player.fuse;
-  g.player.autoFuse = false;
-  for (let i = 0; i < 20; i++) { inp.update(1 / 60); g.update(1 / 60, inp); inp.endFrame(); }
-  const fuseUp = g.player.fuse > fuse0;
+  pad.buttons[5] = { pressed: true, value: 1 };   // RB = next weapon
+  inp.update(1 / 60); g.update(1 / 60, inp); inp.endFrame();
+  const swapped = (g.player.pendingWeapon || g.player.weapon) !== 'pistol';
+  pad.buttons[5] = { pressed: false, value: 0 };
+  for (let i = 0; i < 40; i++) { inp.update(1 / 60); g.update(1 / 60, inp); inp.endFrame(); }
 
   return { kind: inp.padKind, turned: +turned.toFixed(2), moved: +moved.toFixed(2),
-    fired, kicked, fuseUp, seen: inp.padSeen };
+    fired, kicked, swapped, seen: inp.padSeen };
 });
 {
   const parts = { detected: s.seen && s.kind === 'xbox', look: Math.abs(s.turned) > 0.3,
-    move: s.moved > 0.3, fire: s.fired, boot: s.kicked, fuse: s.fuseUp };
+    move: s.moved > 0.3, fire: s.fired, boot: s.kicked, weapon: s.swapped };
   const bad = Object.entries(parts).filter(([, v]) => !v).map(([k]) => k);
-  check('a standard gamepad drives look, move, fire, boot and fuse', bad.length === 0,
+  check('a standard gamepad drives look, move, fire, boot and weapon change', bad.length === 0,
     bad.length ? `failed: ${bad.join(', ')}` : `${s.kind}: turned ${s.turned} rad, moved ${s.moved} cells`);
 }
 
@@ -844,22 +893,23 @@ s = await page.evaluate(() => {
   const tick = (n = 1) => { for (let i = 0; i < n; i++) { inp.update(1 / 60); g.update(1 / 60, inp); inp.endFrame(); } };
   const hold = (i, on) => { pad.buttons[i] = { pressed: on, value: on ? 1 : 0 }; };
 
-  // B / Circle is the auto-range toggle in play, and must never read as escape.
-  g.player.autoFuse = false;
+  // B / Circle changes weapon in play, and must never read as escape.
+  window.T.arm('pistol');
   hold(1, true); tick(1);
-  const afterB = { state: g.state, auto: g.player.autoFuse };
-  hold(1, false); tick(2);
+  const afterB = { state: g.state, next: g.player.pendingWeapon || g.player.weapon };
+  hold(1, false); tick(40);
 
-  // D-pad up dials the fuse. It must not also walk him forward.
-  g.player.autoFuse = false;
-  const x0 = g.player.x, y0 = g.player.y, f0 = g.player.fuse;
+  // D-pad up changes weapon too. It must not also walk him forward.
+  window.T.arm('pistol');
+  const x0 = g.player.x, y0 = g.player.y;
   hold(12, true); tick(30); hold(12, false);
   const moved = Math.hypot(g.player.x - x0, g.player.y - y0);
-  return { state: afterB.state, auto: afterB.auto, moved: +moved.toFixed(3), fuseMoved: g.player.fuse > f0 };
+  const dpad = g.player.pendingWeapon || g.player.weapon;
+  return { state: afterB.state, next: afterB.next, moved: +moved.toFixed(3), dpad };
 });
 check('the d-pad and B/Circle do not leak menu actions into play',
-  s.state === 'play' && s.auto === true && s.moved < 0.05 && s.fuseMoved,
-  `state ${s.state}, auto-range ${s.auto}, walked ${s.moved} cells, fuse moved ${s.fuseMoved}`);
+  s.state === 'play' && s.next !== 'pistol' && s.moved < 0.05 && s.dpad !== 'pistol',
+  `state ${s.state}, B picked ${s.next}, walked ${s.moved} cells, d-pad picked ${s.dpad}`);
 
 // -------------------------------- 29. a pad that vanishes lets go of the trigger
 s = await page.evaluate(() => {
@@ -1188,37 +1238,35 @@ check('a gesture-strict browser cannot crash the game out of the frame loop',
   !s.threw && s.asked > 0 && s.pending && s.redeemedOnGesture,
   s.threw ? 'requestLock() threw' : `refused ${s.asked}x, held the request, redeemed it on the next keypress`);
 
-// ------------------------------- 41. the fuse coach speaks, once, and only
-// when the player is holding the fuse wrong with a warhead in the sights.
+// ------------- 41. the roof opening hands him the Splitter, and the sky
+// closing hands back what he had
 s = await page.evaluate(() => {
   const g = window.NUKEHAUS.game;
-  const run = (wrongFuse) => {
-    g.newGame(1); g.loadLevel(0); g.setState('play'); g._god = true;
-    window.T.arm('pistol');
-    const said = [];
-    const real = g.radio.say.bind(g.radio);
-    g.radio.say = (who, key, text, o) => { said.push(key); return real(who, key, text, o); };
-    for (let i = 0; i < 6; i++) {
-      g.sky.warheads.length = 0;
-      const w = g.sky.spawnWarhead('stick', 1);
-      window.T.aimLead(w);
-      g.player.autoFuse = false;
-      window.T.step(0.05);
-      window.T.aimLead(w);
-      g.player.autoFuse = false;
-      const lock = g.rangeLock ? g.rangeLock.range : 60;
-      g.player.fuse = wrongFuse ? Math.max(6, lock - 60) : lock;
-      window.T.fireNow();
-      window.T.step(0.3);
-    }
-    g.radio.say = real;
-    return said.filter((k) => k === "ilsa_fuse_tip").length;
-  };
-  return { wrong: run(true), right: run(false) };
+  g.newGame(1); g.loadLevel(0); g.setState('play'); g._god = true;
+  window.T.arm('pistol');
+  g.triggersFired.add(-1);
+  g.beginSiege();
+  window.T.step(1.2);
+  const during = g.player.pendingWeapon || g.player.weapon;
+  // Clear the sky and let the flight end.
+  g.waveQueue = [];
+  g.sky.pending.length = 0; g.sky.warheads.length = 0;
+  window.T.step(1.5);
+  const after = g.player.pendingWeapon || g.player.weapon;
+  // Already holding flak: nothing to hand back, nothing taken away.
+  window.T.arm('halo');
+  g.triggersFired.add(-2);
+  g.beginSiege();
+  window.T.step(0.5);
+  const kept = g.player.pendingWeapon || g.player.weapon;
+  g.waveQueue = [];
+  g.sky.pending.length = 0; g.sky.warheads.length = 0;
+  window.T.step(1.5);
+  return { during, after, kept, sky: g.sky.active };
 });
-check('a badly dialled fuse gets coached once, a good one is left alone',
-  s.wrong === 1 && s.right === 0,
-  `coached ${s.wrong}x on a wrong fuse, ${s.right}x on a matched one`);
+check('the roof opening swaps the Widow for the Splitter, and the Widow comes back after',
+  s.during === 'splitter' && s.after === 'pistol' && s.kept === 'halo',
+  `siege ${s.during}, after ${s.after}, a Halo in hand stays ${s.kept}`);
 
 // ------------------------ 42. looking away pauses the fight instead of losing it
 s = await page.evaluate(() => {
@@ -1493,7 +1541,7 @@ s = await page.evaluate(async () => {
   G.arena();
   const e = await G.spawn('sparker', 3, 0);
   const kills = g.player.kills;
-  // A flak burst right at head height, the Widow's party trick.
+  // A burst right at head height, with the Widow's head-popping gore spec.
   const { WEAPONS } = await import('./src/game/weapons.js');
   let n = 0;
   while (!(e.maim & 1) && n < 30) {
@@ -1650,7 +1698,7 @@ s = await page.evaluate(async () => {
 });
 check('sixty severed parts cost little frame time, and the pile is capped',
   s.flying < Math.max(s.base * 1.8, s.base + 8) && s.resting < Math.max(s.base * 1.5, s.base + 5) &&
-  s.capped <= 80 && s.settled >= 50 && !s.nan,
+  s.capped <= 96 && s.settled >= 50 && !s.nan,
   `frame ${s.base}ms bare, ${s.flying}ms with 60 flying, ${s.resting}ms at rest; ${s.capped} kept of 120`);
 
 // ------ 58. thrown into a wall: it hurts, it bleeds on the wall, it comes off
@@ -1784,7 +1832,7 @@ s = await page.evaluate(async () => {
   const { WEAPONS } = await import('./src/game/weapons.js');
   const { HEAD, LEG_R, LEG_L } = await import('./src/game/gore.js');
   G.arena();
-  const spec = WEAPONS.pistol.gore;
+  const spec = WEAPONS.splitter.gore;       // a light flak burst
   const out = { quad: 0, above: 0, crawler: 0 };
   for (let i = 0; i < 200; i++) {
     g.enemies.length = 0;
@@ -2047,7 +2095,8 @@ check('gib() runs once per body: later blasts over a dead wasp add nothing, a gi
   `wasp per bomb [sounds, chunks] ${JSON.stringify(s.wasp)}; ghoul kill gib sounds ${s.ghoul}`);
 
 // ------ 68. a flak blast sweeping over a body takes it apart the way the
-// weapon that fired it does, not with the generic explosion spec
+// weapon that fired it does, not with the generic explosion spec. The Widow
+// is hitscan now; the Splitter is the flak gun on the deck.
 s = await page.evaluate(async () => {
   const g = window.NUKEHAUS.game, G = window.GORE;
   const { WEAPONS } = await import('./src/game/weapons.js');
@@ -2061,21 +2110,20 @@ s = await page.evaluate(async () => {
   const blast = g.gore.blast.bind(g.gore), sweep = g.onBlastSweep.bind(g);
   g.onBlastSweep = (b) => { inSweep = true; try { sweep(b); } finally { inSweep = false; } };
   g.gore.blast = (e, x, y, z, f, spec, k) => {
-    if (inSweep) specs.push(spec === WEAPONS.pistol.gore ? 'pistol' : spec === EXPLOSION_GORE ? 'explosion' : 'other');
+    if (inSweep) specs.push(spec === WEAPONS.splitter.gore ? 'splitter' : spec === EXPLOSION_GORE ? 'explosion' : 'other');
     return blast(e, x, y, z, f, spec, k);
   };
   const e = await G.spawn('wrencher', 4, 0);
   e.hp = e.maxHp = 999; e.state = 5; e.stateT = -99;
-  p.owned.pistol = true; p.weapon = 'pistol'; p.pendingWeapon = null; p.ammo.flak = 100;
+  p.owned.splitter = true; p.weapon = 'splitter'; p.pendingWeapon = null; p.ammo.flak = 100;
   G.aimAt(e.x, e.y, e.z + e.height * 0.6);
-  p.fuse = Math.hypot(e.x - p.x, e.y - p.y); p.autoFuse = false;
   p.cooldown = 0; g.tryFire();
   G.step(0.8);
   delete g.gore.blast; delete g.onBlastSweep;
   return { specs: [...new Set(specs)], n: specs.length };
 });
-check('a Widow burst sweeping over a wrencher uses the Widow gore spec, not EXPLOSION_GORE',
-  s.n >= 1 && s.specs.length === 1 && s.specs[0] === 'pistol', `${s.n} sweep gore.blast calls, specs ${s.specs.join(',')}`);
+check('a Splitter burst sweeping over a wrencher uses the Splitter gore spec, not EXPLOSION_GORE',
+  s.n >= 1 && s.specs.length === 1 && s.specs[0] === 'splitter', `${s.n} sweep gore.blast calls, specs ${s.specs.join(',')}`);
 
 // ------ 69. the pipe bomb leaves the hand, from any weapon, and an empty or
 // detonator hand is drawn when there is no bomb to hold

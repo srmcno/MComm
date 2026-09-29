@@ -12,6 +12,9 @@ export const CITY_RADIUS = 62;
 // A shell is inert for its first few metres. Below this it passes through
 // geometry rather than bursting on it.
 export const FLAK_ARM_DIST = 5.5;
+// A shell bursts when it passes within this fraction of its blast radius of a
+// warhead: close enough that the burst is sure to take it.
+const PROX_FRAC = 0.6;
 
 export const SPAWN_RADIUS_MIN = 88;
 export const SPAWN_RADIUS_MAX = 118;
@@ -98,7 +101,7 @@ export class Flak {
     this.alive = true;
     this.trail = [];
     this.trailT = 0;
-    this.idealRange = -1;    // set by the ranger, for the ACE bonus
+    this.proxDist = -1;      // how close it passed to the warhead it burst on
   }
 }
 
@@ -279,11 +282,59 @@ export class SkyWar {
     return w;
   }
 
-  fireFlak(x, y, z, dx, dy, dz, spec, fuse, idealRange) {
+  fireFlak(x, y, z, dx, dy, dz, spec, fuse) {
     const f = new Flak(x, y, z, dx, dy, dz, spec.flakSpeed, fuse, spec.blastRadius, spec.id);
-    f.idealRange = idealRange;
     this.flak.push(f);
     return f;
+  }
+
+  /**
+   * The proximity fuse. Over one step of a shell's flight (from a to where it
+   * is now), find its closest pass to anything worth bursting on: a warhead
+   * inside the proximity radius, or a body the shell actually meets. Returns
+   * the earliest such point along the step, or null. Analytic, so a fast
+   * shell cannot skip over a target between frames.
+   */
+  _proximity(ax, ay, az, f, game) {
+    const sx = f.x - ax, sy = f.y - ay, sz = f.z - az;
+    const L2 = sx * sx + sy * sy + sz * sz;
+    if (L2 < 1e-9) return null;
+    let best = 2, near = -1, body = false;
+    const pr = Math.max(1.8, f.blast * PROX_FRAC);
+    for (const w of this.warheads) {
+      if (!w.alive) continue;
+      // Burst at the closest approach, not at the first frame that happens to
+      // end inside the radius: that put a dead-centre shot metres short, at
+      // whatever distance the frame boundary landed on. Still closing on it:
+      // wait for the next step. Already past it (the warhead moved across the
+      // shell between frames) and still inside the radius: burst now.
+      let t = ((w.x - ax) * sx + (w.y - ay) * sy + (w.z - az) * sz) / L2;
+      if (t > 1) continue;
+      if (t < 0) t = 0;
+      const cx = ax + sx * t - w.x, cy = ay + sy * t - w.y, cz = az + sz * t - w.z;
+      const d2 = cx * cx + cy * cy + cz * cz;
+      if (d2 < pr * pr && t < best) { best = t; near = Math.sqrt(d2); body = false; }
+    }
+    // A body on the deck: the shell has to actually meet it, so the test is
+    // the body's own radius (plus the shell) and its standing height.
+    const es = game && game.enemies;
+    if (es && (az < 3.2 || f.z < 3.2)) {
+      const L2h = sx * sx + sy * sy;
+      for (const e of es) {
+        if (!e.alive) continue;
+        const r = (e.radius || 0.3) + 0.16;
+        let t = L2h > 1e-9 ? ((e.x - ax) * sx + (e.y - ay) * sy) / L2h : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        if (t >= best) continue;
+        const cx = ax + sx * t - e.x, cy = ay + sy * t - e.y;
+        if (cx * cx + cy * cy > r * r) continue;
+        const z = az + sz * t, z0 = e.z + (e.zOff || 0);
+        if (z < z0 - 0.05 || z > z0 + (e.height || 1) + 0.1) continue;
+        best = t; body = true; near = -1;
+      }
+    }
+    if (best > 1) return null;
+    return { t: best, x: ax + sx * best, y: ay + sy * best, z: az + sz * best, near, body };
   }
 
   detonate(x, y, z, radius, chain, source) {
@@ -435,6 +486,10 @@ export class SkyWar {
 
       let pop = false;
       if (f.travelled >= f.fuse) pop = true;
+      // The proximity fuse: a warhead it passes close to, or a body it meets.
+      // A body can be point-blank, so this ignores the arming distance; the
+      // burst it makes does not hurt the shooter (see onBlastHurtPlayer).
+      const prox = this._proximity(px, py, pz, f, game);
       // Same arming rule for the ground plane, or a shot fired downhill detonates
       // between the player's boots.
       if ((f.z < 0.4 && f.travelled > FLAK_ARM_DIST) || f.travelled > 190) pop = true;
@@ -453,26 +508,36 @@ export class SkyWar {
       // Nothing bursts inside the arming distance: a shell that clips the parapet
       // at the player's elbow passes through it, the way real flak does, instead
       // of taking his face off for shooting across his own deck.
+      let wallT = 2;
       if (!pop && game.level && f.travelled > FLAK_ARM_DIST && (f.z < 1.4 || pz < 1.4)) {
         const n = Math.max(1, Math.ceil(step / 0.45));
         for (let k = 1; k <= n; k++) {
           const t = k / n;
+          if (prox && prox.t <= t) break;   // it met something before this wall
           const sx = px + (f.x - px) * t, sy = py + (f.y - py) * t, sz = pz + (f.z - pz) * t;
           if (sz >= 1.4) continue;
           if (game.level.blockedAt(sx, sy, sz)) {
             // Burst at the contact point, not past it.
             f.x = sx; f.y = sy; f.z = sz;
             pop = true;
+            wallT = t;
             break;
           }
         }
+      }
+      if (prox && prox.t < wallT) {
+        f.x = prox.x; f.y = prox.y; f.z = prox.z;
+        f.proxDist = prox.near;
+        f.contact = prox.body;
+        pop = true;
       }
 
       if (pop) {
         f.alive = false;
         this.flak.splice(i, 1);
         const b = this.detonate(f.x, f.y, f.z, f.blast, 0, f.weapon);
-        b.idealRange = f.idealRange;
+        b.proxDist = f.proxDist;
+        b.contact = !!f.contact;
         b.travelled = f.travelled;
         game.onFlakBurst(b, f);
       }

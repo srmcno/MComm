@@ -555,32 +555,30 @@ export class TitleScreen {
     const T = game.text;
     const pad = game.input && game.input.padSeen;
     const G = PAD_GLYPHS[(game.input && game.input.padKind) || 'generic'];
-    const p = this.drawPanel(buf, W, H, s, pad ? 'THREE AXES, NOT TWO' : 'THREE AXES, NOT TWO', game);
+    const p = this.drawPanel(buf, W, H, s, 'POINT. SHOOT. REPEAT.', game);
 
     const lines = pad ? [
       ['STICKS', 'Left moves. Right looks.'],
-      [`${G.rt}`, 'Fire. Contact does nothing: only the airburst kills.'],
-      [`${G.lt}`, 'Fine aim. Halves your look speed for threading a fuse.'],
-      ['D-PAD ↑↓', 'THE FUSE. How far the shell flies before it bursts.'],
-      ['', 'The ring around your crosshair IS that distance.'],
-      [`${G.b}`, 'Auto-ranging on/off. Manual fuses score double.'],
-      [`${G.y} / R3`, 'THE BOOT. No ammo. Ends arguments.'],
+      [`${G.rt}`, 'Fire. The Widow pops heads. Aim for them.'],
+      [`${G.lt}`, 'Fine aim. Halves your look speed for lining up a shot.'],
+      ['THE SKY', 'Roof opens, you get the Splitter. Shells burst on'],
+      ['', 'anything they pass. Lead the missile, not the dot.'],
+      [`${G.lb} ${G.rb} / D-PAD`, `Weapons.   ${G.back} map.   ${G.start} pause.`],
+      [`${G.y} / R3`, 'THE BOOT. No ammo. Ends arguments. Punts heads.'],
       [`${G.x}`, 'Pipe bomb. Press again to detonate. Timing is your problem.'],
       [`${G.a}`, 'Open doors, shove suspicious walls.'],
-      [`${G.lb} ${G.rb}`, `Weapons.   ${G.back} map.   ${G.start} pause.`],
       ['THE SIX', 'Each city survives one hit. The second one erases it.'],
       ['', 'Every 15,000 points MUTTER reissues one. Score is a repair budget.'],
     ] : [
       ['MOUSE', 'Aim. Two axes, like anything else with a trigger.'],
-      ['WHEEL / Z X', 'THE FUSE. How far the shell flies before it bursts.'],
-      ['', 'The ring around your crosshair IS that distance.'],
-      ['C', 'Auto-range on/off. Manual fuses score double on a clean burst.'],
-      ['FIRE', 'Contact does nothing. Only the airburst kills.'],
-      ['', 'A kill cooks off its payload, which bursts again. Chain them.'],
-      ['V / MMB', 'THE BOOT. No ammo, no reload. Ends arguments.'],
+      ['FIRE', 'The Widow pops heads. Shoot what you want to come off.'],
+      ['THE SKY', 'Roof opens, you get the Splitter. Its shells burst on'],
+      ['', 'anything they pass: lead the missile. Kills chain.'],
+      ['WHEEL / Z X', 'Weapons. Or 1-6.'],
+      ['V / RMB', 'THE BOOT. No ammo, no reload. Ends arguments.'],
       ['B or G', 'Pipe bomb. Press again to detonate. Timing is your problem.'],
       ['WASD', 'Move.  SHIFT run.  SPACE doors and suspicious walls.'],
-      ['1-6', 'Weapons.   TAB map.   ESC pause.'],
+      ['TAB', 'Map.   ESC pause.'],
       ['THE SIX', 'Each city survives one hit. The second one erases it.'],
       ['', 'Every 15,000 points MUTTER reissues one. Score is a repair budget.'],
     ];

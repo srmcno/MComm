@@ -42,22 +42,22 @@ export const QUADRUPED = { ghoul: true, stalker: true };
 const ARM_ATTACK = { melee: true, bolt: true, flame: true };
 
 /** What each weapon does to a body, when a weapon has no gore block of its own. */
-export const EXPLOSION_GORE = { sever: 0.8, head: 0.45, parts: 3, knock: 16, gib: 46, lift: 4.2 };
-export const SLAM_GORE = { sever: 0.4, head: 0.1, parts: 1, knock: 0, gib: 0, lift: 0 };
+export const EXPLOSION_GORE = { sever: 0.9, head: 0.55, parts: 4, knock: 17, gib: 40, lift: 4.4 };
+export const SLAM_GORE = { sever: 0.55, head: 0.15, parts: 1, knock: 0, gib: 0, lift: 0 };
 
-const MAX_PARTS = 80;
-const MAX_GIBS = 90;
+const MAX_PARTS = 96;
+const MAX_GIBS = 120;
 const MAX_CASINGS = 56;
-const MAX_FOUNTAINS = 28;
+const MAX_FOUNTAINS = 40;
 const GRAVITY = 13.5;
 
 const T_PART = 0, T_GIB = 1, T_CASING = 2;
 
 const LIMB_POP = {
-  arm: ['DISARMED', 'NEED A HAND?', 'ARMLESS', 'ELBOW ROOM', 'HANDS FREE'],
-  leg: ['LEGLESS', 'HOP IT', 'STUMPED', 'NO LEG TO STAND ON', 'FOOTLOOSE'],
-  head: ['HEAD POP', 'NO BRAINER', 'HEADSHOT', 'TOP OFF', 'HEADS UP', 'LOST HIS HEAD'],
-  many: ['CHUNKY', 'SOME ASSEMBLY REQUIRED', 'HOLY SH*T', 'MEAT SALAD', 'SPARE PARTS'],
+  arm: ['DISARMED', 'NEED A HAND?', 'ARMLESS', 'ELBOW ROOM', 'HANDS FREE', 'SHORT HANDED', 'WAVE BYE'],
+  leg: ['LEGLESS', 'HOP IT', 'STUMPED', 'NO LEG TO STAND ON', 'FOOTLOOSE', 'LEG DAY: CANCELLED', 'HALF STEP'],
+  head: ['HEAD POP', 'NO BRAINER', 'HEADSHOT', 'TOP OFF', 'HEADS UP', 'LOST HIS HEAD', 'MIND BLOWN', 'BLESS YOU'],
+  many: ['CHUNKY', 'SOME ASSEMBLY REQUIRED', 'HOLY SH*T', 'MEAT SALAD', 'SPARE PARTS', 'MEAT CONFETTI', 'FLAT PACK'],
 };
 const PUNT_POP = ['FIELD GOAL', 'IT IS GOOD!', 'GOAL!', 'TOUCHDOWN', 'THROUGH THE UPRIGHTS', 'EXTRA POINT'];
 const BONK_POP = ['HEAD TO HEAD', 'SKULL MAIL', 'HEADS UP', 'RETURN TO SENDER', 'CATCH'];
@@ -448,7 +448,7 @@ export class Gore {
     } else {
       this._queueRip(this._rip, pan, vol);
     }
-    this.fountain(e, bit, bit === HEAD ? 3.2 : randRange(rng, 2.0, 4.0), bit === HEAD ? 1.5 : 1);
+    this.fountain(e, bit, bit === HEAD ? 4.5 : randRange(rng, 3.0, 5.5), bit === HEAD ? 2.0 : 1.3);
     this.updateMobility(e);
     // A headless sprinter that loses its legs as well has run out of ideas.
     if (e.headlessT > 0 && e.crawl) { e.headlessT = 0; e.deathFrame = 0; }
@@ -472,16 +472,16 @@ export class Gore {
         e.deathFrame = 0;
         e.zigT = 0;
         const f = this.fountainOf(e, HEAD);
-        if (f) { f.life = e.headlessT + 1.2; f.str = 1.7; }
-        game.after(0.7, () => { if (e.headlessT > 0) game.goreQuip('headless', 0.7); });
+        if (f) { f.life = e.headlessT + 1.8; f.str = 2.1; }
+        game.after(0.7, () => { if (e.headlessT > 0) game.goreQuip('headless', 0.95); });
       } else {
-        game.goreQuip('headshot', 0.5);
+        game.goreQuip('headshot', 0.75);
       }
     } else if (e.alive && e.crawl && !e._crawlSaid) {
       e._crawlSaid = true;
-      game.after(0.9, () => { if (e.alive && e.crawl) game.goreQuip('crawler', 0.75); });
+      game.after(0.9, () => { if (e.alive && e.crawl) game.goreQuip('crawler', 0.95); });
     } else {
-      game.goreQuip('dismember', 0.3);
+      game.goreQuip('dismember', 0.5);
     }
     return true;
   }
@@ -862,7 +862,7 @@ export class Gore {
       P.emit(c.x, c.y, c.z, Math.cos(a) * 2 + ca * 3, Math.sin(a) * 2 + sa * 3, randRange(rng, 1, 3),
         randRange(rng, 0.3, 0.7), randRange(rng, 0.03, 0.06), 190, 18, 24, 1, 9, false, true, 0.6, 0);
     }
-    game.goreQuip('punt', c.head ? 0.45 : 0.25);
+    game.goreQuip('punt', c.head ? 0.8 : 0.5);
   }
 
   // ------------------------------------------------------------ fountains
