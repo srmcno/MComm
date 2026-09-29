@@ -10,8 +10,8 @@ const KEY_ALIASES = {
   Space: 'use', KeyF: 'use', Enter: 'confirm', Escape: 'escape',
   ShiftLeft: 'run', ShiftRight: 'run', ControlLeft: 'fire', ControlRight: 'fire',
   KeyR: 'reload', Tab: 'map', KeyM: 'map', KeyP: 'pause',
-  BracketLeft: 'fuseDown', BracketRight: 'fuseUp',
-  KeyZ: 'fuseDown', KeyX: 'fuseUp', KeyC: 'autoFuse',
+  BracketLeft: 'weapPrev', BracketRight: 'weapNext',
+  KeyZ: 'weapPrev', KeyX: 'weapNext',
   KeyV: 'kick', KeyB: 'bomb', KeyG: 'bomb',
   Digit1: 'slot1', Digit2: 'slot2', Digit3: 'slot3', Digit4: 'slot4',
   Digit5: 'slot5', Digit6: 'slot6',
@@ -23,7 +23,7 @@ const KEY_ALIASES = {
  */
 const PAD_BUTTONS = {
   0: 'use',          // A / Cross
-  1: 'autoFuse',     // B / Circle
+  1: 'weapNext',     // B / Circle
   2: 'bomb',         // X / Square
   3: 'kick',         // Y / Triangle
   4: 'weapPrev',     // LB / L1
@@ -34,17 +34,17 @@ const PAD_BUTTONS = {
   9: 'pause',        // Start / Options
   10: 'run',         // L3
   11: 'kick',        // R3
-  12: 'fuseUp',      // D-pad up
-  13: 'fuseDown',    // D-pad down
+  12: 'weapNext',    // D-pad up
+  13: 'weapPrev',    // D-pad down
   14: 'weapPrev',    // D-pad left
   15: 'weapNext',    // D-pad right
 };
 
 // D-pad and face buttons double as menu navigation. These are MENU-ONLY aliases
-// and never reach the gameplay action sets: folding them in meant B/Circle fired
-// `autoFuse` and `escape` together (and updatePlay reads escape first, so the
-// auto-ranger toggle paused the game), and the d-pad walked the player while it
-// dialled the fuse. Read them through menuJustPressed().
+// and never reach the gameplay action sets: folding them in meant B/Circle
+// pressed escape (and paused the game) every time it did its gameplay job, and
+// the d-pad walked the player while it changed weapons. Read them through
+// menuJustPressed().
 const PAD_MENU = { 12: 'up', 13: 'down', 14: 'left', 15: 'right', 0: 'confirm', 1: 'escape', 9: 'confirm' };
 
 const TRIGGER_ON = 0.42;   // analog trigger press threshold
@@ -134,15 +134,17 @@ export class Input {
       this.mousePressed |= 1 << e.button;
       this.padActive = false;
       if (e.button === 0) { this.down.add('fire'); this.pressed.add('fire'); }
-      if (e.button === 2) { this.down.add('altfire'); this.pressed.add('altfire'); }
-      if (e.button === 1) { this.down.add('kick'); this.pressed.add('kick'); }
+      // Right or middle button: the boot.
+      if (e.button === 1 || e.button === 2) { this.down.add('kick'); this.pressed.add('kick'); }
       if (this._wantLock) { this._gestureAsk = true; this._tryLock(); }
     });
     addEventListener('mouseup', (e) => {
       this.mouseButtons &= ~(1 << e.button);
       if (e.button === 0 && !this.padDown.has('fire')) { this.down.delete('fire'); this.released.add('fire'); }
-      if (e.button === 2) { this.down.delete('altfire'); this.released.add('altfire'); }
-      if (e.button === 1 && !this.padDown.has('kick')) this.down.delete('kick');
+      // Let go of one boot button while the other is still held: still kicking.
+      if ((e.button === 1 || e.button === 2) && !this.padDown.has('kick') && !(this.mouseButtons & 6)) {
+        this.down.delete('kick');
+      }
     });
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -300,7 +302,7 @@ export class Input {
     this.padDown = nextDown;
     if (busy || anyButton) { this.padActive = true; this.padSeen = true; }
 
-    // Fine-aim trigger halves look speed for the fuse game.
+    // The fine-aim trigger slows the look for leading a missile.
     this.lookScale = 1 - this.padFine * 0.62;
   }
 
@@ -309,7 +311,7 @@ export class Input {
       if (KEY_ALIASES[code] === action && this.rawDown.has(code)) return true;
     }
     if (action === 'fire' && (this.mouseButtons & 1)) return true;
-    if (action === 'altfire' && (this.mouseButtons & 4)) return true;
+    if (action === 'kick' && (this.mouseButtons & 6)) return true;
     return false;
   }
 

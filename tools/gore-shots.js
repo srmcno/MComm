@@ -204,14 +204,13 @@ info = await page.evaluate(() => {
   S.arena(1);
   const e = S.spawn('sparker', 7, -1.2, Math.PI);
   e.state = 5; e.stateT = -99;
-  // The Widow, fused to the range, aimed at the face.
+  // The Widow, aimed at the face.
   S.arm('pistol');
   let tries = 0;
   while (!(e.maim & 1) && tries < 12) {
     if (!e.alive) { e.alive = true; e.hp = e.maxHp; e.state = 5; }
     S.aimAt(e.x, e.y, e.z + e.height * 0.86);
-    g.player.fuse = Math.hypot(e.x - g.player.x, e.y - g.player.y);
-    g.player.autoFuse = false; g.player.cooldown = 0;
+    g.player.cooldown = 0;
     g.tryFire(); tries++;
     S.step(0.12);
   }

@@ -56,7 +56,7 @@ export const LEVEL_STORY_SETS = [
     [
       L('ilsa', 'ilsa_intro', 'Hardigan, it is Vance. MUTTER has locked me in the reactor core and is nuking our own cities. Get down here.'),
       L('brick', 'brick_boot', "Sit tight, doc. Brick Hardigan is on the job, and Brick Hardigan doesn't do half-assed."),
-      L('ilsa', 'ilsa_level1', 'Wonderful. Now stop narrating, and learn the fuse on this floor while nothing important is on fire.'),
+      L('ilsa', 'ilsa_level1', 'Wonderful. Now stop narrating, and learn to lead a missile on this floor while nothing important is on fire.'),
     ],
   ],
   [
@@ -80,7 +80,7 @@ export const LEVEL_STORY_SETS = [
     [
       L('ilsa', 'ilsa_level3', 'Two silo decks on this floor. MUTTER staggers the flights so you cannot cover both. Pick your ground.'),
       L('brick', 'brick_story3', "Doc, anybody ever tell you you're beautiful when you do math?"),
-      L('ilsa', 'ilsa_story3_reply', 'Everybody is beautiful when they do math. You should try it some time. Watch your fuse.'),
+      L('ilsa', 'ilsa_story3_reply', 'Everybody is beautiful when they do math. You should try it some time. Lead your targets.'),
     ],
     [
       L('ilsa', 'ilsa_level3', 'Two silo decks on this floor. MUTTER staggers the flights so you cannot cover both. Pick your ground.'),
@@ -148,9 +148,10 @@ LEVEL_STORY_SETS.forEach((sets, floor) => {
  * Brick's one-liners, keyed by moment. Picked at random, so every one has to
  * land on its own. These mirror the `brick_*` pools in vox.js word for word
  * (the announcer's copy wins whenever it has the key; this is the subtitle
- * and the mute path). dismember, headshot, crawler, punt and headless are
- * the gore quips: a limb off, a head popped, a legless crawler, a severed
- * part booted across the room, a headless body still running.
+ * and the mute path). dismember, headshot, crawler, punt, headless, gibbed
+ * and splat are the gore quips: a limb off, a head popped, a legless crawler,
+ * a severed part booted across the room, a headless body still running, a
+ * body that came apart all at once, and one thrown into a wall.
  */
 export const BRICK_LINES = {
   kill: [
@@ -393,6 +394,14 @@ export const BRICK_LINES = {
     "Now you're only mostly a guy.",
     'Lost and found is on level two, pal. Bring ID. Bring a cooler.',
     'No refunds on missing parts. Read the warranty.',
+    'Detachable! Nobody told me they came detachable!',
+    'Pieces of shit. Plural. Look at all the pieces.',
+    "Flat pack mutant. Some parts may be missing. That one. That one's missing.",
+    'Say goodbye to your little friend!',
+    "It's only a flesh wound! A big, floppy, flying flesh wound!",
+    "Anybody lose a thing? I've got a thing here. It's still wet.",
+    "Hold still, I'm redesigning you!",
+    "Damn it, now there's two of you. One of you is just a lot smaller.",
   ],
   headshot: [
     'Mind blown. Mind everywhere, actually.',
@@ -407,6 +416,14 @@ export const BRICK_LINES = {
     'Cranium, meet momentum.',
     'And his thoughts are now on the ceiling. Deep thoughts.',
     'Holy crap, it went pop! Somebody do that again!',
+    'Headshot! Somebody tell the scoreboard. And the janitor.',
+    "Your head called. It's not coming back.",
+    "Shit, that's a lot of skull. Where were you keeping all that?",
+    'Pop! Like bubble wrap full of bad decisions.',
+    "That's what you get for thinking. Nobody asked you to think.",
+    "Well, that's a weight off your shoulders.",
+    'Bless you! Wow. That was a big one.',
+    "Somebody's gonna need dental records. And a mop. And a bigger mop.",
   ],
   crawler: [
     "Aw, look at him go. Little guy's got hustle.",
@@ -419,6 +436,13 @@ export const BRICK_LINES = {
     "He's still coming! Respect. Now die.",
     'Look at that. A self propelled mop.',
     "You've got guts, kid. Mostly on the outside.",
+    'Look at you, doing the worm. Nobody asked for the worm.',
+    'Guess somebody skipped leg day. Permanently.',
+    "Shit, he's gaining on me. Slowly. Very, very slowly.",
+    "Keep crawling, sport. You'll make it by Christmas.",
+    'Aw, he wants a hug. Nope. No. Bad crawler.',
+    'Half the man he used to be, and twice the attitude.',
+    "It's like one of those robot vacuums. One that hates me.",
   ],
   punt: [
     "It's up! It's good!",
@@ -431,6 +455,12 @@ export const BRICK_LINES = {
     "Coach said I'd never kick anything important. Look at me now, coach!",
     "Dropkick! And it's still dripping!",
     "Somebody's gonna need a new ball. And a new, uh. Whatever that was.",
+    'And the kick is up! And it is gross!',
+    'Hardigan scores! The crowd goes wild! The crowd is also dead!',
+    'Goal! Get the hell in there! Goal!',
+    "Man, I miss football. This is almost as good. It's wetter.",
+    'Somebody catch that! No? Okay. Nobody catch that.',
+    'Instant replay! Look at that spiral!',
   ],
   headless: [
     'Look at him go! Like a chicken at a barbecue!',
@@ -443,6 +473,35 @@ export const BRICK_LINES = {
     'Go on. Lead with the neck.',
     "Holy shit, it's still running! Somebody call a doctor! Or a chef!",
     "Somebody get that man a hat. Nowhere to put it, but still. It's the thought.",
+    'Somebody get this man a sneaker deal!',
+    "Damn, he's faster without it. Should I try that? No. No, Brick.",
+    "No head, no problem. That's the spirit, buddy.",
+    "Left! Left! Your other left! Ah, he can't hear me.",
+    "He's looking for his head. With what, buddy? With what?",
+    "That's the most productive thing he's done all day.",
+  ],
+  gibbed: [
+    'Chunky style!',
+    "Well, he's everywhere now. Really spread himself thin.",
+    'Holy shit, he popped! Like a pinata full of soup!',
+    'Ew. Ew! Some of that is in my mouth!',
+    'Clean up on aisle everywhere!',
+    "That's a lot of guy for one room.",
+    'Meat confetti! Happy birthday to me!',
+    'Aw, man. I just had this vest cleaned.',
+    'He went to pieces. Poor guy was under a lot of pressure.',
+    'Damn. I only meant to hurt him a lot.',
+  ],
+  splat: [
+    'Splat! Like a bug on a windshield!',
+    'And he sticks the landing. On the wall.',
+    'Somebody hang that up. Oh. He did it himself.',
+    'Very modern. I call it Mutant on Concrete.',
+    'Wall one, mutant zero.',
+    "Hope you like the wall, pal. You're part of it now.",
+    "That wall's gonna need a new coat of paint. Or a new coat of guy.",
+    'Holy shit, he stuck!',
+    'Redecorating! Mostly in red.',
   ],
 };
 
@@ -586,6 +645,30 @@ export const MUTTER_BRICK_FILE = [
   "The warden's sensitivity training certificate is framed. He did not attend. He framed the invitation.",
   'The warden has legally renamed his boot. The boot is now called Justice. I was not consulted.',
   "The warden's mullet violates dress code. He has appealed on religious grounds. The religion is the mullet.",
+];
+
+/** MUTTER on the mess, now and then, after Brick has had his say about it. */
+export const MUTTER_GORE = [
+  'Cleanup requested on this level. The cleanup crew is also on this level. In several places.',
+  'That was a biohazard. It is now several smaller biohazards. Thank you, warden.',
+  'Please return all limbs to their original owners, or to lost property.',
+  'Your conduct has been logged under enthusiasm, excessive.',
+  'The cleaning budget for this quarter was nineteen dollars. You have spent it.',
+  'I have added the ceiling to the cleaning rota. I never expected to say that.',
+  'Warden, please stop sorting the staff by size.',
+  'Health and safety would like a word. Health and safety is on the wall behind you.',
+];
+
+/** Ilsa on the mess. She swears in German, which he does not notice. */
+export const ILSA_GORE = [
+  'Hardigan, that was a person. Mostly. Now it is several.',
+  'Scheisse. I will be seeing that when I close my eyes.',
+  'Please stop playing with them. They are not toys, they are evidence.',
+  'I designed that gun to shoot down missiles, not to make soup.',
+  'Mein Gott. Why is there something on the ceiling? Why is it waving?',
+  'You are enjoying this far too much, Hardigan.',
+  'I have a camera in that corridor. I am turning it off now.',
+  'Hardigan, wipe your visor. You are dripping on my floor plans.',
 ];
 
 /**

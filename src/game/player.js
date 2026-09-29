@@ -4,6 +4,8 @@ import { clamp, damp, lerp, wrapAngle, TAU } from '../core/math.js';
 import { WEAPONS, WEAPON_ORDER, AMMO_MAX, AMMO_FLAK, AMMO_NAIL, AMMO_CHARGE, AMMO_BOMB, BOOT, weaponBySlot } from './weapons.js';
 
 export const EYE_HEIGHT = 0.56;
+// A flak shell's longest flight: it bursts on whatever it meets or passes
+// first, and at this distance if it met nothing (a proximity fuse, not a dial).
 export const FUSE_MIN = 6;
 export const FUSE_MAX = 145;
 
@@ -23,13 +25,15 @@ export class Player {
     this.armour = 0;
     this.dead = false;
     this.keys = [false, false, false];
-    this.owned = { pistol: true, splitter: false, nailer: false, halo: false, deadman: false };
-    this.ammo = { [AMMO_FLAK]: 60, [AMMO_NAIL]: 0, [AMMO_CHARGE]: 0, [AMMO_BOMB]: 0 };
+    // The Splitter comes with the job: it is the anti-missile gun, and the
+    // first flight can arrive before the pickup on the first floor is found.
+    this.owned = { pistol: true, splitter: true, nailer: false, halo: false, deadman: false };
+    this.ammo = { [AMMO_FLAK]: 90, [AMMO_NAIL]: 0, [AMMO_CHARGE]: 0, [AMMO_BOMB]: 0 };
     this.weapon = 'pistol';
     this.pendingWeapon = null;
     this.cooldown = 0;
-    this.fuse = 52;
-    this.autoFuse = true;
+    this.fuse = FUSE_MAX;
+    this.preSiegeWeapon = null;     // what to hand back when the sky closes
     this.bob = 0;
     this.bobPhase = 0;
     this.kick = 0;
@@ -141,11 +145,6 @@ export class Player {
     return this.health - before;
   }
 
-  adjustFuse(delta) {
-    this.fuse = clamp(this.fuse + delta, FUSE_MIN, FUSE_MAX);
-    this.autoFuse = false;
-  }
-
   update(dt, input, level, game) {
     const s = this.spec;
     this.cooldown = Math.max(0, this.cooldown - dt);
@@ -159,9 +158,9 @@ export class Player {
     this.hurtFlash = damp(this.hurtFlash, 0, 3.4, dt);
     this.emp = Math.max(0, this.emp - dt);
 
-    // The Widow is meant to never leave you naked, so the flak pool trickles
-    // back to a working floor. Sustained pistol fire is roughly free; anything
-    // heavier draws down reserves you have to go and find.
+    // The flak pool trickles back to a working floor, so the anti-missile gun
+    // is never completely dry when the roof opens. Anything heavier than a
+    // trickle is reserves you have to go and find.
     this.regenTimer += dt;
     const rate = 0.8 / ((game && game.diff && game.diff.regen) || 1);
     if (this.regenTimer > rate) {

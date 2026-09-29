@@ -133,23 +133,13 @@ const report = await page.evaluate(async (difficulty) => {
         g.tryKick();
       }
       if (close && g.sky.warheads.length) {
-        if (p.owned.nailer && p.ammo.nail > 4) p.weapon = 'nailer';
+        p.weapon = p.owned.nailer && p.ammo.nail > 4 ? 'nailer' : 'pistol';
         p.ang = Math.atan2(close.y - p.y, close.x - p.x);
         p.pitch = ((close.z + close.height * 0.5 - p.z) / Math.max(0.8, cd)) * g.rc.projY;
-        p.fuse = Math.max(8, cd + 2);
         if (p.cooldown <= 0) { g.tryFire(); shots++; fired = true; }
       } else if (g.sky.warheads.length) {
-        // Splitter costs 3 shells for one fuse: worth it against a flight,
-        // wasteful against a single warhead.
-        let clustered = 0;
-        if (g.sky.warheads.length > 1) {
-          const a = g.sky.warheads[0];
-          for (const w of g.sky.warheads) {
-            if (Math.hypot(w.x - a.x, w.y - a.y, w.z - a.z) < 14) clustered++;
-          }
-        }
-        const wantSplit = p.owned.splitter && clustered >= 3 && p.ammo.flak > 40;
-        p.weapon = wantSplit ? 'splitter' : 'pistol';
+        // The Splitter is the anti-missile gun; the Widow cannot reach the sky.
+        p.weapon = 'splitter';
         let best = null, bestD = 1e9;
         for (const w of g.sky.warheads) {
           const m = misses.get(w.id);
@@ -170,8 +160,6 @@ const report = await page.evaluate(async (difficulty) => {
           p.ang = Math.atan2(ly - p.y, lx - p.x);
           const horiz = Math.hypot(lx - p.x, ly - p.y);
           p.pitch = ((lz - p.z) / horiz) * g.rc.projY;
-          p.fuse = Math.hypot(lx - p.x, ly - p.y, lz - p.z);
-          p.autoFuse = false;
           if (p.cooldown <= 0) {
             g.tryFire(); shots++; fired = true;
             const m = misses.get(best.id) || { n: 0, until: 0 };
@@ -193,7 +181,6 @@ const report = await page.evaluate(async (difficulty) => {
           else p.weapon = 'pistol';
           p.ang = Math.atan2(target.y - p.y, target.x - p.x);
           p.pitch = ((target.z + target.height * 0.5 - p.z) / Math.max(0.6, td)) * g.rc.projY;
-          p.fuse = Math.max(8, td);
           if (p.cooldown <= 0 && td > 2.2) { g.tryFire(); shots++; fired = true; }
         }
       }

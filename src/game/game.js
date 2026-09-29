@@ -4,7 +4,7 @@
 import { Raycaster, LightGrid } from '../engine/raycaster.js';
 import { Sky } from '../engine/skybox.js';
 import { Level } from './level.js';
-import { Player, EYE_HEIGHT, FUSE_MIN, FUSE_MAX } from './player.js';
+import { Player, EYE_HEIGHT, FUSE_MAX } from './player.js';
 import { Enemy, Bolt, PipeBomb, Acid, ENEMY_TYPES, ST } from './entities.js';
 import { Particles } from './particles.js';
 import { Gore, HEAD, ARM_R, ARM_L, EXPLOSION_GORE, SLAM_GORE } from './gore.js';
@@ -16,7 +16,9 @@ import { parseLevelDef } from '../engine/assets.js';
 import { clamp, damp, lerp, dist, dist3, wrapAngle, makeRng, randRange, commas, TAU } from '../core/math.js';
 import { rgba } from '../core/pixels.js';
 import { recordRun, bestFor } from '../core/scores.js';
-import { Radio, LEVEL_STORY, BRICK_LINES, EXES, MUTTER_MUTANT, MUTTER_BRICK_FILE, SPEAKERS } from './story.js';
+import {
+  Radio, LEVEL_STORY, BRICK_LINES, EXES, MUTTER_MUTANT, MUTTER_BRICK_FILE, MUTTER_GORE, ILSA_GORE, SPEAKERS,
+} from './story.js';
 import { plainText } from '../audio/speech.js';
 
 export const STATE = {
@@ -178,7 +180,9 @@ export class Game {
     this.hitStop = 0;
     // Player-facing settings the title screen's calibration page edits directly.
     this.volMaster = 0.85;
-    this.volMusic = 0.7;
+    // The band sits under the cast, not on top of it: at 0.7 the new metal
+    // mix buried every line a browser voice could say.
+    this.volMusic = 0.42;
     this.volVox = 0.9;
     this.sens = 1.0;
     this.invertY = false;
@@ -203,6 +207,8 @@ export class Game {
     this.diff = DIFFICULTY[this.difficulty];
     this.player.reset();
     this._deathSaid = false;
+    this._leadCoached = false;
+    this._skyMisses = 0;
     this.player.maxHealth = this.diff.health;
     this.player.health = this.diff.health;
     this.sky = new SkyWar(this);
@@ -214,7 +220,6 @@ export class Game {
     this.beatBest = false;
     this.dmgLedger = {};
     this.grades = [];
-    this.fuseCoach = { misses: 0, said: false };
     // A fresh campaign gets its one-shot lines back. reset() alone keeps them
     // said, which is right between floors and wrong between runs.
     this.radio.resetCampaign();
@@ -223,6 +228,7 @@ export class Game {
 
   loadLevel(i) {
     this.levelIndex = clamp(i, 0, this.totalLevels - 1);
+    this.player.preSiegeWeapon = null;
     const parsed = this.parse(this.levelIndex);
     this.level = new Level(parsed, this.art);
     this.sky.placeCities(this.level);
@@ -579,12 +585,12 @@ export class Game {
     if (this.subtitlesOn && job.caption) this.hud.say(job.caption, Math.max(2.6, job.dur || 3.2));
   }
 
-  /** Brick, talking to himself, which he does constantly. */
+  /** Brick, talking to himself, which he does constantly. True if he got to. */
   brick(key, poolOrText) {
     const pool = typeof poolOrText === 'string' ? null : poolOrText;
     const text = pool ? this.radio.pick(key, pool) : poolOrText;
-    if (this.radio.current || this.radio.queue.length) return;   // never talk over the plot
-    this.radio.say('brick', key, text, { priority: -2 });
+    if (this.radio.current || this.radio.queue.length) return false;   // never talk over the plot
+    return this.radio.say('brick', key, text, { priority: -2 }) !== false;
   }
 
   speak(key, opts = {}, fallbackText = '') {
@@ -622,11 +628,11 @@ export class Game {
     // With the voices turned right down there is nothing to make room for.
     if (clamp(this.volVox, 0, 1) * clamp(this.volMaster, 0, 1) < 0.02) return;
     this.duckTok = (this.duckTok || 0) + 1;
-    if (voice === 'ilsa' || dur <= 2.2) { this.sound.duck(depth, Math.min(12, Math.max(1.6, dur))); return; }
-    const tok = this.duckTok;
-    this.sound.duck(depth, 1.3);
-    // A newer line owns the duck by then; do not undercut its hard dip.
-    this.after(1.3, () => { if (this.duckTok === tok) this.sound.duck(0.22, Math.min(8, dur - 1.3)); });
+    // Every line gets the music held down for all of it. A browser voice is
+    // not in the Web Audio mix, so the only way to make room for it is to
+    // take the band away, and a dip that lifts after a second lets the
+    // guitars back in over the punchline.
+    this.sound.duck(Math.max(depth, 0.62), Math.min(14, Math.max(1.6, dur)));
   }
 
   // ---------------------------------------------------------------- update
@@ -784,7 +790,7 @@ export class Game {
     if (!p.dead) {
       // Right stick look is rate-based (degrees per second), unlike the mouse
       // which is displacement, so it has to be scaled by dt to be frame-rate
-      // independent. Fine-aim on the left trigger slows it for fuse work.
+      // independent. Fine-aim on the left trigger slows it for lining up a shot.
       const padScale = (input.lookScale === undefined ? 1 : input.lookScale);
       let lx = input.mouseDX + (input.padLookX || 0) * 1180 * dt * padScale;
       let ly = input.mouseDY + (input.padLookY || 0) * 620 * dt * padScale;
@@ -804,14 +810,9 @@ export class Game {
       const axes = input.axes();
       p.moveWith(dt, axes, lv, this);
 
-      // Fuse dial.
-      if (input.wheel) { p.adjustFuse(-input.wheel * 5.5); this.sound.sfx('flak_arm', { vol: 0.35 }); }
-      if (input.isDown('fuseUp')) p.adjustFuse(38 * dt);
-      if (input.isDown('fuseDown')) p.adjustFuse(-38 * dt);
-      if (input.justPressed('autoFuse') || input.justPressed('altfire')) {
-        p.autoFuse = !p.autoFuse;
-        this.sound.sfx('ui_move');
-        this.hud.popup(p.autoFuse ? 'AUTO-RANGING ON' : 'MANUAL FUSE', { size: 11, life: 1.1, color: rgba(110, 236, 244, 255) });
+      // The wheel changes weapons, the way every shooter since 1993 does.
+      if (input.wheel && !p.pendingWeapon) {
+        if (p.cycleWeapon(input.wheel > 0 ? 1 : -1)) this.sound.sfx('weapon_switch');
       }
       for (let s = 1; s <= 6; s++) if (input.justPressed('slot' + s)) {
         if (p.selectSlot(s)) this.sound.sfx('weapon_switch');
@@ -827,11 +828,8 @@ export class Game {
 
     p.update(dt, input, lv, this);
 
-    // Auto-range: point at a warhead and the fuse follows it.
+    // The lead bracket: point near a warhead and the HUD shows where to aim.
     this.updateRangeLock();
-    if (p.autoFuse && this.rangeLock) {
-      p.fuse = damp(p.fuse, clamp(this.rangeLock.range, FUSE_MIN, FUSE_MAX), 14, dt);
-    }
 
     lv.update(dt, (kind, x, y) => {
       if (kind === 'close') this.sound.sfx('door_close', { pan: this.panAt(x, y) });
@@ -1091,7 +1089,7 @@ export class Game {
 
   updateRangeLock() {
     const p = this.player;
-    if (p.spec.kind === 'kinetic' || p.spec.kind === 'nuke') { this.rangeLock = null; return; }
+    if (p.spec.kind !== 'flak' && p.spec.kind !== 'ring') { this.rangeLock = null; return; }
     const a = p.aimVector(this.rc.projY);
     this.rangeLock = this.sky.rangeAlong(p.x, p.y, p.z, a.x, a.y, a.z, p.spec.flakSpeed || 70, 0.30);
   }
@@ -1269,9 +1267,38 @@ export class Game {
     this.speak('roof_opening', {}, 'The roof is opening. Please look up.');
     this.radio.say('brick', 'brick_wave_start', this.radio.pick('wavestart', BRICK_LINES.wave_start), { priority: 1, delay: 0.6 });
     this.radio.say('ilsa', 'ilsa_wave_incoming',
-      "Flight inbound. Fuse first, aim second. The ring is your range, Hardigan, not a decoration.",
+      "Flight inbound. Lead them, Hardigan. Aim where they will be, not where they are.",
       { priority: 1, delay: 0.4, once: true });
+    this.armForSky();
     this.pendingGrunts = (def.grunts || []).map((g) => ({ ...g, spawned: 0 }));
+  }
+
+  /**
+   * The roof is open and the sky is full of warheads, and nobody shoots a
+   * missile with a pistol. Hand him the Splitter, the anti-missile gun, and
+   * remember what to give back when the sky closes. A flak weapon or the
+   * Deadman already in hand is left where it is.
+   */
+  armForSky() {
+    const p = this.player;
+    const k = p.pendingWeapon || p.weapon;
+    const kind = WEAPONS[k] ? WEAPONS[k].kind : '';
+    if (kind === 'flak' || kind === 'ring' || kind === 'nuke' || !p.owned.splitter) return;
+    if (!p.preSiegeWeapon) p.preSiegeWeapon = k;
+    p.pendingWeapon = 'splitter';
+    this.sound.sfx('weapon_switch');
+    this.hud.popup('SPLITTER UP', { size: 11, life: 1.3, color: rgba(255, 207, 92, 255) });
+  }
+
+  /** The sky is clear: the gun he had goes back in his hand, if he still wants it. */
+  disarmForGround() {
+    const p = this.player;
+    const k = p.preSiegeWeapon;
+    p.preSiegeWeapon = null;
+    // Swapped to something else mid-siege? Then that is his choice now.
+    if (!k || !p.owned[k] || (p.pendingWeapon || p.weapon) !== 'splitter') return;
+    p.pendingWeapon = k;
+    this.sound.sfx('weapon_switch');
   }
 
   updateWave(dt) {
@@ -1311,6 +1338,7 @@ export class Game {
         return;
       }
       this.level.roofTarget = 0;
+      this.disarmForGround();
       this.sound.sfx('wave_clear');
       this._corridorTrack = this.corridorTrack();
       this.sound.music(this._corridorTrack, { fadeIn: 2.2 });
@@ -1559,7 +1587,6 @@ export class Game {
     this.input.rumble(0.9, 0.7, 220);
     // A bomb bursting in the sky counts as flak: it can catch a warhead.
     const blast = this.sky.detonate(b.x, b.y, Math.max(0.4, b.z), spec.blastRadius, 0, 'pipebomb');
-    blast.idealRange = -1;
     blast.gore = spec.gore || null;
   }
 
@@ -1660,11 +1687,7 @@ export class Game {
   }
 
   fireFlak(spec, a, m) {
-    // The precision bonus is for dialling the fuse yourself. Auto-ranging is
-    // there to keep you alive in a busy sky, not to pay you for it.
-    const ideal = (this.rangeLock && !this.player.autoFuse) ? this.rangeLock.range : -1;
     spec = this.diff.blast === 1 ? spec : { ...spec, blastRadius: spec.blastRadius * this.diff.blast };
-    if (ideal > 0) this.coachFuse(ideal, spec);
     for (let i = 0; i < spec.pellets; i++) {
       let dx = a.x, dy = a.y, dz = a.z;
       if (spec.spread) {
@@ -1676,39 +1699,26 @@ export class Game {
         dz += (i - (spec.pellets - 1) / 2) * spec.spread * 0.6;
         const L = Math.hypot(dx, dy, dz); dx /= L; dy /= L; dz /= L;
       }
-      this.sky.fireFlak(m.x, m.y, m.z, dx, dy, dz, spec, this.player.fuse, ideal);
+      this.sky.fireFlak(m.x, m.y, m.z, dx, dy, dz, spec, FUSE_MAX);
     }
+    this.coachLead();
   }
 
   /**
-   * The fuse is the whole game, and it is the one control the player can hold
-   * wrong forever without being told. The ranger already paints the true range
-   * on the intercept; this notices that the ring is nowhere near it while a
-   * warhead sits squarely in the sights, and says which way to turn — once per
-   * campaign, and only for someone dialling it by hand.
+   * A run of flak shots at a sky full of warheads and nothing to show for it
+   * means he is shooting where they are, not where they will be. Ilsa says so,
+   * once a run. Any kill starts the count again (onWarheadKilled).
    */
-  coachFuse(ideal, spec) {
-    const c = this.fuseCoach;
-    if (!c || c.said) return;
-    const err = this.player.fuse - ideal;
-    // Inside the blast, the shot would have killed it: nothing to teach.
-    if (Math.abs(err) <= (spec.blastRadius || 8) * 1.2) { c.misses = 0; return; }
-    if (++c.misses < 3) return;
-    c.said = true;
-    const short = err < 0;
-    const dial = this.input && this.input.padActive ? 'the d-pad' : 'the wheel';
-    this.hud.popup(short ? 'FUSE SHORT' : 'FUSE LONG',
-      { size: 13, life: 2.4, color: rgba(255, 207, 92, 255) });
-    // ilsa_fuse_tip was written and voiced for exactly this moment and had no
-    // trigger, so it had never once been heard. This is that trigger.
-    this.radio.say('ilsa', 'ilsa_fuse_tip', short
-      ? `You are bursting short, Hardigan. Roll ${dial} up until the ring meets the bracket.`
-      : `You are bursting long. Roll ${dial} down until the ring meets the bracket.`,
-      { priority: 2, delay: 0.3, once: true });
+  coachLead() {
+    if (!this.sky.warheads.length || this._leadCoached) return;
+    this._skyMisses = (this._skyMisses || 0) + 1;
+    if (this._skyMisses < 8) return;
+    this._leadCoached = true;
+    this.radio.say('ilsa', 'ilsa_lead_tip',
+      'You are shooting where they are. By the time the shell gets there, they are not. Lead them.', { priority: 0 });
   }
 
   fireHalo(spec, a, m) {
-    const ideal = (this.rangeLock && !this.player.autoFuse) ? this.rangeLock.range : -1;
     // The ring is flak too, so it takes the same difficulty scaling. It used to
     // be the one weapon that ignored it, which made VETERAN's Halo a cheat code.
     if (this.diff.blast !== 1) {
@@ -1716,8 +1726,9 @@ export class Game {
         blastRadius: spec.blastRadius * this.diff.blast,
         ringRadius: spec.ringRadius * (0.5 + this.diff.blast * 0.5) };
     }
-    const f = this.sky.fireFlak(m.x, m.y, m.z, a.x, a.y, a.z, spec, this.player.fuse, ideal);
+    const f = this.sky.fireFlak(m.x, m.y, m.z, a.x, a.y, a.z, spec, FUSE_MAX);
     f.ring = spec;
+    this.coachLead();
   }
 
   fireKinetic(spec, a, m) {
@@ -1733,13 +1744,17 @@ export class Game {
     this.gore.shootThrough(m.x, m.y, m.z, dx / L, dy / L, dz / L, hitT, 4.5);
     if (hit.enemy) {
       const e = hit.enemy;
-      const killed = e.hurt(spec.damage, this, p.x, p.y);
+      // A round to the head does headMul times the damage (the Widow's is
+      // enough to put most of the day shift down in one).
+      const head = spec.headMul > 1 && this.gore.zoneAt(e, hit.x, hit.y, hit.z) === HEAD;
+      const dmg = head ? spec.damage * spec.headMul : spec.damage;
+      const killed = e.hurt(dmg, this, p.x, p.y);
       this.hud.hitMark(killed);
-      this.particles.blood(hit.x, hit.y, hit.z, 6, a.x, a.y);
+      this.particles.blood(hit.x, hit.y, hit.z, head ? 22 : 12, a.x, a.y);
       this.sound.sfx('hit_flesh', { pan: this.panAt(hit.x, hit.y) });
       // Where it went in decides what comes off.
       const g = spec.gore;
-      this.gore.hitscan(e, hit.x, hit.y, hit.z, dx, dy, spec.damage, g, killed);
+      this.gore.hitscan(e, hit.x, hit.y, hit.z, dx, dy, dmg, g, killed);
       if (g && g.knock) e.shove(dx, dy, g.knock * (killed ? 3 : 1), 0);
       if (killed) this.gore.launch(e, dx, dy, (g && g.knock ? g.knock : 1) * 4, 1.2);
     } else if (hit.item) {
@@ -1933,7 +1948,7 @@ export class Game {
     this.particles.airburst(b.x, b.y, b.z, b.maxR, 0);
     this.sound.sfx('airburst', { pan: this.panAt(b.x, b.y), vol: clamp(1 - dist3(b.x, b.y, b.z, this.player.x, this.player.y, this.player.z) / 140, 0.15, 1) });
     if (f.ring) {
-      // The Halo blooms into a ring of secondary bursts at the fuse range.
+      // The Halo blooms into a ring of secondary bursts where the shell burst.
       const p = this.player;
       const ax = b.x - p.x, ay = b.y - p.y, az = b.z - p.z;
       const L = Math.hypot(ax, ay, az) || 1;
@@ -1982,6 +1997,7 @@ export class Game {
 
   onWarheadKilled(w, b, chain) {
     const p = this.player;
+    this._skyMisses = 0;
     const def = WARHEAD_TYPES[w.type];
     let pts = def.score * chain;
     let label = `${def.score * chain}`;
@@ -1992,16 +2008,14 @@ export class Game {
     p.skyKills++;
     this.bumpStreak();
 
-    // The ACE bonus: the fuse landed within 12% of true range.
-    if (chain === 1 && b.idealRange > 0 && b.travelled > 0) {
-      const err = Math.abs(b.travelled - b.idealRange) / b.idealRange;
-      if (err < 0.12) {
-        pts = Math.round(pts * 2);
-        label = `AIRBURST  ${pts}`;
-        col = rgba(126, 232, 128, 255);
-        this.sound.sfx('perfect_burst');
-        this.speak('perfect_burst', {}, 'Textbook. I hate that.');
-      }
+    // The BULLSEYE bonus: the shell burst within a metre or so of the warhead
+    // it was led onto, rather than just close enough. Aim still pays.
+    if (chain === 1 && b.proxDist >= 0 && b.proxDist < 1.3) {
+      pts = Math.round(pts * 2);
+      label = `BULLSEYE  ${pts}`;
+      col = rgba(126, 232, 128, 255);
+      this.sound.sfx('perfect_burst');
+      if (this.rng() < 0.35) this.speak('perfect_burst', {}, 'Textbook. I hate that.');
     }
     if (chain >= 2) {
       label = `CHAIN ×${chain}   ${pts}`;
@@ -2042,7 +2056,9 @@ export class Game {
   }
 
   onBlastHurtPlayer(b, d) {
-    if (b.deadman) return;
+    // A shell that burst on a body did its job; it does not take your face
+    // off for shooting the thing in front of you.
+    if (b.deadman || b.contact) return;
     const p = this.player;
     // Difficulty scales everything that hurts you — except, until now, the one
     // thing you fire yourself. CLERICAL widens the blast by 18% to make the sky
@@ -2178,7 +2194,7 @@ export class Game {
     }
     // A body that has just lost its head has nothing left to scream with.
     if (!e._headPop) this.sound.sfx(e.def.die || (e.def.boss ? 'boss_death' : 'enemy_die'), { pan: this.panOf(e) });
-    this.particles.blood(e.x, e.y, e.z + e.height * 0.5, e.def.gib * 3, 0, 0);
+    this.particles.blood(e.x, e.y, e.z + e.height * 0.5, e.def.gib * 5 + 8, 0, 0);
     this.addDecal(e.x, e.y, e.def.mutant ? 'gore' : 'blood');
     if (e.def.gib >= 5) this.gib(e);
     // The gore lines are funnier than the generic ones; leave them the room.
@@ -2324,6 +2340,7 @@ export class Game {
     } else if (speed > 10 && this.rng() < 0.5) {
       this.gore.blast(e, e.x + dx, e.y + dy, e.z + e.height * 0.5, 40, SLAM_GORE, true);
     }
+    this.goreQuip('splat', 0.55);
   }
 
   /** A thrown body coming down. */
@@ -2360,21 +2377,36 @@ export class Game {
 
   /**
    * Brick has something to say about what just came off. Rate-limited so the
-   * gore lines stay a punchline, and each pool degrades to the kill lines if
-   * the script has not caught up.
+   * gore lines stay a punchline, not a podcast, and each pool degrades to the
+   * kill lines if the script has not caught up. Now and then somebody on the
+   * radio answers him: Ilsa appalled, or MUTTER filing it.
    */
   goreQuip(kind, chance = 0.4) {
-    if (this.time < (this._goreQuipAt || 0) || this.rng() > chance) return;
-    this._goreQuipAt = this.time + 7;
+    if (this.time < (this._goreQuipAt || 0) || this.rng() > chance) return false;
     const L = BRICK_LINES;
+    let said = false;
     switch (kind) {
-      case 'dismember': this.brick('brick_dismember', L.dismember || L.kill); break;
-      case 'headshot': this.brick('brick_headshot', L.headshot || L.kill); break;
-      case 'crawler': this.brick('brick_crawler', L.crawler || L.kill); break;
-      case 'punt': this.brick('brick_punt', L.punt || L.kill); break;
-      case 'headless': this.brick('brick_headless', L.headless || L.kill); break;
-      default: break;
+      case 'dismember': said = this.brick('brick_dismember', L.dismember || L.kill); break;
+      case 'headshot': said = this.brick('brick_headshot', L.headshot || L.kill); break;
+      case 'crawler': said = this.brick('brick_crawler', L.crawler || L.kill); break;
+      case 'punt': said = this.brick('brick_punt', L.punt || L.kill); break;
+      case 'headless': said = this.brick('brick_headless', L.headless || L.kill); break;
+      case 'gibbed': said = this.brick('brick_gibbed', L.gibbed || L.kill); break;
+      case 'splat': said = this.brick('brick_splat', L.splat || L.kill); break;
+      default: return false;
     }
+    if (!said) return false;
+    this._goreQuipAt = this.time + 5;
+    // A punt or a crawler is his own punchline; the rest can get an answer.
+    if (kind !== 'punt' && kind !== 'crawler' && this.time >= (this._goreReplyAt || 0) && this.rng() < 0.3) {
+      this._goreReplyAt = this.time + 30;
+      if (this.rng() < 0.5) {
+        this.radio.say('ilsa', 'ilsa_gore', this.radio.pick('ilsa_gore', ILSA_GORE), { priority: -1, delay: 0.4 });
+      } else {
+        this.radio.say('mutter', 'mutter_gore', this.radio.pick('mutter_gore', MUTTER_GORE), { priority: -1, delay: 0.4 });
+      }
+    }
+    return true;
   }
 
   onBoltImpact(b, hitPlayer) {
@@ -2539,7 +2571,7 @@ export class Game {
     if (e._gibbed) return;
     e._gibbed = true;
     // Real chunks with weight: they bounce, stick to walls and stay a while.
-    const chunks = Math.min(9, 2 + (e.def.gib >> 1));
+    const chunks = Math.min(14, 4 + (e.def.gib >> 1));
     for (let i = 0; i < chunks; i++) {
       const a = this.rng() * TAU;
       const sp = randRange(this.rng, 2, 7);
@@ -2547,10 +2579,10 @@ export class Game {
         Math.cos(a) * sp + e.kvx * 0.3, Math.sin(a) * sp + e.kvy * 0.3, randRange(this.rng, 2.5, 6.5),
         (this.rng() * 8) | 0, randRange(this.rng, 0.11, 0.2) * clamp(e.height, 0.6, 1.6));
     }
-    const n = Math.min(16, 4 + e.def.gib);
+    const n = Math.min(30, 10 + e.def.gib * 2);
     for (let i = 0; i < n; i++) {
       const a = this.rng() * TAU;
-      const sp = randRange(this.rng, 1.5, 6.5);
+      const sp = randRange(this.rng, 1.5, 7.5);
       this.particles.spawn({
         x: e.x, y: e.y, z: e.z + e.height * randRange(this.rng, 0.2, 0.9),
         vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: randRange(this.rng, 1.5, 5.5),
@@ -2567,9 +2599,9 @@ export class Game {
     this.sound.sfx('gib', { pan: this.panOf(e), rate: randRange(this.rng, 0.85, 1.2) });
     // Close enough and it goes on the lens.
     const d = dist(e.x, e.y, this.player.x, this.player.y);
-    if (d < 5.5 && this.level.lineOfSight(this.player.x, this.player.y, e.x, e.y)) {
-      this.hud.splatter(clamp(Math.round(7 - d), 2, 7));
-    }
+    const seen = d < 14 && this.level.lineOfSight(this.player.x, this.player.y, e.x, e.y);
+    if (seen && d < 5.5) this.hud.splatter(clamp(Math.round(7 - d), 2, 7));
+    if (seen) this.goreQuip('gibbed', 0.6);
   }
 
   spawnFlame(e, p) {

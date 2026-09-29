@@ -1,8 +1,10 @@
 // weapons.js - the arsenal.
 //
-// Four of the five are flak: they lob a shell that does nothing on contact and
-// everything when its fuse runs out. The Naildriver is the exception, a kinetic
-// weapon for the things walking around on your deck.
+// Point and it hurts. The Widow and the Naildriver are hitscan, for the things
+// walking around on your deck. The flak launchers, the Splitter and the Halo,
+// are for the sky: their shells carry a proximity fuse and burst on the first
+// thing they meet or pass close to (a warhead, a body, a wall), so a shot at a
+// missile is about leading it, not dialling a range.
 
 export const AMMO_FLAK = 'flak';
 export const AMMO_NAIL = 'nail';
@@ -12,27 +14,30 @@ export const AMMO_BOMB = 'bomb';
 export const WEAPONS = {
   pistol: {
     id: 'pistol', slot: 1, name: 'THE WIDOW',
-    blurb: 'Break-action flak pistol. Regenerates. Never leaves you naked.',
-    kind: 'flak', vm: 'pistol',
-    ammo: AMMO_FLAK, cost: 1, refire: 0.50,
-    flakSpeed: 138, blastRadius: 5.4, spread: 0.0, pellets: 1,
-    kick: 5.2, shakeAmount: 0.5, flash: 'flash_small', light: [1.0, 0.72, 0.34],
-    sfx: 'flak_fire', groundDamage: 34,
-    // What a burst does to a body: chance a part comes off, the extra chance
-    // that part is the head (a burst at head height), how many parts one
-    // burst may take, the shove, and the force at which the whole thing goes.
-    gore: { sever: 0.5, head: 0.8, parts: 1, knock: 7, gib: 0, lift: 2.5 },
+    blurb: 'A hand cannon with a grudge. Bottomless, loud, and it pops heads.',
+    // Hitscan and bottomless (cost 0): the gun you always have has to kill
+    // what is in front of it. A shot to the head does headMul times the damage.
+    kind: 'kinetic', vm: 'pistol',
+    ammo: AMMO_FLAK, cost: 0, refire: 0.30,
+    range: 42, damage: 34, headMul: 2.2, spread: 0.006, pellets: 1,
+    kick: 5.2, shakeAmount: 0.6, flash: 'flash_small', light: [1.0, 0.72, 0.34],
+    sfx: 'pistol_fire',
+    // What a hit does to a body: chance the part it hit comes off, the extra
+    // chance for the head, how many parts one hit may take, the shove, and the
+    // force at which the whole thing goes.
+    gore: { sever: 0.8, head: 1.0, parts: 1, knock: 9, gib: 0, lift: 2.5 },
   },
   splitter: {
     id: 'splitter', slot: 2, name: 'THE SPLITTER',
-    blurb: 'Three shells, one fuse. Brackets a target instead of threading it.',
+    blurb: 'Triple flak. Every shell bursts on whatever it passes: missiles, mutants, management.',
+    // The sky gun, so it has the sky's economy: one flak a pull, three shells.
     kind: 'flak', vm: 'splitter',
-    ammo: AMMO_FLAK, cost: 3, refire: 0.80,
-    flakSpeed: 126, blastRadius: 4.3, spread: 0.055, pellets: 3,
+    ammo: AMMO_FLAK, cost: 1, refire: 0.50,
+    flakSpeed: 126, blastRadius: 5.0, spread: 0.055, pellets: 3,
     kick: 9.5, shakeAmount: 1.1, flash: 'flash_medium', light: [1.0, 0.66, 0.3],
     sfx: 'flak_fire', groundDamage: 26,
     // Three shells, so up close three chances at a part each.
-    gore: { sever: 0.6, head: 0.5, parts: 2, knock: 9, gib: 0, lift: 3 },
+    gore: { sever: 0.85, head: 0.7, parts: 3, knock: 11, gib: 0, lift: 3.4 },
   },
   nailer: {
     id: 'nailer', slot: 3, name: 'THE NAILDRIVER',
@@ -43,18 +48,18 @@ export const WEAPONS = {
     kick: 2.4, shakeAmount: 0.35, flash: 'flash_plume', light: [1.0, 0.84, 0.5],
     sfx: 'nailer_fire',
     // Chips: damage piles up per part and a burst to one limb takes it off.
-    gore: { sever: 0.14, head: 0.3, parts: 1, knock: 0.4, gib: 0, lift: 0 },
+    gore: { sever: 0.24, head: 0.45, parts: 1, knock: 0.6, gib: 0, lift: 0 },
   },
   halo: {
     id: 'halo', slot: 4, name: 'THE HALO',
-    blurb: 'Detonates as a ring at your fuse range. Sweeps a whole altitude.',
+    blurb: 'Blooms into a ring of bursts at the first thing it meets. Sweeps a whole altitude.',
     kind: 'ring', vm: 'halo',
     ammo: AMMO_FLAK, cost: 8, refire: 1.25,
     flakSpeed: 116, blastRadius: 6.2, ringRadius: 15.5, ringCount: 7,
     spread: 0, pellets: 1,
     kick: 11, shakeAmount: 1.6, flash: 'flash_ring', light: [0.42, 0.95, 1.0],
     sfx: 'halo_fire', groundDamage: 30,
-    gore: { sever: 0.5, head: 0.4, parts: 2, knock: 9, gib: 0, lift: 3 },
+    gore: { sever: 0.75, head: 0.6, parts: 3, knock: 11, gib: 0, lift: 3.4 },
   },
   pipebomb: {
     id: 'pipebomb', slot: 5, name: 'PIPE BOMBS',
@@ -64,7 +69,7 @@ export const WEAPONS = {
     throwSpeed: 17, blastRadius: 6.2, damage: 130, fuse: 6.5, maxLive: 4,
     kick: 4.5, shakeAmount: 0.4, flash: 'flash_small', light: [1.0, 0.8, 0.5],
     sfx: 'pipebomb_throw', groundDamage: 130,
-    gore: { sever: 0.9, head: 0.5, parts: 4, knock: 18, gib: 70, lift: 5 },
+    gore: { sever: 1.0, head: 0.7, parts: 5, knock: 20, gib: 60, lift: 5.5 },
   },
   deadman: {
     id: 'deadman', slot: 6, name: "DEADMAN'S SWITCH",
@@ -89,7 +94,7 @@ export const BOOT = {
   id: 'boot', name: 'THE BOOT', vm: 'boot',
   refire: 0.52, range: 2.35, arc: 0.62, damage: 52,
   knockback: 13, liftKick: 3.2, shakeAmount: 1.3,
-  gore: { sever: 0.2, head: 1, parts: 1, knock: 13, gib: 0, lift: 3.2 },
+  gore: { sever: 0.35, head: 1, parts: 1, knock: 14, gib: 0, lift: 3.4 },
 };
 
 export const AMMO_MAX = { [AMMO_FLAK]: 180, [AMMO_NAIL]: 320, [AMMO_CHARGE]: 3, [AMMO_BOMB]: 12 };
