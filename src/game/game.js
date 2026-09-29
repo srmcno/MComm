@@ -826,9 +826,23 @@ export class Game {
       const axes = input.axes();
       p.moveWith(dt, axes, lv, this);
 
-      // The wheel changes weapons, the way every shooter since 1993 does.
-      if (input.wheel && !p.pendingWeapon) {
-        if (p.cycleWeapon(input.wheel > 0 ? 1 : -1)) this.sound.sfx('weapon_switch');
+      // The wheel changes weapons, the way every shooter since 1993 does, but
+      // only for a real notch. A touch-surface mouse or a trackpad sends a
+      // trickle of tiny wheel events while the hand just moves, and counting
+      // each one as a change flipped the gun back and forth mid-aim. The
+      // trickle is summed per gesture (it forgets after a quarter second of
+      // quiet), a change takes a notch's worth, and changes are spaced out.
+      if (input.wheel) {
+        if (this.time - (this._wheelAt || 0) > 0.25 || Math.sign(input.wheel) !== Math.sign(this._wheelSum || 0)) {
+          this._wheelSum = 0;
+        }
+        this._wheelAt = this.time;
+        this._wheelSum = (this._wheelSum || 0) + input.wheel;
+        if (Math.abs(this._wheelSum) >= 0.9 && !p.pendingWeapon && this.time >= (this._wheelNext || 0)) {
+          if (p.cycleWeapon(this._wheelSum > 0 ? 1 : -1)) this.sound.sfx('weapon_switch');
+          this._wheelSum = 0;
+          this._wheelNext = this.time + 0.3;
+        }
       }
       for (let s = 1; s <= 6; s++) if (input.justPressed('slot' + s)) {
         if (p.selectSlot(s)) this.sound.sfx('weapon_switch');

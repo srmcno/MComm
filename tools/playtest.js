@@ -911,6 +911,34 @@ check('the d-pad and B/Circle do not leak menu actions into play',
   s.state === 'play' && s.next !== 'pistol' && s.moved < 0.05 && s.dpad !== 'pistol',
   `state ${s.state}, B picked ${s.next}, walked ${s.moved} cells, d-pad picked ${s.dpad}`);
 
+// ------ 28b. the wheel changes guns on a real notch, not on the trickle a
+// touch-surface mouse or trackpad sends while the hand is only aiming
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  window.T.arm('pistol');
+  const inp = g.input;
+  const frame = (w) => { inp.wheel = w; g.update(1 / 60, inp); inp.wheel = 0; };
+  let flips = 0, last = g.player.weapon;
+  const watch = () => { const w = g.player.pendingWeapon || g.player.weapon; if (w !== last) { flips++; last = w; } };
+  // Two seconds of aiming with a jittery surface: tiny deltas both ways.
+  for (let i = 0; i < 120; i++) { frame(i % 3 === 0 ? 0.04 : i % 3 === 1 ? -0.03 : 0.02); watch(); }
+  const trickle = flips;
+  for (let i = 0; i < 60; i++) { frame(0); watch(); }
+  // One notch, then another straight after: one change, then the second once
+  // the first has had its moment.
+  frame(1); watch();
+  for (let i = 0; i < 4; i++) { frame(0); watch(); }
+  frame(1); watch();
+  const quick = flips;
+  for (let i = 0; i < 90; i++) { frame(0); watch(); }
+  frame(1); watch();
+  for (let i = 0; i < 60; i++) { frame(0); watch(); }
+  return { trickle, quick, total: flips };
+});
+check('a trickle of tiny wheel deltas never changes guns; a notch changes once, and notches are spaced',
+  s.trickle === 0 && s.quick === 1 && s.total === 2, `trickle ${s.trickle}, two quick notches ${s.quick}, then ${s.total}`);
+
 // -------------------------------- 29. a pad that vanishes lets go of the trigger
 s = await page.evaluate(() => {
   const g = window.NUKEHAUS.game;
