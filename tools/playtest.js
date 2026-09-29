@@ -911,6 +911,47 @@ check('the d-pad and B/Circle do not leak menu actions into play',
   s.state === 'play' && s.next !== 'pistol' && s.moved < 0.05 && s.dpad !== 'pistol',
   `state ${s.state}, B picked ${s.next}, walked ${s.moved} cells, d-pad picked ${s.dpad}`);
 
+// ------ 28a. a shut roof is a shut room: the walls round a deck are full
+// height (no ceiling showing over a berm, no window onto the void), and the
+// ceiling is well above the warden's head
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game;
+  const { CEIL_H, PARAPET_H } = await import('./src/core/world.js');
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  const lv = g.level;
+  const berms = [];
+  for (let i = 0; i < lv.parapet.length; i++) if (lv.parapet[i]) berms.push(i);
+  const shut = berms.every((i) => Math.abs(lv.wallHeight(i) - CEIL_H) < 1e-6);
+  lv.roofOpen = 1;
+  const open = berms.every((i) => Math.abs(lv.wallHeight(i) - PARAPET_H) < 1e-6);
+  lv.roofOpen = 0;
+  // Photograph it: from a deck cell facing a berm, with the roof shut, the wall's
+  // top edge has to be where a full-height wall's would be.
+  let spot = null;
+  for (let y = 3; y < lv.H - 3 && !spot; y++) for (let x = 3; x < lv.W - 3 && !spot; x++) {
+    const i = y * lv.W + x;
+    if (!lv.roofPanel[i] || lv.wall[i]) continue;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      if (lv.parapet[(y + 2 * dy) * lv.W + x + 2 * dx] && !lv.blocked(x + 0.5 + dx, y + 0.5 + dy)) { spot = { x: x + 0.5, y: y + 0.5, ang: Math.atan2(dy, dx) }; break; }
+    }
+  }
+  let err = null;
+  if (spot) {
+    g.player.x = spot.x; g.player.y = spot.y; g.player.ang = spot.ang; g.player.pitch = 0;
+    window.T.step(0.05);
+    window.NUKEHAUS.renderOnce();
+    const rc = g.rc, c = rc.w >> 1;
+    const dist = rc.zbuf[c];
+    const horizon = (rc.h * 0.5 + g.player.pitch) | 0;
+    const want = Math.max(0, Math.ceil(horizon - ((CEIL_H - g.player.z) * rc.projY) / dist));
+    err = Math.abs(rc.wallTop[c] - want);
+  }
+  return { n: berms.length, shut, open, ceil: CEIL_H, eye: g.player.z, err, spot: !!spot };
+});
+check('with the roof shut every berm is a full wall, open it and they drop to parapets, and the ceiling clears the warden',
+  s.n > 0 && s.shut && s.open && s.spot && s.err <= 1 && s.ceil > s.eye * 2,
+  `${s.n} berms, shut ${s.shut}, open ${s.open}, wall top off by ${s.err} rows, ceiling ${s.ceil} over eyes at ${s.eye}`);
+
 // ------ 28b. the wheel changes guns on a real notch, not on the trickle a
 // touch-surface mouse or trackpad sends while the hand is only aiming
 s = await page.evaluate(() => {
@@ -1903,6 +1944,7 @@ s = await page.evaluate(async () => {
   const g = window.NUKEHAUS.game, G = window.GORE;
   G.arena();
   const lv = g.level;
+  lv.roofOpen = 1;                // a berm is only a berm while the roof is open
   const out = {};
   let cell = null;
   for (let y = 1; y < lv.H - 1 && !cell; y++) for (let x = 2; x < lv.W - 1 && !cell; x++) {

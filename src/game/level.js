@@ -3,6 +3,7 @@
 // and the roof panels that grind open when a siege starts.
 
 import { clamp, damp } from '../core/math.js';
+import { CEIL_H, PARAPET_H } from '../core/world.js';
 import { ensureTextures } from '../engine/textures.js';
 
 export const CELL_EMPTY = 0;
@@ -13,7 +14,7 @@ export const CELL_SECRET = 3;
 const DOOR_SPEED = 1.7;       // fraction of a cell per second
 const DOOR_HOLD = 4.5;        // seconds a door stays open before closing itself
 const PUSH_STEP_TIME = 0.34;  // seconds per cell a pushwall travels
-export const PARAPET_H = 0.44;
+export { PARAPET_H, CEIL_H };
 
 export class Level {
   /**
@@ -33,7 +34,11 @@ export class Level {
     this.floorTex = new Int16Array(n).fill(-1);
     this.ceilTex = new Int16Array(n).fill(-1);
     this.sky = new Uint8Array(n);
-    this.height = new Float32Array(n).fill(1);
+    this.height = new Float32Array(n).fill(CEIL_H);
+    // A parapet is only a berm while there is open sky beside it. Shut, it is
+    // the wall it always was; this remembers what that wall looked like.
+    this.parapet = new Uint8Array(n);
+    this.wallTexShut = new Int16Array(n);
     this.doorOpen = new Float32Array(n);
     this.doorVert = new Int8Array(n);       // 0 none, 1 plane at x+0.5, 2 plane at y+0.5
     this.doorKind = new Uint8Array(n);      // 0 free, 1 red, 2 blue, 3 gold
@@ -159,6 +164,8 @@ export class Level {
         if (y > 0 && this.roofPanel[i - W]) touchesSky = true;
         if (y < H - 1 && this.roofPanel[i + W]) touchesSky = true;
         if (touchesSky) {
+          this.parapet[i] = 1;
+          this.wallTexShut[i] = this.wallTex[i];
           this.height[i] = PARAPET_H;
           // Parapets get their own capping material so the silhouette reads,
           // and not the same three bags every time.
@@ -252,10 +259,10 @@ export class Level {
   blockedAt(x, y, z) {
     if (x < 0 || y < 0 || x >= this.W || y >= this.H) return false;
     const i = this.idx(x, y);
-    if (this.propBlock[i] && z < (this.propH[i] || 0.95)) return true;
+    if (this.propBlock[i] && z < (this.propH[i] || CEIL_H - 0.05)) return true;
     const c = this.wall[i];
-    if (c === CELL_SOLID) return z < this.height[i];
-    if (c === CELL_DOOR) return z < 1 && this.blocked(x, y);
+    if (c === CELL_SOLID) return z < this.wallHeight(i);
+    if (c === CELL_DOOR) return z < CEIL_H && this.blocked(x, y);
     return false;
   }
 
@@ -270,9 +277,18 @@ export class Level {
     const i = this.idx(x, y);
     if (this.propBlock[i] && (this.propH[i] === 0 || z < this.propH[i])) return true;
     const c = this.wall[i];
-    if (c === CELL_SOLID) return this.height[i] >= 1 || z < this.height[i];
+    if (c === CELL_SOLID) { const h = this.wallHeight(i); return h >= CEIL_H - 0.01 || z < h; }
     if (c === CELL_DOOR) return this.blocked(x, y);
     return false;
+  }
+
+  /**
+   * How tall the wall in cell i stands right now. A parapet is a berm only
+   * while the roof is open; with the roof shut it is a full wall, whichever
+   * side you look at it from.
+   */
+  wallHeight(i) {
+    return this.parapet[i] && this.roofOpen < 0.02 ? CEIL_H : this.height[i];
   }
 
   /**
@@ -283,7 +299,7 @@ export class Level {
   restAt(x, y) {
     if (x < 0 || y < 0 || x >= this.W || y >= this.H) return 0;
     const i = this.idx(x, y);
-    if (this.wall[i] === CELL_SOLID) return this.height[i] < 1 ? this.height[i] : 0;
+    if (this.wall[i] === CELL_SOLID) { const h = this.wallHeight(i); return h < CEIL_H - 0.01 ? h : 0; }
     return this.propBlock[i] && this.propH[i] > 0 ? this.propH[i] : 0;
   }
 
@@ -291,7 +307,7 @@ export class Level {
   opaque(x, y) {
     if (x < 0 || y < 0 || x >= this.W || y >= this.H) return true;
     const i = this.idx(x, y);
-    if (this.wall[i] === CELL_SOLID) return this.height[i] > 0.7;
+    if (this.wall[i] === CELL_SOLID) return this.wallHeight(i) > 0.7;
     if (this.wall[i] === CELL_DOOR) return this.doorOpen[i] < 0.6;
     return false;
   }
@@ -412,8 +428,8 @@ export class Level {
           this.pushwalls.splice(n, 1); continue;
         }
         const to = ny * W + nx;
-        this.wall[from] = CELL_EMPTY; this.wallTex[from] = 0; this.height[from] = 1;
-        this.wall[to] = CELL_SOLID; this.wallTex[to] = p.tex; this.height[to] = 1;
+        this.wall[from] = CELL_EMPTY; this.wallTex[from] = 0; this.height[from] = CEIL_H;
+        this.wall[to] = CELL_SOLID; this.wallTex[to] = p.tex; this.height[to] = CEIL_H;
         p.x = nx; p.y = ny; p.steps++;
         onDoorEvent && onDoorEvent('push', p.x + 0.5, p.y + 0.5);
         if (p.steps >= p.max) this.pushwalls.splice(n, 1);

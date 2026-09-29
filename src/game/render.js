@@ -3,6 +3,7 @@
 
 import { rgba, mix } from '../core/pixels.js';
 import { clamp, lerp, damp, commas, mmss, dist3, TAU } from '../core/math.js';
+import { CEIL_H } from '../core/world.js';
 import { Text, fillRectBuf, addRectBuf, lineBuf, blitFrame } from '../ui/text.js';
 import { WARHEAD_TYPES } from './sky.js';
 import { ST } from './entities.js';
@@ -134,7 +135,7 @@ export function renderWorld(game, W, H) {
     S.push({
       x: it.x, y: it.y, z: (it.z || 0) + bob,
       frame: f,
-      h: it.kind === 'pillar' ? 0.95 : it.kind === 'barrel' ? 0.62 : it.kind === 'lamp' ? 0.16 : 0.34,
+      h: it.kind === 'pillar' ? CEIL_H - 0.03 : it.kind === 'barrel' ? 0.62 : it.kind === 'lamp' ? 0.16 : 0.34,
       emissive: it.kind === 'lamp' || it.kind === 'flare',
     });
   }

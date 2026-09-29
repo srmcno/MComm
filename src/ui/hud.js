@@ -857,7 +857,7 @@ export class Hud {
           continue;
         }
         if (lv.wall[i] === 1) {
-          const c = lv.height[i] < 0.9 ? rgba(126, 112, 70, 255) : rgba(104, 108, 122, 255);
+          const c = lv.wallHeight(i) < 0.9 ? rgba(126, 112, 70, 255) : rgba(104, 108, 122, 255);
           fillRectBuf(buf, W, H, px, py, cell, cell, c, 0.95);
         } else if (lv.wall[i] === 2) {
           const k = lv.doorKind[i];

@@ -14,9 +14,10 @@
 
 import { TEX } from '../core/pixels.js';
 import { clamp } from '../core/math.js';
+import { CEIL_H, PARAPET_H } from '../core/world.js';
 
 export const WALL_WORLD_HEIGHT = 1.0;
-export const PARAPET_HEIGHT = 0.44;
+export const PARAPET_HEIGHT = PARAPET_H;
 
 export class Raycaster {
   constructor() {
@@ -123,7 +124,7 @@ export class Raycaster {
 
   _castWalls(lv, cam, art, light, opts, horizon, dirX, dirY, planeX, planeY) {
     const { w, h, buf, zbuf, wallTop, wallBot, skyTop } = this;
-    const { wall, wallTex, doorOpen, doorVert, height, sky, W, H } = lv;
+    const { wall, wallTex, doorOpen, doorVert, height, sky, W, H, parapet, wallTexShut } = lv;
     const atlas = art.texAtlas, emis = art.texEmissive;
     const projY = this.projY;
     const eye = cam.z;
@@ -142,7 +143,7 @@ export class Raycaster {
       if (rdy < 0) { stepY = -1; sdy = (cam.y - mapY) * ddy; }
       else { stepY = 1; sdy = (mapY + 1 - cam.y) * ddy; }
 
-      let side = 0, dist = 0, tex = 0, u = 0, hit = false, wallH = 1.0;
+      let side = 0, dist = 0, tex = 0, u = 0, hit = false, wallH = CEIL_H;
       // The cell the ray was standing in when it hit. You can only see the
       // horizon over a parapet if THAT cell has no roof on it right now.
       let nearIdx = -1;
@@ -171,7 +172,7 @@ export class Raycaster {
             // The art rides with the slab, and reads the right way round from
             // either side of it.
             u = uu - open; if (rdx < 0) u = 1 - u;
-            dist = t; side = 0; tex = wallTex[idx]; hit = true; wallH = 1; break;
+            dist = t; side = 0; tex = wallTex[idx]; hit = true; wallH = CEIL_H; break;
           } else {                              // plane at y = mapY + 0.5
             const t = (mapY + 0.5 - cam.y) / rdy;
             if (t <= 0) continue;
@@ -180,7 +181,7 @@ export class Raycaster {
             let uu = hx - mapX;
             if (uu < open) continue;
             u = uu - open; if (rdy > 0) u = 1 - u;
-            dist = t; side = 1; tex = wallTex[idx]; hit = true; wallH = 1; break;
+            dist = t; side = 1; tex = wallTex[idx]; hit = true; wallH = CEIL_H; break;
           }
         }
 
@@ -194,6 +195,11 @@ export class Raycaster {
         if ((side === 0 && rdx < 0) || (side === 1 && rdy > 0)) u = 1 - u;
         tex = wallTex[idx];
         wallH = height[idx];
+        // A berm is only a berm seen from open sky. From anywhere else, and
+        // from every side once the roof has shut, it is the full wall it was
+        // built as: otherwise the ceiling shows over the top of it, and it
+        // looks like a window onto the void.
+        if (parapet[idx] && !(nearIdx >= 0 && sky[nearIdx])) { wallH = CEIL_H; tex = wallTexShut[idx]; }
         hit = true;
         break;
       }
@@ -221,7 +227,7 @@ export class Raycaster {
       // parapet whose deck still has its roof on: the panels grind back over
       // several seconds, and the sky belongs to the cells they have cleared,
       // not to every short wall on the map.
-      const openHere = wallH < 0.999 && nearIdx >= 0 && sky[nearIdx];
+      const openHere = wallH < CEIL_H - 0.001 && nearIdx >= 0 && sky[nearIdx];
       skyTop[c] = openHere ? drawStart : 0;
       if (openHere) this.needSky[c] = 1;
 
@@ -256,7 +262,7 @@ export class Raycaster {
       // raycast wall its weight. A parapet's top is an exposed edge, not a
       // crease, and a glowing screen casts no shadow on itself.
       const ao = em < 0.999;
-      const aoTop = ao && wallH >= 0.999;
+      const aoTop = ao && wallH >= CEIL_H - 0.001;
       const invTex = 1 / TEX;
 
       for (let y = drawStart; y <= drawEnd; y++) {
@@ -287,7 +293,7 @@ export class Raycaster {
     const decalAtlas = art.decalAtlas;
     const projY = this.projY;
     const eye = cam.z;
-    const ceilH = 1.0;
+    const ceilH = CEIL_H;
     const fogFar = opts.fogFar, fogColor = opts.fogColor;
     const fr = fogColor & 255, fg = (fogColor >>> 8) & 255, fb = (fogColor >>> 16) & 255;
 

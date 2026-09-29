@@ -2234,6 +2234,32 @@ bake('nailer', 0.2, 5, (d, sr, R) => {
   kSat(d, 1.6);
 });
 
+// THE NAILDRIVER as a proper machine gun: a hard crack, a chest thump under
+// it, the receiver's bark, the bolt slapping home, and brass on the deck. Five
+// variants, so a burst never sounds like one sample stuttering.
+bake('chaingun', 0.24, 5, (d, sr, R) => {
+  const j = 1 + (R() - 0.5) * 0.1;
+  kClick(d, sr, 0, 1.15, 2);
+  kNoise(d, sr, R, 0, 0.012, { type: 'hp', f0: 3800, q: 0.8, atk: 0.0001, tau: 0.003, amp: 4.4 });
+  kThump(d, sr, 0.0004, 150 * j, 52 * j, 0.011, 0.045, 1.25, 3.4, 0.0004);
+  kThump(d, sr, 0.0008, 78 * j, 44 * j, 0.02, 0.07, 0.6, 1.6, 0.001);
+  kMode(d, sr, 0.0004, 3100 * j, 0.008, 0.36);
+  kMode(d, sr, 0.0004, 5020 * j, 0.005, 0.24);
+  kMode(d, sr, 0.0008, 1180 * j, 0.016, 0.34);
+  kMode(d, sr, 0.001, 440 * j, 0.024, 0.46);
+  kNoise(d, sr, R, 0, 0.07, { type: 'bp', f0: 1500, f1: 520, q: 1.3, atk: 0.0004, tau: 0.016, amp: 5.2 });
+  kNoise(d, sr, R, 0.004, 0.16, { type: 'lp', f0: 6200, f1: 380, sw: 0.1, q: 1, atk: 0.001, tau: 0.04, amp: 3.6, col: 1 });
+  kSlap(d, sr, [[0.008, 0.3], [0.017, 0.2], [0.03, 0.12], [0.05, 0.07]], 0.24);
+  kSat(d, 2.1);
+  kNorm(d, 1);
+  // the bolt going home, and the empty brass
+  const b = 0.052 + R() * 0.01;
+  kClick(d, sr, b, 0.09, 3);
+  kMode(d, sr, b, 2600 * j, 0.007, 0.08);
+  kThump(d, sr, b, 380, 220, 0.006, 0.012, 0.1, 1.4);
+  kMode(d, sr, 0.11 + R() * 0.04, 4300 * j, 0.012, 0.05);
+});
+
 // THE HALO. Spin-up whine, a whoomp you feel in your teeth, a hot crackle, and
 // the ring of the emitter hanging in the air after.
 bake('halo', 1.5, 1, (d, sr, R) => {
@@ -2401,8 +2427,12 @@ const SFX = {
   },
 
   nailer_fire(S, t, o) {
-    const v = V(S, o, 8, 0.16, 0); if (!v) return;
-    smp(S, v, t, 'nailer', { g: 0.85, rate: jr(S, o, 0.07) });
+    const v = V(S, o, 8, 0.18, 0.05); if (!v) return;
+    const r = jr(S, o, 0.06);
+    smp(S, v, t, 'chaingun', { g: 1.05, rate: r });
+    // the chest of it, which a baked mono sample cannot put in stereo
+    S._tone(v, t, 0.09, { type: 'sine', f: 82 * r, f2: 40, sweep: 0.05, g: 0.34, atk: 0.001, dec: 0.08 });
+    S._nz(v, t + 0.004, 0.22, { type: 'lowpass', f: 1700 * r, f2: 150, q: 0.8, g: 0.16, atk: 0.002, dec: 0.2, pink: true });
   },
 
   halo_fire(S, t, o) {

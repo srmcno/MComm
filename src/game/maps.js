@@ -736,8 +736,8 @@ export const DECOR = {
   console: { h: 0.62, solid: true, wall: true },
   plant: { h: 0.62, wall: true },
   mop: { h: 0.58, wall: true },
-  chains: { h: 0.62, z: 0.38, hang: true },
-  hook: { h: 0.7, z: 0.3, hang: true },
+  chains: { h: 0.62, z: 0.72, hang: true },   // hung from the ceiling (core/world.js CEIL_H, 1.34)
+  hook: { h: 0.7, z: 0.64, hang: true },
   corpse: { h: 0.26, max: 5 },
   corpse2: { h: 0.24, max: 5 },
   nosecone: { h: 0.92, solid: true, max: 3, apart: 8 },

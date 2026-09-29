@@ -41,14 +41,14 @@ export const WEAPONS = {
   },
   nailer: {
     id: 'nailer', slot: 3, name: 'THE NAILDRIVER',
-    blurb: 'A rivet gun that forgot its job. Hopeless against the sky.',
+    blurb: 'A rivet gun that forgot its job, and found a better one. Hopeless against the sky.',
     kind: 'kinetic', vm: 'nailer',
-    ammo: AMMO_NAIL, cost: 1, refire: 0.082,
-    projectileSpeed: 62, range: 26, damage: 17, spread: 0.028, pellets: 1,
-    kick: 2.4, shakeAmount: 0.35, flash: 'flash_plume', light: [1.0, 0.84, 0.5],
+    ammo: AMMO_NAIL, cost: 1, refire: 0.078,
+    projectileSpeed: 62, range: 28, damage: 22, spread: 0.026, pellets: 1,
+    kick: 3.4, shakeAmount: 0.6, flash: 'flash_plume', light: [1.0, 0.84, 0.5],
     sfx: 'nailer_fire',
     // Chips: damage piles up per part and a burst to one limb takes it off.
-    gore: { sever: 0.24, head: 0.45, parts: 1, knock: 0.6, gib: 0, lift: 0 },
+    gore: { sever: 0.3, head: 0.5, parts: 1, knock: 1.5, gib: 0, lift: 0 },
   },
   halo: {
     id: 'halo', slot: 4, name: 'THE HALO',

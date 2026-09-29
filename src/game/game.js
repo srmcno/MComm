@@ -15,6 +15,7 @@ import { Text, blitFrame, fillRectBuf, addRectBuf } from '../ui/text.js';
 import { parseLevelDef } from '../engine/assets.js';
 import { clamp, damp, lerp, dist, dist3, wrapAngle, makeRng, randRange, commas, TAU } from '../core/math.js';
 import { rgba } from '../core/pixels.js';
+import { CEIL_H } from '../core/world.js';
 import { recordRun, bestFor } from '../core/scores.js';
 import {
   Radio, LEVEL_STORY, LEVEL_STORY_SETS, BRICK_LINES, EXES, MUTTER_MUTANT, MUTTER_BRICK_FILE, MUTTER_GORE,
@@ -304,7 +305,7 @@ export class Game {
           r: warm ? 1.0 : 0.92, g: warm ? 0.62 : 0.88, b: warm ? 0.28 : 0.82,
           intensity: warm ? 0.85 : 0.72, radius: warm ? 6.5 : 8.2, flicker: warm ? 0.28 : 0.05,
         });
-        this.items.push({ kind: e.kind, x: e.x, y: e.y, z: e.kind === 'lamp' ? 0.86 : 0.7, prop: true, taken: false });
+        this.items.push({ kind: e.kind, x: e.x, y: e.y, z: e.kind === 'lamp' ? CEIL_H - 0.14 : 0.7, prop: true, taken: false });
       } else if (e.kind === 'pillar' || e.kind === 'barrel') {
         this.items.push({
           kind: e.kind, x: e.x, y: e.y, z: 0, prop: true, taken: false,
@@ -1825,7 +1826,7 @@ export class Game {
       const px = x + dx * t, py = y + dy * t, pz = z + dz * t;
       // Height-aware, so a round clears a sandbag pile it passes over, but a
       // full-height wall or a pillar stops it however high it is pitched.
-      if (pz < 0.02 || pz > 1.5 || this.level.blockedShot(px, py, pz)) {
+      if (pz < 0.02 || pz > CEIL_H || this.level.blockedShot(px, py, pz)) {
         return { wall: true, enemy: null, item: null, x: px - dx * step, y: py - dy * step, z: pz };
       }
       for (const e of this.enemies) {
