@@ -195,6 +195,22 @@ facing one:
   they hit on the way. **Ceiling lamps** can be shot out.
 - **Crates** may have supplies in them. Barrels, as ever, explode.
 
+## Writing on the walls
+
+Blood that hits a bare wall is sometimes a word. Once in a great while a splash
+spells something (FUCK, SHIT, worse) in dripping capitals at the height it
+landed, at most five times on a floor.
+
+And somebody else writes there, too. **The Scribe** is a stick figure who is
+too tall for the ceiling and has been in the bunker a great deal longer than
+you have. He turns up in front of a wall every minute or two, writes a short
+message on it in blood (a finger, a letter at a time, drips and all), giggles
+in a high voice, and is gone. Sometimes he does it invisible and you only see
+the words arrive. He never touches you and cannot be hit: a shot that passes
+through him makes him laugh and go. If you get close he finishes in a hurry.
+The writing is a real layer on the wall face that the raycaster blends in per
+pixel (`src/game/scrawl.js`), so it sits in the light and fog like the wall does.
+
 ## What is down there
 
 The bunker's staff are still on shift, after a fashion. Four of them are no
@@ -277,9 +293,10 @@ modest hardware and sharpens up when it can.
 ## Tests
 
 ```
-node tools/playtest.js            # 110 gameplay assertions in a real browser
+node tools/playtest.js            # 114 gameplay assertions in a real browser
 node tools/audio-integration.js   # static coverage + live audio graph measurement
 node tools/speech-check.js        # voice casting, captions, timing, fallback (mocked browsers)
+node tools/scrawl-check.js        # the wall messages: font coverage, fit, curses, faces
 node tools/campaign.js [0|1|2]    # a bot plays the whole game and reports balance
 node tools/smoke.js               # boots, drives the UI, screenshots, frame cost
 node tools/beauty.js              # composes specific scenes and photographs them

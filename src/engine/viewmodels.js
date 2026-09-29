@@ -3044,8 +3044,8 @@ function drawPipebomb3(sc, P) {
 // ---------------------------------------------------------------------------
 
 const SAW3 = {
-  pos: [6.8, 5.6, 12], yaw: -0.3, pitch: 0.02, roll: 0.5,
-  barFrom: 13.6, barTo: 44, barTop: 0.4, barBot: 8.4,
+  pos: [9.6, 3.4, 15], yaw: -0.56, pitch: 0.1, roll: 0.14,
+  barFrom: 13.6, barTo: 68, barTop: 0.4, barBot: 8.4,
 };
 const SAW_ORANGE = rgba(222, 104, 26, 255);
 
@@ -3109,6 +3109,9 @@ function drawSaw3(sc, P) {
   // the clutch cover the bar bolts to, and the bar's own mounting plate
   tube3(sc, [-2.9, 3.6, 13.2], [2.9, 3.6, 13.2], 3.5, 3.5, dark, { segs: 20, capStart: 'flat', capEnd: 'flat' });
   box3(sc, -1.1, B.barTop - 0.1, B.barFrom - 1.6, 1.1, B.barBot + 0.1, B.barFrom + 1.4, steel);
+  // the exhaust: a short dark stub up on the rear of the housing, which is where the smoke comes out
+  tube3(sc, [2.0, 0.2, 9.4], [2.0, -1.9, 9.4], 1.0, 0.85, dark, { segs: 12, capStart: 'flat', capEnd: 'flat' });
+  tube3(sc, [2.0, -1.9, 9.4], [2.0, -2.2, 9.4], 0.6, 0.6, paint3(rgba(18, 16, 16, 255), { seed: 197 }), { segs: 12, capStart: 'flat', capEnd: 'flat' });
   // fuel cap and pull-start on the back, because it is a real saw
   tube3(sc, [1.5, -1.5, 5.2], [1.5, -2.2, 5.2], 1.3, 1.3, paint3(rgba(190, 40, 30, 255), { seed: 193 }), { segs: 12, capEnd: 'flat', capStart: 'flat' });
   box3(sc, -0.7, 2.6, -1.0, 0.7, 5.0, 0.2, dark);
@@ -3172,7 +3175,7 @@ function drawSaw3(sc, P) {
     tattoo: { u: 14, v: 0.35, s: 2.4, word: 'NUKE' }, seed: 13,
   });
 
-  return { muzzle: [0, cyB, B.barTo + 0.5] };
+  return { muzzle: [0, cyB, B.barTo + 0.5], exhaust: [2.0, -2.4, 9.4] };
 }
 
 // ---------------------------------------------------------------------------
@@ -3241,6 +3244,12 @@ function buildWeapon3(out, name) {
     const info = def.draw(sc, pose.P || {}) || {};
     const m = info.muzzle || [0, 0, 20];
     const mz = mP(sc.M, m[0], m[1], m[2]);
+    let exP = null;
+    if (info.exhaust) {
+      const ex = mP(sc.M, info.exhaust[0], info.exhaust[1], info.exhaust[2]);
+      const [exx, exy] = proj(ex);
+      exP = [exx, exy, ex[2]];
+    }
     pop3(sc);
     const cv = resolve3(sc);
     const [fx, fy] = proj(mz);
@@ -3257,6 +3266,7 @@ function buildWeapon3(out, name) {
     // where the bore ends in this frame, and how big a centimetre is there:
     // render.js hangs the flash sprite on it
     f.mz = [fx, fy, CAM_F / mz[2]];
+    if (exP) f.ex = [exP[0], exP[1], CAM_F / exP[2]];
     f.cx = CAM_CX; f.cy = CAM_CY;
     out[name + '_' + k] = f;
   }

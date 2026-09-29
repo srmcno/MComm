@@ -57,6 +57,8 @@ export class Level {
     this.decal = new Int16Array(n).fill(-1); // floor decal index, -1 for none
     this.decalAge = new Float32Array(n);
     this.roofOpen = 0;                      // 0..1 how far the roof has ground back
+    // Writing on wall faces (scrawl.js): key = cell * 4 + face, value = { strip, ws, off }.
+    this.scrawl = new Map();
 
     const tex = (name, fallback = 0) => {
       const i = art.texIndex.get(name);

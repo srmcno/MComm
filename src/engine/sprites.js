@@ -3282,6 +3282,7 @@ export function buildSprites() {
   paintMawSet(frames);
   paintGore(frames);
   paintProps(frames);
+  paintScribe(frames);
   paintSky(frames);
   paintDecals(frames);
   return { frames, maim: makeMaim(frames, recipes), rig };
@@ -4847,6 +4848,69 @@ function paintPillarStyle(style) {
   }
   return finishProp(f);
 }
+// ---------------------------------------------------------------------------
+// THE SCRIBE - a tall stick figure with a grin, who writes on walls in blood
+// ---------------------------------------------------------------------------
+
+/**
+ * Chalk-white matchstick limbs a little too long, a round head, two black
+ * holes and a wide smile, and red hands. Painted flat: he is a drawing that
+ * got up. Six poses: standing, writing (two strokes), waving (two) and the
+ * stiff stare he gives you when you have spotted him.
+ */
+function paintScribe(out) {
+  const W = 56, H = 112, CX = 28;
+  const BONE = rgba(230, 224, 208, 255), BONE2 = rgba(166, 160, 148, 255);
+  const BLACK = rgba(8, 5, 8, 255), RED = rgba(158, 10, 14, 255), RED2 = rgba(214, 30, 30, 255);
+  const pose = (o) => {
+    const f = makeFrame(W, H);
+    const st = (x0, y0, x1, y1) => { line(f, x0, y0, x1, y1, BONE); line(f, x0 + 1, y0, x1 + 1, y1, BONE2); };
+    const tilt = o.tilt || 0;
+    // legs, torso
+    st(CX, 64, CX - 9, 88); st(CX - 9, 88, CX - 11, 109); st(CX - 15, 110, CX - 8, 110);
+    st(CX, 64, CX + 9, 88); st(CX + 9, 88, CX + 11, 109); st(CX + 7, 110, CX + 14, 110);
+    st(CX, 23, CX, 64); st(CX + 1, 23, CX + 1, 64);
+    // arms: shoulder, elbow, hand
+    const arm = (a) => {
+      st(CX, 28, a[0], a[1]); st(a[0], a[1], a[2], a[3]);
+      fillCircle(f, a[2], a[3], 2.2, RED);
+      // three red fingers
+      for (let i = -1; i <= 1; i++) line(f, a[2], a[3], a[2] + i * 2 + (a[2] > CX ? 1 : -1), a[3] + (o.up ? -4 : 4), RED2);
+    };
+    arm(o.l); arm(o.r);
+    // head: a circle, tilted, with two black holes and a smile
+    const hx = CX + tilt, hy = 13;
+    fillCircle(f, hx, hy, 9.5, BONE);
+    for (let y = -9; y <= 9; y++) for (let x = 3; x <= 9; x++) if (x * x + y * y <= 90 && x * x + y * y > 40) px(f, hx + x, hy + y, BONE2);
+    // two black holes with a pin of white, brows knotted down to a point
+    for (const ex of [-4, 4]) {
+      fillRect(f, hx + ex - 1, hy - 5, 4, 6, BLACK);
+      px(f, hx + ex + (o.stare ? 0 : ex > 0 ? 1 : 0), hy - 3, rgba(244, 244, 244, 255));
+      line(f, hx + ex - 2, hy - 6 - (ex > 0 ? 0 : 1), hx + ex + 3, hy - 6 - (ex > 0 ? 1 : 0), BLACK);
+    }
+    // a smile that goes on past where a smile should stop: a black lens with teeth along the top
+    const wide = o.grin || 8;
+    for (let x = -wide; x <= wide; x++) {
+      const q = (x / wide) * (x / wide);
+      const yt = hy + 3 + Math.round(1.6 * q), yb = hy + 4 + Math.round(5 * (1 - q));
+      for (let y = yt; y <= yb; y++) px(f, hx + x, y, BLACK);
+      if (x % 2 === 0 && x > -wide + 1 && x < wide - 1) { px(f, hx + x, yt + 1, BONE); px(f, hx + x, yb - 1, BONE); }
+    }
+    px(f, hx - wide - 1, hy + 4, RED); px(f, hx + wide + 1, hy + 4, RED); px(f, hx - wide, hy + 9, RED2); px(f, hx + wide - 2, hy + 10, RED);
+    // he is writing: blood runs off the finger
+    if (o.drip) for (let k = 0; k < 6; k++) px(f, o.r[2] + 1, o.r[3] + 3 + k, k > 3 ? RED : RED2);
+    outline(f, BLACK);
+    return f;
+  };
+  const down = (dx) => [CX + dx * 11, 46, CX + dx * 13, 67];
+  out.scribe_stand = pose({ l: down(-1), r: down(1), tilt: 4 });
+  out.scribe_write0 = pose({ l: down(-1), r: [CX + 14, 35, CX + 25, 40], tilt: 6, up: true, drip: true });
+  out.scribe_write1 = pose({ l: down(-1), r: [CX + 14, 41, CX + 26, 47], tilt: 7, up: true, drip: true });
+  out.scribe_wave0 = pose({ l: down(-1), r: [CX + 12, 16, CX + 16, 2], tilt: -5, up: true, grin: 9, stare: true });
+  out.scribe_wave1 = pose({ l: down(-1), r: [CX + 13, 17, CX + 22, 4], tilt: 1, up: true, grin: 9, stare: true });
+  out.scribe_peek = pose({ l: [CX - 10, 50, CX - 12, 76], r: [CX + 10, 50, CX + 12, 76], tilt: 9, grin: 9, stare: true });
+}
+
 function paintProps(out) {
   out.key_red = paintKey(rgba(206, 46, 42, 255));
   out.key_blue = paintKey(rgba(56, 118, 224, 255));
