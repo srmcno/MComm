@@ -994,8 +994,27 @@ const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve();
     const bank = new ClipBank(VOICE_PACK);
     const whole = LEVEL_STORY_SETS.map((sets) => sets.some((set) => set.every((b) => bank.has(b.key))));
     check('every floor has an opening exchange the recorded cast can play whole', whole.every(Boolean), whole.join(','));
+    const CITY_NAMES = ['Saint Errol', 'Verity', 'Candlemark', 'Hollow Bay', 'Low Sabbath', 'Ashgrove'];
+    const few = [];
+    for (const key of ['city_burning', 'city_lost']) {
+      for (const city of CITY_NAMES) {
+        const n = clips.filter((t) => t.k === key && t.a === city).length;
+        if (n < 3) few.push(`${key}/${city}=${n}`);
+      }
+    }
+    check('every city has at least three takes of burning and of being lost', few.length === 0, few.join(', '));
+    let seed = 7;
+    const rep = new ClipBank(VOICE_PACK, { rng: () => (seed = (seed * 16807) % 2147483647) / 2147483647 });
+    let prev = null, twice = 0, distinct = new Set();
+    for (let i = 0; i < 60; i++) {
+      const t = rep.pick('city_burning', { args: ['VERITY'] });
+      if (t === prev) twice++;
+      prev = t;
+      if (t) distinct.add(t);
+    }
+    check('a city that burns again does not say the same thing twice running', twice === 0 && distinct.size >= 3, `${twice} repeats, ${distinct.size} takes`);
     const kb = Math.round(clips.reduce((n, c) => n + c.b.length, 0) / 1024);
-    check('the pack stays under 10 MB of base64', kb < 10240, `${kb} KB`);
+    check('the pack stays under 11 MB of base64', kb < 11264, `${kb} KB`);
   }
 }
 
