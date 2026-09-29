@@ -253,6 +253,9 @@ const SFX_NAMES = [
   'bellows_pain', 'bellows_die', 'wasp_pain', 'wasp_die', 'priest_pain', 'priest_die',
   'splitter_fire', 'widow_fire',
   'limb_rip', 'head_pop', 'blood_spurt', 'meat_thud', 'bone_bounce', 'body_slam', 'head_punt',
+  // --- round three: furniture that fights back ---
+  'wood_hit', 'wood_break', 'metal_hit', 'metal_break', 'glass_break', 'can_clunk', 'soda_pop',
+  'coin_clink', 'paper_flurry', 'pinball_play', 'console_blip', 'buzz_deny', 'water_burst', 'can_rattle',
 ];
 
 /** Names that shipped in the first version. None of them may ever disappear. */

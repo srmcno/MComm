@@ -2105,6 +2105,8 @@ const MIX = Object.assign(Object.create(null), {
   head_punt: 0.5, kick_hit: 2, kick_wall: 2, kick_swing: 0.5, punt: 1.4, dryfire: 1.7, ui_move: 1.8,
   smart_evade: 0.6, pipebomb_land: 0.65, pipebomb_throw: 0.6, perfect_burst: 0.8, objective: 0.8,
   radio_open: 2, radio_close: 2.5, radio_static: 1.8,
+  wood_hit: 1.5, wood_break: 1.2, metal_hit: 1.2, glass_break: 1.7, coin_clink: 0.9, soda_pop: 0.9,
+  pinball_play: 0.6, buzz_deny: 0.6, console_blip: 0.65, water_burst: 0.75, paper_flurry: 0.9,
 });
 
 /** How far each big hit pushes the music down (see Sound._pumpMusic). */
@@ -4709,6 +4711,212 @@ Object.assign(STEP, {
 
   /* ---- HERO, 168, D mixolydian. The warden's opinion of the warden. */
   hero(S, t, s, T) { play(S, t, s, T, HERO, false); },
+});
+
+/* ------------------------------------------------- the furniture fights back */
+// Round three: things in the bunker that can be shot, kicked, used and broken.
+
+// A hit on a desk or a chair: a knock with the hollow of the wood in it.
+bake('wood_hit', 0.24, 3, (d, sr, R) => {
+  const j = 1 + (R() - 0.5) * 0.1;
+  kThump(d, sr, 0, 190 * j, 95 * j, 0.015, 0.045, 0.9, 1.6);
+  kClick(d, sr, 0, 0.6, 5);
+  kMode(d, sr, 0.001, 430 * j, 0.05, 0.3);
+  kMode(d, sr, 0.001, 810 * j, 0.03, 0.2);
+  kNoise(d, sr, R, 0, 0.1, { type: 'bp', f0: 1500, f1: 500, q: 1.1, atk: 0.001, tau: 0.02, amp: 1.6 });
+  kDebris(d, sr, R, 0.02, 0.12, 4, 500, 2400, 0.14, 0.008);
+});
+
+// Furniture giving up: the crack, the fall, and a shower of splinters.
+bake('wood_break', 0.75, 2, (d, sr, R) => {
+  const j = 1 + (R() - 0.5) * 0.08;
+  kClick(d, sr, 0, 0.9, 6);
+  kThump(d, sr, 0, 150 * j, 55 * j, 0.03, 0.09, 1.1, 2.4);
+  kNoise(d, sr, R, 0, 0.3, { type: 'lp', f0: 3400, f1: 260, q: 1, atk: 0.001, tau: 0.07, amp: 3.2, col: 1 });
+  kMode(d, sr, 0.002, 380 * j, 0.09, 0.4);
+  kDebris(d, sr, R, 0.03, 0.45, 26, 300, 2800, 0.22, 0.012);
+  kThump(d, sr, 0.19, 120 * j, 60 * j, 0.02, 0.05, 0.5, 2);
+  kSlap(d, sr, [[0.018, 0.3], [0.033, 0.18]], 0.3);
+});
+
+// A sheet-metal panel taking a boot or a round: the dent, and the ring after.
+bake('metal_hit', 0.5, 3, (d, sr, R) => {
+  const j = 1 + (R() - 0.5) * 0.08;
+  kThump(d, sr, 0, 160 * j, 72 * j, 0.02, 0.06, 1, 2.4);
+  kClick(d, sr, 0, 0.7, 4);
+  for (let m = 0; m < METAL.length; m++) kMode(d, sr, 0.001, 240 * j * METAL[m], 0.22 / (1 + m * 0.4), 0.2 / (1 + m * 0.5));
+  kNoise(d, sr, R, 0, 0.08, { type: 'bp', f0: 2400, f1: 900, q: 1.4, atk: 0.001, tau: 0.02, amp: 1.4 });
+});
+
+// A cabinet or a machine coming apart: crumple, ring, hardware on the floor.
+bake('metal_break', 0.95, 2, (d, sr, R) => {
+  const j = 1 + (R() - 0.5) * 0.06;
+  kThump(d, sr, 0, 105 * j, 44 * j, 0.03, 0.12, 1.2, 3);
+  kClick(d, sr, 0, 0.8, 6);
+  kNoise(d, sr, R, 0, 0.35, { type: 'lp', f0: 3200, f1: 200, q: 1.1, atk: 0.001, tau: 0.07, amp: 3.6, col: 1 });
+  for (let m = 0; m < METAL.length; m++) kMode(d, sr, 0.002, 200 * j * METAL[m], 0.4 / (1 + m * 0.35), 0.22 / (1 + m * 0.5));
+  kDebris(d, sr, R, 0.04, 0.6, 30, 800, 5200, 0.18, 0.008);
+  kSlap(d, sr, [[0.02, 0.32], [0.037, 0.2], [0.06, 0.12]], 0.26);
+  kSat(d, 1.5);
+});
+
+// Glass: a snap, a hiss of shards, and a great many small landings.
+bake('glass_break', 0.95, 2, (d, sr, R) => {
+  kClick(d, sr, 0, 0.9, 3);
+  kNoise(d, sr, R, 0, 0.35, { type: 'hp', f0: 3200, f1: 7000, q: 0.8, atk: 0.001, tau: 0.07, amp: 2.8 });
+  kMode(d, sr, 0.001, 3300 + R() * 300, 0.07, 0.3);
+  kMode(d, sr, 0.001, 4900 + R() * 300, 0.05, 0.2);
+  kDebris(d, sr, R, 0.03, 0.75, 64, 2400, 9000, 0.3, 0.02);
+  kThump(d, sr, 0, 130, 70, 0.02, 0.05, 0.5, 2);
+});
+
+// A can dropping into the tray of a machine that has seen things.
+bake('can_clunk', 0.5, 2, (d, sr, R) => {
+  const j = 1 + (R() - 0.5) * 0.1;
+  kThump(d, sr, 0, 130 * j, 68 * j, 0.015, 0.05, 0.9, 2);
+  kClick(d, sr, 0, 0.6, 4);
+  kMode(d, sr, 0.001, 940 * j, 0.04, 0.3);
+  kMode(d, sr, 0.001, 1560 * j, 0.03, 0.2);
+  kThump(d, sr, 0.13, 210 * j, 120 * j, 0.01, 0.03, 0.5, 2);
+  kMode(d, sr, 0.13, 1250 * j, 0.03, 0.2);
+  kThump(d, sr, 0.21, 260 * j, 160 * j, 0.01, 0.02, 0.3, 2);
+});
+
+// The tab, and then the fizz. Sold separately, in my heart.
+bake('soda_pop', 0.75, 1, (d, sr, R) => {
+  kClick(d, sr, 0, 0.7, 3);
+  kMode(d, sr, 0, 1850, 0.012, 0.4);
+  kMode(d, sr, 0.02, 2600, 0.02, 0.35);
+  kThump(d, sr, 0.02, 400, 220, 0.01, 0.03, 0.4, 1);
+  kNoise(d, sr, R, 0.04, 0.7, { type: 'bp', f0: 5200, f1: 7800, q: 0.7, atk: 0.02, hold: 0.22, tau: 0.16, amp: 1.5, grain: 0.3 });
+  kNoise(d, sr, R, 0.05, 0.5, { type: 'hp', f0: 4200, f1: 4200, q: 0.7, atk: 0.02, tau: 0.13, amp: 0.7 });
+});
+
+// One coin, and then another a moment later, on something hard.
+bake('coin_clink', 0.55, 3, (d, sr, R) => {
+  const f = 3000 + R() * 1400;
+  kMode(d, sr, 0, f, 0.09, 0.45);
+  kMode(d, sr, 0, f * 1.48, 0.06, 0.22);
+  kMode(d, sr, 0, f * 2.31, 0.04, 0.12);
+  kClick(d, sr, 0, 0.3, 3);
+  const g = 2600 + R() * 1400;
+  kMode(d, sr, 0.09, g, 0.07, 0.3);
+  kMode(d, sr, 0.09, g * 1.51, 0.05, 0.14);
+  kClick(d, sr, 0.09, 0.2, 3);
+});
+
+// A drawer full of paper, and then the air full of it.
+bake('paper_flurry', 0.75, 2, (d, sr, R) => {
+  kNoise(d, sr, R, 0, 0.7, { type: 'bp', f0: 3600, f1: 2400, q: 0.6, atk: 0.05, hold: 0.12, tau: 0.16, amp: 1.5, grain: 0.5 });
+  kNoise(d, sr, R, 0.02, 0.5, { type: 'bp', f0: 1300, f1: 900, q: 0.8, atk: 0.04, hold: 0.08, tau: 0.12, amp: 0.8, grain: 0.4 });
+  kDebris(d, sr, R, 0.15, 0.4, 5, 900, 2600, 0.08, 0.006);
+});
+
+// Pinball: a spring, the bumpers going off like a church on fire, the drain.
+bake('pinball_play', 1.7, 1, (d, sr, R) => {
+  kTone(d, sr, 0, 0.16, 260, 820, 0.5, 0.004, 0.08, 1);
+  kThump(d, sr, 0.16, 120, 60, 0.02, 0.06, 0.6, 1.6);
+  const seq = [[0.3, 1046], [0.42, 1568], [0.52, 1319], [0.66, 2093], [0.76, 1568], [0.9, 1046], [1.0, 2349], [1.1, 1760]];
+  for (const [tt, f] of seq) {
+    kBell(d, sr, tt, f, [1, 2.76, 5.4], 0.14, 0.32, R);
+    kClick(d, sr, tt, 0.25, 3);
+    kThump(d, sr, tt, 300, 150, 0.01, 0.02, 0.3, 1);
+  }
+  kThump(d, sr, 1.3, 90, 45, 0.03, 0.12, 0.7, 2);
+  kMode(d, sr, 1.3, 620, 0.06, 0.3);
+});
+
+// Something with a screen, doing something with your thumbprint.
+bake('console_blip', 0.8, 1, (d, sr, R) => {
+  const seq = [[0, 880], [0.09, 1320], [0.18, 1760], [0.3, 1320], [0.42, 990], [0.5, 1980]];
+  for (const [tt, f] of seq) kTone(d, sr, tt, 0.07, f, f * 1.01, 0.4, 0.003, 0.035, 2);
+  kNoise(d, sr, R, 0.05, 0.4, { type: 'hp', f0: 5000, f1: 5000, q: 0.8, atk: 0.005, tau: 0.08, amp: 0.3, grain: 0.6 });
+});
+
+// Access denied, in the only language a machine has for it.
+bake('buzz_deny', 0.5, 1, (d, sr) => {
+  kTone(d, sr, 0, 0.42, 118, 112, 0.7, 0.005, 0, 2);
+  kTone(d, sr, 0, 0.42, 177, 168, 0.35, 0.005, 0, 2);
+  kFilt(d, sr, 0, 0.5, 'lp', 1500, 900, 0.9);
+  kSat(d, 2);
+});
+
+// A pipe letting go of a great deal of water at once.
+bake('water_burst', 1.4, 1, (d, sr, R) => {
+  kNoise(d, sr, R, 0, 1.3, { type: 'bp', f0: 3200, f1: 1800, q: 0.5, atk: 0.03, hold: 0.55, tau: 0.3, amp: 2.4, col: 1 });
+  kNoise(d, sr, R, 0, 1.0, { type: 'hp', f0: 6200, f1: 6200, q: 0.7, atk: 0.04, hold: 0.3, tau: 0.3, amp: 0.6 });
+  kThump(d, sr, 0, 90, 50, 0.04, 0.1, 0.6, 1.4);
+  kSquish(d, sr, R, 0.02, 0.9, 30, 300, 1400, 0.16, 1.4);
+});
+
+// A machine full of cans being reminded of it.
+bake('can_rattle', 0.75, 2, (d, sr, R) => {
+  for (let c = 0; c < 9; c++) {
+    const tt = Math.pow(R(), 1.2) * 0.5, f = 900 + R() * 1200, a = 0.5 - tt * 0.5;
+    kThump(d, sr, tt, 260 + R() * 120, 120, 0.01, 0.02, a, 2);
+    kMode(d, sr, tt, f, 0.03, a * 0.5);
+    kClick(d, sr, tt, a * 0.4, 3);
+  }
+  kThump(d, sr, 0, 110, 55, 0.02, 0.06, 0.7, 2);
+});
+
+Object.assign(SFX, {
+  wood_hit(S, t, o) {
+    const v = V(S, o, 3, 0.25, 0); if (!v) return;
+    smp(S, v, t, 'wood_hit', { g: 0.9, rate: jr(S, o, 0.14) });
+  },
+  wood_break(S, t, o) {
+    const v = V(S, o, 4, 0.3, 0.05); if (!v) return;
+    smp(S, v, t, 'wood_break', { g: 1, rate: jr(S, o, 0.12) });
+  },
+  metal_hit(S, t, o) {
+    const v = V(S, o, 3, 0.3, 0); if (!v) return;
+    smp(S, v, t, 'metal_hit', { g: 0.9, rate: jr(S, o, 0.12) });
+  },
+  metal_break(S, t, o) {
+    const v = V(S, o, 4, 0.35, 0.1); if (!v) return;
+    smp(S, v, t, 'metal_break', { g: 1, rate: jr(S, o, 0.1) });
+  },
+  glass_break(S, t, o) {
+    const v = V(S, o, 4, 0.4, 0.1); if (!v) return;
+    smp(S, v, t, 'glass_break', { g: 0.95, rate: jr(S, o, 0.1) });
+  },
+  can_clunk(S, t, o) {
+    const v = V(S, o, 3, 0.25, 0); if (!v) return;
+    smp(S, v, t, 'can_clunk', { g: 0.9, rate: jr(S, o, 0.1) });
+  },
+  soda_pop(S, t, o) {
+    const v = V(S, o, 3, 0.2, 0); if (!v) return;
+    smp(S, v, t, 'soda_pop', { g: 0.8, rate: jr(S, o, 0.06) });
+  },
+  coin_clink(S, t, o) {
+    const v = V(S, o, 2, 0.3, 0); if (!v) return;
+    smp(S, v, t, 'coin_clink', { g: 0.7, rate: jr(S, o, 0.05) });
+  },
+  paper_flurry(S, t, o) {
+    const v = V(S, o, 2, 0.2, 0); if (!v) return;
+    smp(S, v, t, 'paper_flurry', { g: 0.85, rate: jr(S, o, 0.1) });
+  },
+  pinball_play(S, t, o) {
+    const v = V(S, o, 3, 0.3, 0); if (!v) return;
+    smp(S, v, t, 'pinball_play', { g: 0.6, rate: jr(S, o, 0.03) });
+  },
+  console_blip(S, t, o) {
+    const v = V(S, o, 3, 0.2, 0); if (!v) return;
+    smp(S, v, t, 'console_blip', { g: 0.55, rate: jr(S, o, 0.04) });
+  },
+  buzz_deny(S, t, o) {
+    const v = V(S, o, 3, 0.2, 0); if (!v) return;
+    smp(S, v, t, 'buzz_deny', { g: 0.55, rate: jr(S, o, 0.03) });
+  },
+  water_burst(S, t, o) {
+    const v = V(S, o, 3, 0.3, 0.1); if (!v) return;
+    smp(S, v, t, 'water_burst', { g: 0.75, rate: jr(S, o, 0.06) });
+  },
+  can_rattle(S, t, o) {
+    const v = V(S, o, 3, 0.25, 0); if (!v) return;
+    smp(S, v, t, 'can_rattle', { g: 0.9, rate: jr(S, o, 0.08) });
+  },
 });
 
 // Null-prototype the lookup tables: sfx('constructor') and music('toString')

@@ -4311,6 +4311,175 @@ function vCeilLampDead(t) {
 }
 
 // ---------------------------------------------------------------------------
+// round three: more to look at. Walls, mostly; the same rule as every dressing
+// above: draw only inside the tile, and leave the outer texels alone.
+// ---------------------------------------------------------------------------
+
+function vConcreteMoss(t) {
+  const rng = makeRng(71001);
+  const f = field(71002, 6, 3);
+  for (let y = 18; y < 64; y++) {
+    for (let x = 0; x < 64; x++) {
+      const v = f[idx(x, y)] + ((y - 18) / 46) * 0.3;
+      if (v > 0.62) blendPx(t, x, y, mix(C.moss, C.damp, rng()), Math.min(0.85, (v - 0.62) * 4));
+    }
+  }
+  for (let k = 0; k < 7; k++) drip(t, 71010 + k, 6 + k * 9 + ((rng() * 4) | 0), 8, 40 + rng() * 20, C.damp, 0.5, 1.4);
+}
+function vConcreteStencil(t) {
+  const Y = rgba(232, 196, 52);
+  drawTextCentered(t, 'BAY 9', 32, 9, 1, Y);
+  poly(t, [[14, 30], [36, 30], [36, 22], [52, 34], [36, 46], [36, 38], [14, 38]], Y, 0.92);   // hand-cut arrow
+  microC(t, 'NO PARKING', 32, 52, Y, 0.85);
+  const rng = makeRng(71101);
+  for (let k = 0; k < 70; k++) blendPx(t, 8 + rng() * 48, 8 + rng() * 48, C.conc, 0.55);     // paint worn through
+}
+function vConcreteConduit(t) {
+  for (const y of [14, 21]) {
+    castShadow(t, 0, y, 64, 4, 0.5, 1.5);
+    rect(t, 0, y, 64, 4, rgba(96, 102, 112), 1);
+    hline(t, y, 0, 63, C.specHot, 0.45);
+    hline(t, y + 3, 0, 63, C.steelDk, 0.7);
+    for (let x = 6; x < 64; x += 18) { rect(t, x, y - 1, 3, 6, C.steelMid, 1); rivet(t, x + 1, y + 2, 0.8, C.spec); }
+  }
+  castShadow(t, 32, 10, 24, 18, 0.5, 1.5);                 // the junction box where they meet
+  rect(t, 32, 10, 24, 18, rgba(120, 124, 132), 1);
+  bevel(t, 32, 10, 24, 18, C.specHot, C.steelDk, true, 1, 0.8);
+  for (const [x, y] of [[34, 12], [53, 12], [34, 25], [53, 25]]) rivet(t, x, y, 0.9, C.spec);
+  rect(t, 35, 15, 18, 8, C.yellow, 1);
+  microC(t, 'LIVE', 44, 17, C.black);
+  for (let k = 0; k < 4; k++) drip(t, 71210 + k, 40 + k * 3, 28, 50 + k * 4, C.rustDk, 0.35, 1);
+}
+function vOfficeChart(t) {
+  castShadow(t, 6, 8, 52, 34, 0.5, 2);
+  rect(t, 6, 8, 52, 34, rgba(238, 238, 232), 1);
+  bevel(t, 6, 8, 52, 34, WHITE, rgba(110, 112, 118), true, 2, 0.9);          // the aluminium frame
+  microC(t, 'SALES', 32, 11, rgba(30, 60, 140));
+  hline(t, 36, 10, 54, rgba(90, 90, 96), 0.8);
+  vline(t, 10, 16, 36, rgba(90, 90, 96), 0.8);
+  const pts = [[12, 20], [20, 22], [28, 27], [36, 30], [44, 33], [52, 35]];
+  for (let i = 0; i < pts.length - 1; i++) segment(t, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], RED, 1.4, 1);
+  for (const [x, y] of pts) disc(t, x, y, 1.3, RED, 1, 0.6);
+  const rng = makeRng(71301);
+  scrawl(t, 'UP!', 36, 16, rgba(30, 30, 110), rng, 0.85);
+  rect(t, 14, 42, 36, 2, rgba(150, 152, 158), 1);                             // the marker tray
+  rect(t, 20, 40, 6, 2, RED, 1); rect(t, 30, 40, 6, 2, rgba(30, 60, 140), 1);
+  scrawl(t, 'Q3: FINE', 14, 48, rgba(30, 30, 110), rng, 0.8);
+}
+function vOfficePhone(t) {
+  castShadow(t, 22, 14, 18, 24, 0.5, 2);
+  rect(t, 22, 14, 18, 24, rgba(200, 192, 170), 1);
+  bevel(t, 22, 14, 18, 24, WHITE, rgba(110, 104, 88), true, 1, 0.8);
+  disc(t, 31, 28, 6, rgba(60, 56, 50), 1, 0.8);                               // the rotary dial
+  disc(t, 31, 28, 4, rgba(200, 192, 170), 1, 0.8);
+  for (let k = 0; k < 8; k++) { const a = k * 0.7; disc(t, 31 + Math.cos(a) * 5, 28 + Math.sin(a) * 5, 0.8, rgba(40, 36, 30), 1, 0.5); }
+  rect(t, 26, 16, 10, 4, rgba(150, 144, 128), 1);                             // the cradle, empty
+  const cord = [[31, 20], [28, 30], [26, 40], [30, 48], [34, 52], [33, 56]];
+  for (let i = 0; i < cord.length - 1; i++) segment(t, cord[i][0], cord[i][1], cord[i + 1][0], cord[i + 1][1], rgba(50, 46, 40), 1, 0.95);
+  castShadow(t, 28, 54, 12, 5, 0.4, 1);
+  rect(t, 28, 54, 12, 5, rgba(190, 182, 160), 1);                             // the handset, swinging
+  rect(t, 27, 53, 3, 7, rgba(170, 162, 140), 1); rect(t, 38, 53, 3, 7, rgba(170, 162, 140), 1);
+}
+function vOfficeWater(t) {
+  const f = field(71401, 5, 3);
+  for (let y = 0; y < 44; y++) {
+    for (let x = 6; x < 58; x++) {
+      const d = Math.hypot((x - 32) / 24, (y - 4) / 30) + (f[idx(x, y)] - 0.5) * 0.6;
+      if (d < 1) blendPx(t, x, y, rgba(120, 94, 52), (1 - d) * 0.55);
+      if (d > 0.86 && d < 1) blendPx(t, x, y, rgba(84, 62, 30), 0.35);      // the tide line
+    }
+  }
+  for (let k = 0; k < 6; k++) drip(t, 71410 + k, 12 + k * 8, 20, 48 + (k % 3) * 6, rgba(96, 72, 40), 0.45, 1.6);
+}
+function vTileCrack(t) {
+  const rng = makeRng(71501);
+  let x = 18, y = 4;
+  while (y < 58) {
+    const nx = x + 1 + rng() * 4, ny = y + 4 + rng() * 4;
+    segment(t, x + 1, y + 1, nx + 1, ny + 1, rgba(200, 200, 190), 1, 0.35);
+    segment(t, x, y, nx, ny, rgba(20, 20, 20), 1.3, 0.9);
+    if (rng() < 0.35) segment(t, nx, ny, nx + 8 * (rng() - 0.3), ny + 6, rgba(20, 20, 20), 1, 0.8);
+    x = nx; y = ny;
+  }
+  rubble(t, 30, 60, 4, 6, rng, rgba(200, 200, 190));
+}
+function vTileDispenser(t) {
+  castShadow(t, 20, 12, 24, 22, 0.5, 2);
+  rect(t, 20, 12, 24, 22, rgba(196, 198, 200), 1);
+  bevel(t, 20, 12, 24, 22, WHITE, rgba(90, 94, 100), true, 1, 0.85);
+  microC(t, 'PULL', 32, 16, rgba(60, 60, 66));
+  rect(t, 29, 22, 6, 3, rgba(60, 60, 66), 1);
+  rect(t, 24, 28, 16, 3, rgba(30, 30, 34), 1);                                // the slot
+  rect(t, 27, 30, 10, 12, rgba(232, 230, 222), 1);                            // a towel, still coming
+  for (let k = 0; k < 3; k++) hline(t, 33 + k * 3, 28, 36, rgba(200, 198, 188), 0.7);
+  scrawl(t, 'EMPTY', 22, 48, rgba(30, 30, 110), makeRng(71601), 0.7);
+}
+function vTileMold(t) {
+  const rng = makeRng(71701);
+  for (let k = 0; k < 120; k++) {
+    const x = rng() * 64, y = 32 + Math.pow(rng(), 0.6) * 30;
+    disc(t, x, y, 0.4 + rng() * 1.6, rng() < 0.5 ? rgba(30, 44, 30) : rgba(18, 26, 18), 0.55, 0.9);
+  }
+  for (let k = 0; k < 5; k++) drip(t, 71710 + k, 8 + k * 12, 34, 62, rgba(24, 36, 24), 0.4, 1.2);
+}
+function vSteelWeld(t) {
+  for (const x of [20, 44]) {
+    glow(t, x, 32, 12, rgba(70, 44, 30), 0.35, 1.4);                          // the scorch halo
+    for (let y = 2; y < 62; y++) disc(t, x + Math.sin(y * 0.9) * 0.6, y, 1.4, (y & 1) ? rgba(120, 112, 104) : rgba(170, 160, 150), 1, 0.7);
+  }
+  const rng = makeRng(71801);
+  for (let k = 0; k < 14; k++) disc(t, 8 + rng() * 48, 6 + rng() * 52, 0.5 + rng(), rgba(150, 140, 130), 0.9, 0.7);
+}
+function vSteelGrille(t) {
+  castShadow(t, 16, 12, 32, 22, 0.5, 2);
+  rect(t, 16, 12, 32, 22, rgba(20, 20, 24), 1);
+  for (let y = 14; y < 33; y += 3) { rect(t, 17, y, 30, 2, rgba(96, 102, 114), 1); hline(t, y, 17, 46, C.specHot, 0.5); }
+  bevel(t, 16, 12, 32, 22, C.specHot, C.steelDk, true, 1, 0.8);
+  for (const [x, y] of [[18, 14], [45, 14], [18, 31], [45, 31]]) rivet(t, x, y, 1, C.spec);
+  for (let k = 0; k < 7; k++) drip(t, 71910 + k, 18 + k * 4, 34, 46 + (k % 3) * 5, rgba(20, 20, 20), 0.4, 1.2);
+}
+function vSteelPunch(t) {
+  placard(t, 5, 8, 54, 20, rgba(236, 232, 218), BLACK, [
+    { text: 'DO NOT PUNCH' }, { text: 'THE MACHINE' },
+  ], { border: RED, seed: 72001, pad: 3 });
+  const rng = makeRng(72002);
+  disc(t, 32, 44, 7, rgba(40, 44, 54), 0.5, 1.6);                              // the dent, which is the reason for the sign
+  disc(t, 32, 44, 4.5, rgba(20, 22, 28), 0.45, 1.2);
+  for (let a = 0; a < 6.283; a += 0.5) {
+    segment(t, 32 + Math.cos(a) * 5, 44 + Math.sin(a) * 5, 32 + Math.cos(a) * 9, 44 + Math.sin(a) * 9, rgba(20, 22, 28), 1, 0.4);
+  }
+  scrawl(t, 'TOO LATE', 16, 55, rgba(196, 36, 30), rng, 0.85);
+}
+function vRustStreak(t) {
+  const rng = makeRng(72101);
+  for (let k = 0; k < 12; k++) {
+    const x = 3 + k * 5 + rng() * 3;
+    rivet(t, x, 4 + rng() * 3, 1.1, rgba(120, 100, 84));
+    drip(t, 72110 + k, x, 6, 34 + rng() * 28, rng() < 0.5 ? C.rustLt : C.rustDk, 0.6, 1.4 + rng());
+  }
+}
+function vRivetTally(t) {
+  const rng = makeRng(72201);
+  const ink = rgba(20, 20, 24);
+  for (let row = 0; row < 4; row++) {
+    for (let g = 0; g < 3; g++) {
+      const x0 = 8 + g * 17, y0 = 12 + row * 9;
+      for (let k = 0; k < 4; k++) segment(t, x0 + k * 3, y0, x0 + k * 3 + (rng() - 0.5), y0 + 6, ink, 1, 0.85);
+      segment(t, x0 - 1, y0 + 5, x0 + 11, y0 + 1, ink, 1, 0.85);
+    }
+  }
+  scrawl(t, 'DAY 412', 12, 50, rgba(196, 36, 30), rng, 0.85);
+}
+function vPipesSteam(t) {
+  for (let k = 0; k < 9; k++) {
+    const y = 40 - k * 4.5, x = 32 + Math.sin(k * 0.9) * 5 + k * 0.6;
+    glow(t, x, y, 5 + k * 1.1, rgba(236, 238, 240), Math.max(0.1, 0.5 - k * 0.045), 1.4);
+  }
+  disc(t, 32, 44, 2.6, rgba(60, 56, 50), 1, 0.7);                              // the popped valve
+  for (let k = 0; k < 6; k++) drip(t, 72310 + k, 24 + k * 3, 50, 62, C.damp, 0.35, 1);
+}
+
+// ---------------------------------------------------------------------------
 // build
 // ---------------------------------------------------------------------------
 
@@ -4464,6 +4633,22 @@ const EXTRA = [
   ['FLOOR_BOARDS_BLOOD', 'FLOOR_BOARDS', 'floor', vBoardsBlood],
   ['CEIL_ROOF', null, null, paintCeilRoof],
   ['CEIL_ROOF_B', null, null, vCeilRoofB],
+  // round three
+  ['CONCRETE_MOSS', 'CONCRETE', 'wall', vConcreteMoss],
+  ['CONCRETE_STENCIL', 'CONCRETE', 'wall', vConcreteStencil],
+  ['CONCRETE_CONDUIT', 'CONCRETE', 'wall', vConcreteConduit],
+  ['OFFICE_CHART', 'OFFICE_WALL', 'wall', vOfficeChart],
+  ['OFFICE_PHONE', 'OFFICE_WALL', 'wall', vOfficePhone],
+  ['OFFICE_WATER', 'OFFICE_WALL', 'wall', vOfficeWater],
+  ['TILE_CRACK', 'TILE', 'wall', vTileCrack],
+  ['TILE_DISPENSER', 'TILE', 'wall', vTileDispenser],
+  ['TILE_MOLD', 'TILE', 'wall', vTileMold],
+  ['STEEL_WELD', 'STEEL_PLATE', 'wall', vSteelWeld],
+  ['STEEL_GRILLE', 'STEEL_PLATE', 'wall', vSteelGrille],
+  ['STEEL_PUNCH', 'STEEL_PLATE', 'wall', vSteelPunch],
+  ['RUST_STREAK', 'RUST', 'wall', vRustStreak],
+  ['RIVET_TALLY', 'STEEL_RIVET', 'wall', vRivetTally],
+  ['PIPES_STEAM', 'PIPES', 'wall', vPipesSteam],
 ];
 
 export const TEXTURE_ORDER = BASE_ORDER.concat(EXTRA.map((e) => e[0]));

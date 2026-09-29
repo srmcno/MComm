@@ -148,12 +148,18 @@ export function renderWorld(game, W, H) {
       const d = decor[i];
       let spr = d._spr;
       if (spr === undefined) {
-        const f = art.sprites[d.key];
-        spr = d._spr = f ? { x: d.x, y: d.y, z: d.z || 0, frame: f, h: d.h, emissive: !!d.emissive } : null;
+        // A broken piece shows what is left of it; a locker somebody opened has its door ajar.
+        const f = d.altFrame || art.sprites[d.key];
+        spr = d._spr = f ? {
+          x: d.x, y: d.y, z: (d.z || 0) + (d.lift || 0), frame: f, h: d.altH || d.h,
+          emissive: !!d.emissive && !d.broken,
+        } : null;
       }
       if (spr) S.push(spr);
     }
   }
+  // Papers in the air, cans, coins: the litter of a room that has been visited.
+  game.props.collect(S);
 
   // Warheads and their contrails. The trail is what makes a sky read as busy.
   for (const w of game.sky.warheads) {
@@ -463,6 +469,7 @@ export function drawIntermission(game, buf, W, H) {
     ['LAUNCH KEYS', `${st.treasure} / ${st.treasureTotal}`, ''],
     ['WARHEADS DOWN', `${st.skyKills}`, ''],
     ['BEST CHAIN', `×${st.bestChain}`, ''],
+    ...(st.damage > 0 ? [['PROPERTY DAMAGE', `$${commas(st.damage)}`, '']] : []),
     ['CITIES STANDING', `${game.sky.livingCities().length} / 6`, `+${commas(st.cityBonus)}`],
   ];
   const reveal = clamp(game.interT * 2.2, 0, rows.length + 1);

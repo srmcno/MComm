@@ -375,6 +375,19 @@ export class Level {
     return false;
   }
 
+  /** Is the next thing in front a shut door? (The Boot only jokes about doors.) */
+  doorAhead(x, y, ang) {
+    const dx = Math.cos(ang), dy = Math.sin(ang);
+    for (let d = 0.4; d <= 1.5; d += 0.35) {
+      const cx = (x + dx * d) | 0, cy = (y + dy * d) | 0;
+      if (!this.inBounds(cx, cy)) break;
+      const i = cy * this.W + cx;
+      if (this.wall[i] === CELL_DOOR) return this.doorOpen[i] < 0.92;
+      if (this.wall[i] === CELL_SOLID) return false;
+    }
+    return false;
+  }
+
   startPush(cx, cy, dx, dy) {
     for (const p of this.pushwalls) if (p.x === cx && p.y === cy) return false;
     // Push along the dominant axis of the player's facing.

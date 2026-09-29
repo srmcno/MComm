@@ -952,6 +952,172 @@ check('with the roof shut every berm is a full wall, open it and they drop to pa
   s.n > 0 && s.shut && s.open && s.spot && s.err <= 1 && s.ceil > s.eye * 2,
   `${s.n} berms, shut ${s.shut}, open ${s.open}, wall top off by ${s.err} rows, ceiling ${s.ceil} over eyes at ${s.eye}`);
 
+// ------ 28p. the furniture is real: shot, kicked, used and blown up, it behaves
+// (round three). A helper first: put the warden a step and a half from a prop,
+// looking at its middle.
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  window.P3 = {
+    stand(kind, dist = 1.5) {
+      const lv = g.level;
+      for (const d of lv.decor.filter((o) => o.kind === kind && o.def && !o.broken)) {
+        // a chair pulled up inside a desk's own cell is behind a solid prop: not a target
+        if (!d.solid && (g.props.grid.get(lv.idx(d.x, d.y)) || []).some((o) => o.solid && !o.broken)) continue;
+        for (let a = 0; a < 16; a++) {
+          const ang = a * Math.PI / 8, x = d.x + Math.cos(ang) * dist, y = d.y + Math.sin(ang) * dist;
+          if (lv.blocked(x, y) || !lv.lineOfSight(x, y, d.x, d.y)) continue;
+          const p = g.player;
+          p.x = x; p.y = y; p.z = 0.56; p.ang = Math.atan2(d.y - y, d.x - x);
+          p.pitch = ((d.z + d.h * 0.5 - 0.56) / dist) * g.rc.projY;
+          p.cooldown = 0; p.kickCooldown = 0; p.health = 50;
+          p.owned.pistol = true; p.weapon = 'pistol'; p.pendingWeapon = null; p.swapT = 0;
+          g.enemies.length = 0;
+          return d;
+        }
+      }
+      return null;
+    },
+  };
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  const lv = g.level;
+  const d = window.P3.stand('desk');
+  if (!d) return { ok: false };
+  const p = g.player;
+  const cell = lv.idx(d.x, d.y);
+  const a = p.aimVector(g.rc.projY);
+  const trace = g.traceHit(p.x, p.y, p.z, a.x, a.y, a.z, 10, 34);
+  const stopped = trace.prop === d;
+  const blockedBefore = !!lv.propBlock[cell];
+  let shots = 0;
+  while (!d.broken && shots < 8) { p.cooldown = 0; g.tryFire(); window.T.step(0.02); shots++; }
+  window.T.step(0.3);
+  return {
+    ok: true, stopped, blockedBefore, shots, broken: d.broken, cellFree: !lv.propBlock[cell] && !lv.blocked(d.x, d.y),
+    litter: g.props.litter.length, dmg: g.levelDamage, wreck: !!d.altFrame,
+  };
+});
+check('a desk stops a bullet, breaks under two Widow rounds, frees its cell, throws paper and goes on the invoice',
+  s.ok && s.stopped && s.blockedBefore && s.broken && s.shots <= 3 && s.cellFree && s.litter >= 20 && s.dmg >= 300 && s.wreck,
+  `stopped ${s.stopped}, ${s.shots} shots, cell free ${s.cellFree}, ${s.litter} pieces of litter, $${s.dmg}, wreck ${s.wreck}`);
+
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  const lv = g.level, p = g.player;
+  // a chair, a plant, a body on the floor and the wall behind them
+  const chair = window.P3.stand('chair', 1.4);
+  if (!chair) return { ok: false };
+  const a = p.aimVector(g.rc.projY);
+  const hit = g.traceHit(p.x, p.y, p.z, a.x, a.y, a.z, 12, 34);
+  const brokeChair = chair.broken;
+  const passed = !hit.prop || hit.prop === chair ? hit.prop === chair ? false : true : true;
+  // a body on the floor is scenery to a bullet
+  const body = lv.decor.find((o) => o.kind === 'corpse');
+  let bodyBlocks = null;
+  if (body) {
+    const dx = body.x - (body.x - 1.5), r = 1.5;
+    const h = g.traceHit(body.x - r, body.y, 0.2, 1, 0, 0, 3, 34);
+    bodyBlocks = h.prop === body;
+  }
+  return { ok: true, brokeChair, hitKind: hit.prop ? hit.prop.kind : (hit.wall ? 'wall' : 'none'), passed, bodyBlocks };
+});
+check('a round goes through a chair (and breaks it) and on to whatever is behind; a body on the floor does not stop one',
+  s.ok && s.brokeChair && s.hitKind !== 'chair' && s.bodyBlocks !== true,
+  `chair broken ${s.brokeChair}, bullet ended on ${s.hitKind}, body blocks ${s.bodyBlocks}`);
+
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  const cone = window.P3.stand('cone', 1.2);
+  if (!cone) return { ok: false };
+  const x0 = cone.x, y0 = cone.y;
+  g.tryKick();
+  window.T.step(0.15);
+  const flyingMid = cone.flying, liftMid = cone.lift;
+  window.T.step(2.5);
+  const moved = Math.hypot(cone.x - x0, cone.y - y0);
+  const inGrid = (g.props.grid.get(g.level.idx(cone.x, cone.y)) || []).includes(cone);
+  return { ok: true, flyingMid, liftMid, landed: !cone.flying && cone.lift === 0, moved, inGrid };
+});
+check('the Boot sends a traffic cone flying; it lands, comes to rest a few cells away and can be shot again',
+  s.ok && s.flyingMid && s.liftMid > 0 && s.landed && s.moved > 1 && s.inGrid,
+  `flying ${s.flyingMid}, lift ${s.liftMid && s.liftMid.toFixed(2)}, landed ${s.landed}, moved ${s.moved && s.moved.toFixed(1)} cells, back in the grid ${s.inGrid}`);
+
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  const vm = window.P3.stand('vending', 1.3);
+  if (!vm) return { ok: false };
+  const p = g.player, stock0 = vm.stock;
+  const hint = g.props.hint(p);
+  const real = g.rng;
+  g.rng = () => 0.5;                              // a fair roll: it vends
+  g.props.use(p);
+  window.T.step(1.4);
+  const can = g.props.litter.find((l) => l.kind === 'can');
+  const stock1 = vm.stock;
+  let healed = 0;
+  if (can) {
+    can.rest = true; can.z = 0.02; can.x = p.x; can.y = p.y;
+    const h0 = p.health;
+    window.T.step(0.2);
+    healed = p.health - h0;
+  }
+  // the next one is eaten, and a kick knocks it loose
+  g.rng = () => 0.05;
+  g.props.use(p); window.T.step(1.2);
+  const jammed = vm.jam;
+  const stock2 = vm.stock;
+  g.tryKick(); window.T.step(0.9);
+  g.rng = real;
+  return { ok: true, hint, stock0, stock1, stock2, stock3: vm.stock, healed, jammed, cans: g.props.litter.filter((l) => l.kind === 'can').length };
+});
+check('a vending machine: a coin buys a can that heals, one is eaten and jams it, a kick shakes a can loose',
+  s.ok && /SODA/.test(s.hint || '') && s.stock1 === s.stock0 - 1 && s.healed >= 5 && s.jammed && s.stock2 === s.stock1 && s.stock3 < s.stock2,
+  `hint ${s.hint}, stock ${s.stock0} > ${s.stock1} > ${s.stock2} > ${s.stock3}, healed ${s.healed}, jammed ${s.jammed}`);
+
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  const lv = g.level;
+  const near = lv.decor.find((o) => o.kind === 'crates' && o.def);
+  const far = lv.decor.find((o) => o.kind === 'crates' && o !== near && Math.hypot(o.x - near.x, o.y - near.y) > 8);
+  g.props.blast(near.x + 0.5, near.y, 0.4, 3.4, 58);
+  const lamp = g.items.find((it) => it.kind === 'lamp');
+  let lampOk = true;
+  if (lamp) {
+    const n0 = g.staticLights.length;
+    const found = g.props.lampAt(lamp.x, lamp.y, lamp.z);
+    g.props.shootLamp(lamp);
+    lampOk = found === lamp && lamp.taken && g.staticLights.length === n0 - 1;
+  }
+  return { near: near.broken, far: far ? far.broken : false, lampOk, hasLamp: !!lamp };
+});
+check('a blast breaks the furniture inside its radius and not the crates across the level; a shot lamp loses its light',
+  s.near && !s.far && s.lampOk,
+  `near broken ${s.near}, far broken ${s.far}, lamp ${s.hasLamp ? s.lampOk : 'n/a'}`);
+
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  const bad = [];
+  let broke = 0;
+  for (let L = 0; L < g.totalLevels; L++) {
+    g.loadLevel(L); g.setState('play'); g._god = true;
+    const lv = g.level;
+    for (const d of lv.decor) if (d.def && d.def.hp !== Infinity && !d.broken) { g.props.breakProp(d, 'blast'); broke++; }
+    for (const d of lv.decor) {
+      if (!d.broken) continue;
+      const i = lv.idx(d.x, d.y);
+      const other = lv.decor.some((o) => o !== d && !o.broken && o.solid && lv.idx(o.x, o.y) === i)
+        || g.items.some((it) => it.solid && !it.taken && lv.idx(it.x, it.y) === i);
+      if (lv.propBlock[i] && !other) bad.push(`${L}:${d.kind}@${d.x | 0},${d.y | 0}`);
+    }
+  }
+  return { broke, bad: bad.slice(0, 6), levels: g.totalLevels };
+});
+check('breaking every piece of furniture on every floor leaves no invisible wall behind',
+  s.broke > 100 && s.bad.length === 0, `${s.broke} pieces broken over ${s.levels} floors, ghosts ${s.bad.join(' ') || 'none'}`);
+
 // ------ 28b. the wheel changes guns on a real notch, not on the trickle a
 // touch-surface mouse or trackpad sends while the hand is only aiming
 s = await page.evaluate(() => {

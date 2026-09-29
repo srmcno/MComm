@@ -7,6 +7,7 @@ import { Level } from './level.js';
 import { Player, EYE_HEIGHT, FUSE_MAX } from './player.js';
 import { Enemy, Bolt, PipeBomb, Acid, ENEMY_TYPES, ST } from './entities.js';
 import { Particles } from './particles.js';
+import { Props } from './props.js';
 import { Gore, HEAD, ARM_R, ARM_L, EXPLOSION_GORE, SLAM_GORE } from './gore.js';
 import { SkyWar, City, WARHEAD_TYPES, CITY_MAX_HP } from './sky.js';
 import { WEAPONS, WEAPON_ORDER, AMMO_FLAK, AMMO_NAIL, AMMO_CHARGE, AMMO_BOMB, BOOT, weaponBySlot } from './weapons.js';
@@ -150,6 +151,7 @@ export class Game {
     this.radio = new Radio(this);
     this.player = new Player();
     this.particles = new Particles();
+    this.props = new Props(this);
     this.gore = new Gore(this);
     this.sky = new SkyWar(this);
     this.skyDome = new Sky(art.vm);
@@ -241,6 +243,8 @@ export class Game {
     this.gore.clear();
     this.enemies.length = 0;
     this.items.length = 0;
+    this.props.load(this.level);
+    this.levelDamage = 0;
     this.bolts.length = 0;
     this.bombs.length = 0;
     this.acids.length = 0;
@@ -415,6 +419,7 @@ export class Game {
     this.sound.music('hero', { fadeIn: 0.8 });
     this.sound.sfx('elevator');
     this.speak('level_clear', {}, 'The floor below is worse.');
+    if ((this.levelDamage || 0) >= 1000) this.chat('mutter', 'mutter_prop', { cooldown: 0, delay: 2.4 });
   }
 
   buildStats() {
@@ -433,6 +438,7 @@ export class Game {
       kills: this.levelKills, enemyTotal: this.enemyTotal,
       secrets: this.levelSecrets, secretTotal: this.secretTotal,
       treasure: this.levelTreasure, treasureTotal: this.treasureTotal,
+      damage: this.levelDamage || 0,
       bestChain: this.sky.bestChain,
       skyKills: p.skyKills,
       total: timeBonus + cityBonus + perfect,
@@ -907,6 +913,7 @@ export class Game {
     this.updateMusic(dt);
     this.updateVitals(dt);
     this.updateItems(dt);
+    this.props.update(dt);
     this.updateTriggers(dt);
     this.updateWave(dt);
     lv.markVisited(p.x, p.y, 5);
@@ -1076,8 +1083,53 @@ export class Game {
     }
     if (this.fileTimer <= 0 && quiet) {
       this.fileTimer = randRange(this.rng, 80, 130);
-      this.radio.say('mutter', 'mutter_brick_file', this.radio.pick('file', MUTTER_BRICK_FILE), { priority: -1 });
+      const about = this.voxLines.mutter_ilsa;
+      if (about && about.length && this.rng() < 0.35) {
+        this.radio.say('mutter', 'mutter_ilsa', this.radio.pick('mutter_ilsa', about), { priority: -1 });
+      } else {
+        this.radio.say('mutter', 'mutter_brick_file', this.radio.pick('file', MUTTER_BRICK_FILE), { priority: -1 });
+      }
     }
+  }
+
+  /**
+   * Round-three chatter: a line from the vox.js pool of this key, from anyone,
+   * held back by a per-key cooldown and a chance so the furniture never talks
+   * over the plot. The voice engine picks the variant it says; the pool here
+   * supplies the caption and the fallback.
+   */
+  chat(speaker, key, opts = {}) {
+    const pool = this.voxLines[key];
+    if (!Array.isArray(pool) || !pool.length || this.player.dead) return false;
+    if (opts.chance !== undefined && this.rng() >= opts.chance) return false;
+    const seen = this._chatAt || (this._chatAt = {});
+    const cd = opts.cooldown === undefined ? 8 : opts.cooldown;
+    if (seen[key] !== undefined && this.time - seen[key] < cd) return false;
+    const text = this.radio.pick(key, pool);
+    const ok = speaker === 'brick' && !opts.delay
+      ? this.brick(key, text)
+      : this.radio.say(speaker, key, text, { priority: opts.priority === undefined ? -1 : opts.priority, delay: opts.delay || 0 }) !== false;
+    if (ok) seen[key] = this.time;
+    return ok;
+  }
+
+  /** The furniture is broken: Brick is pleased, MUTTER has the invoice, Ilsa has notes. */
+  onPropBroken(d) {
+    const def = d.def;
+    this.propsBroken = (this.propsBroken || 0) + 1;
+    if (def.geyser) {
+      this.chat('brick', 'brick_geyser', { cooldown: 5 });
+    } else if (def.use === 'vending') {
+      this.chat('brick', 'brick_smash', { cooldown: 5 });
+      this.chat('mutter', 'mutter_vending', { chance: 0.7, cooldown: 15, delay: 1.4 });
+      return;
+    } else if (def.papers >= 20 && this.rng() < 0.5) {
+      this.chat('brick', 'brick_papers', { cooldown: 8 });
+    } else {
+      this.chat('brick', 'brick_smash', { chance: 0.4, cooldown: 7 });
+    }
+    this.chat('mutter', 'mutter_prop', { chance: 0.3, cooldown: 16, delay: 1.2 });
+    this.chat('ilsa', 'ilsa_prop', { chance: 0.12, cooldown: 40, delay: 2.4 });
   }
 
   /** Heartbeat near death, and the low-health warning cadence. */
@@ -1115,6 +1167,7 @@ export class Game {
       if (p.streak >= 6) this.hud.setFace('face_grin', 2.0);
       if (p.streak === 10) this.brick('brick_chain', BRICK_LINES.chain);
       else if (p.streak === 6 || p.streak === 16) this.brick('brick_streak', BRICK_LINES.streak);
+      if (p.streak === 10 || p.streak === 16) this.chat('mutter', 'chain_praise', { chance: 0.6, cooldown: 25, delay: 1.5 });
     }
   }
 
@@ -1157,8 +1210,12 @@ export class Game {
         after = () => { this.hud.setFace('face_key', 1.8);
           this.speak('key_taken', {}, 'That one opens the bad room.'); };
         break;
-      case 'medkit_small': got = p.heal(18) > 0; msg = '+18 VITALS'; sfx = 'pickup_health'; break;
-      case 'medkit_big': got = p.heal(48) > 0; msg = '+48 VITALS'; sfx = 'pickup_health'; break;
+      case 'medkit_small': got = p.heal(18) > 0; msg = '+18 VITALS'; sfx = 'pickup_health';
+        after = () => this.chat('brick', 'brick_heal', { chance: 0.4, cooldown: 18 });
+        break;
+      case 'medkit_big': got = p.heal(48) > 0; msg = '+48 VITALS'; sfx = 'pickup_health';
+        after = () => this.chat('brick', 'brick_heal', { chance: 0.7, cooldown: 18 });
+        break;
       case 'ammo': {
         // Both barrels, not either. `||` short-circuited, so a player who was
         // capped on flak walked away from the nails in the same box.
@@ -1185,6 +1242,7 @@ export class Game {
           after = () => {
             this.hud.popup(WEAPONS[w].blurb, { size: 9, life: 3.4, y: 22, dy: -8, color: rgba(200, 194, 180, 255), glow: 0.2 });
             this.radio.say('brick', 'brick_pickup_weapon', this.radio.pick('weap', BRICK_LINES.weapon), { priority: 1 });
+            this.chat('mutter', 'weapon_taken', { chance: 0.7, cooldown: 0, delay: 1.8, priority: 0 });
           };
         }
         break;
@@ -1300,6 +1358,7 @@ export class Game {
     this.radio.say('ilsa', 'ilsa_wave_incoming',
       "Flight inbound. Lead them, Hardigan. Aim where they will be, not where they are.",
       { priority: 1, delay: 0.4, once: true });
+    this.chat('mutter', 'wave_start', { chance: 0.5, cooldown: 30, delay: 2.6, priority: 0 });
     this.armForSky();
     this.pendingGrunts = (def.grunts || []).map((g) => ({ ...g, spawned: 0 }));
   }
@@ -1531,10 +1590,17 @@ export class Game {
     }
     // A shut door, a secret or a toilet in front of the boot is what it was aimed at.
     if (this.level.canUse(p.x, p.y, p.ang)) {
+      const door = this.level.doorAhead(p.x, p.y, p.ang);
       this.tryUse();
       this.sound.sfx('kick_wall', { vol: 0.5 });
+      if (door) {
+        this.chat('brick', 'brick_door', { chance: 0.4, cooldown: 14 });
+        this.chat('mutter', 'mutter_kick', { chance: 0.3, cooldown: 24, delay: 1.2 });
+      }
       return;
     }
+    // Then the furniture: desks, cabinets, the vending machine.
+    if (this.props.kick(p, BOOT.range - 0.3, cosArc)) return;
     // Then loose parts: heads are footballs.
     const part = this.gore.kickable(p.x, p.y, ca, sa, BOOT.range - 0.35, BOOT.arc + 0.2);
     if (part) {
@@ -1644,8 +1710,10 @@ export class Game {
       this.sound.sfx(got ? 'pickup_health' : 'dryfire', { vol: 0.6 });
       this.hud.popup(r === 'dry' ? 'NOTHING LEFT IN THE TANK' : got ? 'AAAHHH.  +10 VITALS' : 'LIGHTER, IF NOT HEALTHIER',
         { size: 12, life: 1.6, color: rgba(255, 220, 90, 255) });
+      this.chat('brick', r === 'dry' ? 'brick_dry_tank' : 'brick_relief', { cooldown: 0 });
       return;
     }
+    if (r === 'none' && this.props.use(p)) return;
     if (r === 'opened') this.sound.sfx('door_open');
     else if (r === 'locked') {
       this.sound.sfx('door_locked');
@@ -1768,7 +1836,7 @@ export class Game {
     const dx = a.x + (this.rng() - 0.5) * sp, dy = a.y + (this.rng() - 0.5) * sp, dz = a.z + (this.rng() - 0.5) * sp;
     const L = Math.hypot(dx, dy, dz);
     // Instant trace with a visible tracer: nails are fast enough to be hitscan.
-    const hit = this.traceHit(m.x, m.y, m.z, dx / L, dy / L, dz / L, spec.range);
+    const hit = this.traceHit(m.x, m.y, m.z, dx / L, dy / L, dz / L, spec.range, spec.damage);
     this.particles.trailPuff(m.x + a.x, m.y + a.y, m.z + a.z, [255, 214, 140], 0.05, 0.07);
     // Loose parts on the floor are targets too; shoot a head and it hops.
     const hitT = Math.hypot(hit.x - m.x, hit.y - m.y, hit.z - m.z) || spec.range;
@@ -1790,6 +1858,10 @@ export class Game {
       if (killed) this.gore.launch(e, dx, dy, (g && g.knock ? g.knock : 1) * 4, 1.2);
     } else if (hit.item) {
       this.damageProp(hit.item, spec.damage);
+    } else if (hit.lamp) {
+      this.props.shootLamp(hit.lamp);
+    } else if (hit.prop) {
+      this.props.hit(hit.prop, spec.damage, hit.x, hit.y, hit.z, 'shot');
     } else if (hit.wall) {
       this.particles.sparks(hit.x, hit.y, hit.z, 5, 1.6, [255, 220, 170], 5);
       this.sound.sfx('hit_wall', { pan: this.panAt(hit.x, hit.y), vol: 0.5 });
@@ -1819,13 +1891,26 @@ export class Game {
   }
 
   /** Trace a ray against enemies, props and geometry. */
-  traceHit(x, y, z, dx, dy, dz, maxDist) {
+  traceHit(x, y, z, dx, dy, dz, maxDist, pierce = 0) {
     const step = 0.12;
     let best = { wall: false, enemy: null, item: null, x, y, z };
+    let through = null;
     for (let t = 0; t < maxDist; t += step) {
       const px = x + dx * t, py = y + dy * t, pz = z + dz * t;
       // Height-aware, so a round clears a sandbag pile it passes over, but a
       // full-height wall or a pillar stops it however high it is pitched.
+      // Furniture first: a desk is a wall to a bullet, but it is a wall that breaks.
+      const lamp = this.props.lampAt(px, py, pz);
+      if (lamp) return { wall: false, enemy: null, item: null, lamp, x: px, y: py, z: pz };
+      const prop = this.props.at(px, py, pz);
+      if (prop) {
+        if (prop.solid) return { wall: false, enemy: null, item: null, prop, x: px, y: py, z: pz };
+        // A chair, a plant, a bin: the round goes through it, and it goes to pieces.
+        if (pierce && !(through && through.has(prop))) {
+          (through || (through = new Set())).add(prop);
+          this.props.hit(prop, pierce, px, py, pz, 'shot');
+        }
+      }
       if (pz < 0.02 || pz > CEIL_H || this.level.blockedShot(px, py, pz)) {
         return { wall: true, enemy: null, item: null, x: px - dx * step, y: py - dy * step, z: pz };
       }
@@ -1864,6 +1949,7 @@ export class Game {
     if (z < 1) this.addDecal(x, y, 'scorch');
     this.shake = Math.max(this.shake, 2.4);
     this.gore.impulse(x, y, z, radius, (gore.knock || 12) * 0.8);
+    this.props.blast(x, y, z, radius, damage);
     for (const e of this.enemies) {
       const d = dist(x, y, e.x, e.y);
       if (d >= radius) continue;
@@ -2197,6 +2283,7 @@ export class Game {
 
   onEnemyAlert(e) {
     this.sound.sfx(e.def.alert || 'wrencher_alert', { pan: this.panOf(e), vol: 0.7 });
+    this.chat('brick', 'brick_spot', { chance: 0.14, cooldown: 16 });
   }
   onEnemyWindup(e) {
     if (e.kind === 'priest') this.sound.sfx('priest_chant', { pan: this.panOf(e) });
@@ -2300,6 +2387,7 @@ export class Game {
       this.radio.say('brick', 'brick_low_health', this.radio.pick('lowhp', BRICK_LINES.low_health), { priority: 1 });
       this.radio.say('ilsa', 'ilsa_low_health',
         "Hardigan, your vitals are a mess. There is a medical cache on this floor. Use it.", { priority: 1, delay: 0.3 });
+      this.chat('mutter', 'player_hurt_bad', { chance: 0.6, cooldown: 30, delay: 1.4, priority: 1 });
       setTimeout(() => { this._hurtSaid = false; }, 26000);
     }
     // Enemies keep swinging at the body until the card comes up; he dies once.
