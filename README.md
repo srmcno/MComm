@@ -293,7 +293,7 @@ modest hardware and sharpens up when it can.
 ## Tests
 
 ```
-node tools/playtest.js            # 114 gameplay assertions in a real browser
+node tools/playtest.js            # 115 gameplay assertions in a real browser
 node tools/audio-integration.js   # static coverage + live audio graph measurement
 node tools/speech-check.js        # voice casting, captions, timing, fallback (mocked browsers)
 node tools/scrawl-check.js        # the wall messages: font coverage, fit, curses, faces

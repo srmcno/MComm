@@ -2858,6 +2858,36 @@ check('voice volume at zero leaves the music alone, and captions use the same pl
   s.silent === 0 && s.heard > 0 && s.caption === s.want,
   `ducks at 0%: ${s.silent}, at full: ${s.heard}; "${s.caption}"`);
 
+// ------- 76. MUTTER has notes on the dead staff, and no pool asks for a name the game never hands it
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game;
+  const { Enemy } = await import('./src/game/entities.js');
+  g.newGame(1); g.loadLevel(0); g.setState('play'); g.radio.reset();
+  const p = g.player;
+  const calls = [];
+  const chat = g.chat;
+  g.chat = function (sp, key, o) { calls.push(key); return chat.call(this, sp, key, o); };
+  g.onEnemyKilled(new Enemy('ghoul', p.x + 2, p.y));
+  const mutantAsides = calls.filter((k) => k === 'mutter_mutant_kill').length;
+  calls.length = 0;
+  g.onEnemyKilled(new Enemy('wrencher', p.x + 2, p.y));
+  const staffAsides = calls.filter((k) => k === 'mutter_mutant_kill').length;
+  g.chat = chat; g.radio.reset();
+  // how many names the game passes with each of these lines
+  const gives = { city_burning: 1, city_lost: 2, city_lost_last: 1, all_cities_lost: 1,
+    ilsa_city_burning: 1, ilsa_city_rebuilt: 1, mutter_ex_file: 1 };
+  const greedy = [];
+  for (const [k, v] of Object.entries(g.voxLines)) {
+    for (const l of Array.isArray(v) ? v : [v]) {
+      if ((l.match(/%s/g) || []).length > (gives[k] || 0)) greedy.push(k);
+    }
+  }
+  return { mutantAsides, staffAsides, greedy: [...new Set(greedy)], kill: (g.voxLines.mutter_mutant_kill || []).length };
+});
+check('MUTTER remarks on a dead mutant and not on anything else, and no line wants a name the game does not pass',
+  s.mutantAsides === 1 && s.staffAsides === 0 && s.greedy.length === 0 && s.kill >= 8,
+  `mutant kill asides ${s.mutantAsides}, other kills ${s.staffAsides}, ${s.kill} lines, greedy: ${s.greedy.join(',') || 'none'}`);
+
 // ------------------------------------------------------------- report
 console.log('');
 if (errors.length) {
