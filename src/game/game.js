@@ -1172,7 +1172,9 @@ export class Game {
       pinball: 'tech', cooler: 'office', plant: 'office' }[d.kind];
     const key = cls && this.voxLines[`mutter_prop_${cls}`] && this.rng() < 0.7 ? `mutter_prop_${cls}` : 'mutter_prop';
     this.chat('mutter', key, { chance: 0.3, cooldown: 16, delay: 1.2 });
-    this.chat('ilsa', 'ilsa_prop', { chance: 0.12, cooldown: 40, delay: 2.4 });
+    // Ilsa has the same idea about her lab furniture.
+    const ikey = cls && this.voxLines[`ilsa_prop_${cls}`] && this.rng() < 0.75 ? `ilsa_prop_${cls}` : 'ilsa_prop';
+    this.chat('ilsa', ikey, { chance: 0.12, cooldown: 40, delay: 2.4 });
   }
 
   /** Heartbeat near death, and the low-health warning cadence. */
