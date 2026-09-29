@@ -184,7 +184,8 @@ export class Enemy {
     if (this.lungeT > 0) return K.fire1;
     if (this.recoverT > 0) return K.recover;
     const D = this.facing(camX, camY);
-    if (this.state === ST.IDLE || this.state === ST.ALERT || this.stillT > 0.2) {
+    // A hovering drone never stands still: its rotors are the walk.
+    if (!this.def.flying && (this.state === ST.IDLE || this.state === ST.ALERT || this.stillT > 0.2)) {
       return K.idle[D][((this.idleT * 1.25 + this.bobPhase) | 0) & 1];
     }
     return K.walk[D][this.walkFrame()];

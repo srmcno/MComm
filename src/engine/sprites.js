@@ -13,6 +13,13 @@
 // painted at K pixels per unit. The renderer maps a frame's full height to the
 // enemy's world height whatever its pixel size, so K buys detail, not size.
 //
+// Every enemy kind shares one key pattern: `${id}_walk{D}_{0..7}` (an eight-
+// frame walk per facing), `${id}_idle{D}_{0..1}` (breathing out and in),
+// `${id}_aim0|aim1|fire0|fire1|recover` (the attack in five beats, facing the
+// camera), `${id}_pain0|pain1` (two flinches), `${id}_die{0..5}` and
+// `${id}_dead`. Frames of one kind share a height and are trimmed to their
+// contents symmetrically about the centre line, so widths vary.
+//
 // Dismemberment: every humanoid and quadruped frame is painted by a recipe
 // that takes a mask of missing parts (1 head, 2 armR, 4 armL, 8 legR, 16 legL,
 // the character's own right and left). buildSprites() returns maim(), which
@@ -1780,6 +1787,24 @@ function puffs(f, x, y, k, n, seed, c) {
     const t = i / Math.max(1, n - 1);
     glow(f, x + (Math.sin(i * 1.9 + seed) * 2.5 + t * 3) * k, y - i * 3.2 * k, (2 + t * 2.6) * k,
       mix(c, rgba(34, 32, 36, 255), t * 0.6), { halo: 0.75 - t * 0.35, seed: seed + i * 7, base: mix(c, rgba(20, 20, 24, 255), 0.6), core: 0.6 });
+  }
+}
+
+/**
+ * Comic-book speed lines bursting out around something coming straight at
+ * you: broken radial strokes, only ever on empty space so the body stays clean.
+ */
+function zoomLines(f, cx, cy, r0, r1, n, c, seed) {
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * TAU + hash2(i, seed, 1) * 0.4;
+    const a0 = r0 * (0.85 + 0.3 * hash2(i, seed, 2)), a1 = r1 * (0.7 + 0.3 * hash2(i, seed, 3));
+    const ux = Math.cos(a), uy = Math.sin(a) * 0.8;
+    for (let r = a0; r < a1; r += 0.6) {
+      const x = cx + ux * r, y = cy + uy * r;
+      if (getpx(f, Math.round(x), Math.round(y)) >>> 24) continue;
+      if (((r - a0) / 3 | 0) % 3 === 2) continue;
+      px(f, x, y, c);
+    }
   }
 }
 
@@ -5100,7 +5125,8 @@ function paintDecals(out) {
 
 const ROT = {
   flesh: rgba(122, 132, 104, 255),   // grey-green necrotic
-  sick: rgba(112, 116, 74, 255),     // the walking cast's own: yellower, deader
+  sick: rgba(98, 108, 56, 255),      // the walking cast's own: yellower, deader
+  sickLit: rgba(178, 190, 104, 255), // and what the light does to it: nothing flattering
   bruise: rgba(96, 64, 88, 255),     // bruised purple
   muscle: rgba(158, 58, 54, 255),    // wet exposed muscle
   bone: rgba(214, 206, 180, 255),
@@ -5108,8 +5134,8 @@ const ROT = {
 };
 
 const RR = {
-  flesh: mat(ROT.sick, { contrast: 1.5 }),
-  fleshD: mat(mix(shade(ROT.sick, 0.72), ROT.bruise, 0.25), { contrast: 1.5 }),
+  flesh: mat(ROT.sick, { contrast: 1.5, light: ROT.sickLit }),
+  fleshD: mat(mix(shade(ROT.sick, 0.72), ROT.bruise, 0.25), { contrast: 1.5, light: ROT.sickLit }),
   fleshP: mat(mix(ROT.sick, ROT.bruise, 0.45), { contrast: 1.4 }),
   bruise: mat(ROT.bruise, { contrast: 1.25 }),
   muscle: mat(ROT.muscle, { contrast: 1.3 }),
@@ -5452,7 +5478,7 @@ function quadPose(ch, F, o = {}) {
 function makeGhoul() {
   const R = {
     body: RR.flesh, limbF: RR.fleshD, limbR: RR.fleshD,
-    skull: mat(mix(ROT.sick, ROT.bone, 0.36), { contrast: 1.45 }),
+    skull: mat(mix(ROT.sick, ROT.bone, 0.3), { contrast: 1.45, light: ROT.sickLit }),
     rag: RR.rag, bone: RR.bone, bruise: RR.bruise,
   };
   return {
@@ -5836,7 +5862,9 @@ function paintQuadSet(out, ch, recipes, rig) {
   }
   for (const mode of ATTACK) {
     register(out, recipes, `${id}_${mode}`, WA, H, (f, mask) => {
-      quadruped(f, ch, quadKey(ch, ch.poses[mode]), 0, mask);
+      const b = quadruped(f, ch, quadKey(ch, ch.poses[mode]), 0, mask);
+      // the lunge comes right at you
+      if (mode === 'fire0' || mode === 'fire1') zoomLines(f, b.head.x, (b.head.y + b.body.y) / 2, 14 * k, 26 * k, 12, rgba(206, 214, 196, 255), 0x2c + id.length);
       finishEnemy(f, { ink });
     });
   }
@@ -5916,15 +5944,16 @@ function paintQuadParts(out, ch) {
 
 /** Gorger - an obese translucent sac with something boiling inside it. */
 function makeGorger() {
-  const hide = mix(ROT.sick, rgba(186, 168, 104, 255), 0.3);
+  const hide = mix(ROT.sick, rgba(170, 138, 64, 255), 0.3);
+  const SL = { contrast: 1.45, light: ROT.sickLit };
   const R = {
-    torso: mat(hide, { contrast: 1.4 }),
-    sleeve: mat(mix(shade(hide, 0.8), ROT.bruise, 0.15), { contrast: 1.4 }),
-    trouser: mat(mix(shade(hide, 0.66), ROT.bruise, 0.4), { contrast: 1.35 }),
+    torso: mat(hide, SL),
+    sleeve: mat(mix(shade(hide, 0.8), ROT.bruise, 0.15), SL),
+    trouser: mat(mix(shade(hide, 0.66), ROT.bruise, 0.4), SL),
     boot: mat(rgba(52, 40, 44, 255)), sole: flat(rgba(30, 24, 26, 255)),
     glove: mat(mix(ROT.muscle, ROT.flesh, 0.4), { contrast: 1.2 }),
-    head: mat(mix(hide, ROT.bruise, 0.3), { contrast: 1.4 }),
-    neck: mat(hide, { contrast: 1.4 }),
+    head: mat(mix(hide, ROT.bruise, 0.3), SL),
+    neck: mat(hide, SL),
     muscle: RR.muscle, bone: RR.bone, bruise: RR.bruise,
   };
   const baseProfile = [[0, 17.0, 14.5], [0.3, 21.5, 18.0], [0.62, 20.5, 17.0], [0.85, 16.0, 13.5], [1, 12.5, 10.5]];
