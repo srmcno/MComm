@@ -216,7 +216,7 @@ function capsule(f, x0, y0, x1, y1, r0, r1, ramp, o = {}) {
     const ew = o.edgeW === undefined ? 1.0 : o.edgeW;
     capsule(f, x0, y0, x1, y1, r0 + ew, r1 + ew, flat(o.edge), { hole: ew });
   }
-  const shift = o.shift || 0, grain = o.grain || 0, seed = o.seed || 11, hole = o.hole || 0;
+  const shift = o.shift || 0, grain = o.grain || 0, seed = o.seed || 11, hole = o.hole || 0, weave = o.weave || 0;
   const spec = o.spec, specT = o.specT || 0.965;
   const dx = x1 - x0, dy = y1 - y0;
   const len = Math.hypot(dx, dy) || 1e-4;
@@ -241,6 +241,7 @@ function capsule(f, x0, y0, x1, y1, r0, r1, ramp, o = {}) {
       if (spec && nx * HX + ny * HY + nz * HZ > specT) { px(f, x, y, spec); continue; }
       let b = band(lamOf(nx, ny, nz)) + shift;
       if (grain && hash2(x, y, seed) < grain) b -= 1;
+      if (weave && b >= 2 && (x + 2 * y) % weave === 0) b -= 1;
       px(f, x, y, ramp[clamp(b | 0, 0, 4)]);
     }
   }
@@ -257,7 +258,7 @@ function blob(f, cx, cy, rx, ry, ramp, o = {}) {
   }
   const hole = o.hole || 0;
   const hx = hole ? rx / Math.max(0.01, rx - hole) : 0, hy = hole ? ry / Math.max(0.01, ry - hole) : 0;
-  const shift = o.shift || 0, grain = o.grain || 0, seed = o.seed || 5;
+  const shift = o.shift || 0, grain = o.grain || 0, seed = o.seed || 5, weave = o.weave || 0;
   const spec = o.spec, specT = o.specT || 0.965;
   const cyl = o.mode === 'cyl';
   const nyB = o.nyBias === undefined ? -0.16 : o.nyBias;
@@ -283,6 +284,7 @@ function blob(f, cx, cy, rx, ry, ramp, o = {}) {
       if (spec && nx * HX + ny * HY + nz * HZ > specT) { px(f, x, y, spec); continue; }
       let b = band(lamOf(nx, ny, nz)) + shift;
       if (grain && hash2(x, y, seed) < grain) b -= 1;
+      if (weave && b >= 2 && (x + 2 * y) % weave === 0) b -= 1;
       px(f, x, y, ramp[clamp(b | 0, 0, 4)]);
     }
   }
@@ -793,7 +795,7 @@ function humanoid(f, ch, pose, D, mask = 0) {
       const p = U(0, lerp(ch.hipY - 1.5, ch.shoulderY + 1 + shrug * t, t), 0);
       const s2 = P(p);
       const rx = Math.sqrt(Math.pow(pr.w * Math.cos(theta), 2) + Math.pow(pr.d * Math.sin(theta), 2)) * k;
-      blob(f, s2.x, s2.y, rx, 1.9 * k, R.torso, { mode: 'cyl', nyBias: lerp(-0.05, -0.4, t), grain: 0.06, seed: 33 + i, rot, sy });
+      blob(f, s2.x, s2.y, rx, 1.9 * k, R.torso, { mode: 'cyl', nyBias: lerp(-0.05, -0.4, t), grain: 0.06, seed: 33 + i, rot, sy, weave: ch.weave });
     }
     if (ch.torsoDetail) ch.torsoDetail(ctx);
   });
@@ -850,8 +852,8 @@ function humanoid(f, ch, pose, D, mask = 0) {
 function paintLeg(c, L, h2, k2, f2, sft) {
   const { f, ch, R, k, P, E } = c;
   const t = ch.legThick * k;
-  capsule(f, h2.x, h2.y, k2.x, k2.y, t, t * 0.9, R.trouser, { shift: sft, grain: 0.05, seed: 21, ...E });
-  capsule(f, k2.x, k2.y, f2.x, f2.y, t * 0.9, t * 0.74, R.trouser, { shift: sft, grain: 0.05, seed: 22, ...E });
+  capsule(f, h2.x, h2.y, k2.x, k2.y, t, t * 0.9, R.trouser, { shift: sft, grain: 0.05, seed: 21, ...E, weave: ch.weave });
+  capsule(f, k2.x, k2.y, f2.x, f2.y, t * 0.9, t * 0.74, R.trouser, { shift: sft, grain: 0.05, seed: 22, ...E, weave: ch.weave });
   creases(f, h2, k2, t, 2, R.trouser[0], 0.72, 0.9, 0.5);
   creases(f, k2, f2, t * 0.9, 1, R.trouser[1], 0.35, 0.35, 0.45);
   if (R.kneePad) blob(f, k2.x, k2.y, t * 0.82, t * 0.72, R.kneePad, { shift: sft, spec: R.kneePad[4], ...E });
@@ -882,7 +884,7 @@ function paintArm(c, A, s2, e2, h2, sft, noDeltoid) {
   const { f, ch, R, k, E } = c;
   const t = ch.armThick * k;
   if (!noDeltoid) blob(f, s2.x, s2.y + 0.3 * k, t * 1.3, t * 1.2, R.shoulder || R.sleeve, { shift: sft, spec: (R.shoulder || R.sleeve)[4], ...E });
-  capsule(f, s2.x, s2.y, e2.x, e2.y, t * 1.05, t * 0.9, R.sleeve, { shift: sft, grain: 0.05, seed: 41, ...E });
+  capsule(f, s2.x, s2.y, e2.x, e2.y, t * 1.05, t * 0.9, R.sleeve, { shift: sft, grain: 0.05, seed: 41, ...E, weave: ch.weave });
   capsule(f, e2.x, e2.y, h2.x, h2.y, t * 0.92, t * 0.8, R.forearm || R.sleeve, { shift: sft, grain: 0.05, seed: 42, ...E });
   creases(f, s2, e2, t, 2, R.sleeve[0], 0.78, 0.92, 0.45);
   if (ch.armDetail) ch.armDetail(c, A, s2, e2, h2, sft);
@@ -1320,7 +1322,7 @@ function makeWrencher() {
     tape: mat(rgba(236, 200, 40, 255), { contrast: 1.2 }),
   };
   const ch = {
-    id: 'wrencher', w: 64, h: 72, dieW: 104, k: K,
+    id: 'wrencher', w: 64, h: 72, dieW: 104, k: K, weave: 5,
     hipY: 31, shoulderY: 50, neckY: 52.6, headY: 58.4, neckZ: 1.2, headZ: 2.0,
     shoulderHalf: 11.6, legHalf: 5.1, ankleY: 4.0, footLen: 5.8,
     thigh: 14.6, shin: 14.2, upper: 12, fore: 11.4,
@@ -1553,7 +1555,7 @@ function makeSparker() {
     pack: mat(rgba(90, 100, 84, 255), { contrast: 1.25 }),
   };
   const ch = {
-    id: 'sparker', w: 64, h: 72, dieW: 104, k: K,
+    id: 'sparker', w: 64, h: 72, dieW: 104, k: K, weave: 6,
     hipY: 33, shoulderY: 51, neckY: 54.4, headY: 59.8, neckZ: 0.8, headZ: 1.6,
     shoulderHalf: 9.2, legHalf: 4.2, ankleY: 3.4, footLen: 5.0,
     thigh: 15.4, shin: 15, upper: 12, fore: 11.5,
