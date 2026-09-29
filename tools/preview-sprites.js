@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
 import { buildSprites } from '../src/engine/sprites.js';
+import { ENEMY_TYPES } from '../src/game/entities.js';
 import { writeSheet, writePng } from './png.js';
 
 const OUT = process.env.SPRITE_OUT ||
@@ -25,12 +26,24 @@ const second = secondBuild.frames;
 const ENEMIES = ['wrencher', 'sparker', 'bellows', 'wasp', 'priest'];
 const MUTANTS = ['ghoul', 'gorger', 'howler', 'stalker'];
 const expected = [];
-for (const id of ENEMIES) {
-  for (let d = 0; d < 4; d++) for (let f = 0; f < 4; f++) expected.push(`${id}_walk${d}_${f}`);
-  expected.push(`${id}_aim`, `${id}_fire`, `${id}_pain`);
-  for (let k = 0; k < 4; k++) expected.push(`${id}_die${k}`);
-  expected.push(`${id}_dead`);
+// Every enemy on the common key pattern: an eight-frame walk and a three-frame
+// breathing idle per facing, the attack in five beats, two flinches, six
+// death frames and the corpse.
+const WALK_N = 8, DIE_N = 6;
+const ATTACK = ['aim0', 'aim1', 'fire0', 'fire1', 'recover'];
+function enemyKeys(id) {
+  const a = [];
+  for (let d = 0; d < 4; d++) {
+    for (let f = 0; f < WALK_N; f++) a.push(`${id}_walk${d}_${f}`);
+    for (let f = 0; f < 3; f++) a.push(`${id}_idle${d}_${f}`);
+  }
+  for (const m of ATTACK) a.push(`${id}_${m}`);
+  a.push(`${id}_pain0`, `${id}_pain1`);
+  for (let k = 0; k < DIE_N; k++) a.push(`${id}_die${k}`);
+  a.push(`${id}_dead`);
+  return a;
 }
+for (const id of ENEMIES) expected.push(...enemyKeys(id));
 for (let i = 0; i < 4; i++) expected.push(`mutter_idle${i}`);
 for (let i = 0; i < 3; i++) expected.push(`mutter_fire${i}`);
 expected.push('mutter_pain');
@@ -52,12 +65,7 @@ for (let i = 0; i < 3; i++) expected.push(`blood${i}`);
 expected.push('scorch');
 
 // --- the mutant expansion
-for (const id of MUTANTS) {
-  for (let d = 0; d < 4; d++) for (let f = 0; f < 4; f++) expected.push(`${id}_walk${d}_${f}`);
-  expected.push(`${id}_aim`, `${id}_fire`, `${id}_pain`);
-  for (let k = 0; k < 4; k++) expected.push(`${id}_die${k}`);
-  expected.push(`${id}_dead`);
-}
+for (const id of MUTANTS) expected.push(...enemyKeys(id));
 for (let i = 0; i < 4; i++) expected.push(`maw_idle${i}`);
 for (let i = 0; i < 3; i++) expected.push(`maw_fire${i}`);
 expected.push('maw_pain');
@@ -68,15 +76,19 @@ for (let i = 0; i < 4; i++) expected.push(`gore_pool${i}`);
 for (let i = 0; i < 3; i++) expected.push(`viscera${i}`);
 for (let i = 0; i < 3; i++) expected.push(`acid${i}`);
 
-// Walking cast frames are painted at 1.5 pixels per design unit. Death and
-// corpse frames of the humanoid rig are wider (the body lies down in them),
-// but keep the same height, so the renderer draws them at the same scale.
+// Walking cast frames are painted at 1.5 pixels per design unit. Every frame
+// of a kind has the same height, so the renderer draws them at one scale;
+// widths are the painted canvas with its empty margins trimmed off both sides
+// equally, so they only ever come out narrower than the canvas. Attack frames
+// are painted on a wider canvas (a swing or a gout reaches out), and death
+// frames wider again (the body lies down in them).
 const SIZES = {
   wrencher: [96, 108], sparker: [96, 108], bellows: [96, 108], priest: [96, 120],
   wasp: [84, 60], mutter: [192, 160],
-  ghoul: [84, 99], gorger: [114, 111], howler: [90, 117], stalker: [78, 90], maw: [176, 150],
+  ghoul: [90, 99], gorger: [114, 111], howler: [90, 117], stalker: [93, 90], maw: [176, 150],
 };
-const DIE_W = { wrencher: 156, sparker: 156, bellows: 162, priest: 168, gorger: 174, howler: 162 };
+const DIE_W = { wrencher: 156, sparker: 156, bellows: 162, priest: 168, gorger: 174, howler: 162, ghoul: 117, stalker: 121 };
+const ATK_W = { wrencher: 154, sparker: 154, bellows: 154, priest: 154, gorger: 182, howler: 144, ghoul: 126, stalker: 130 };
 const MAIMABLE = ['wrencher', 'sparker', 'bellows', 'priest', 'gorger', 'howler', 'ghoul', 'stalker'];
 const PARTS = ['head', 'arm', 'leg'];
 for (const id of MAIMABLE) for (const p of PARTS) for (let r = 0; r < 8; r++) expected.push(`${id}_part_${p}_${r}`);
@@ -176,9 +188,12 @@ for (const [k, f] of Object.entries(frames)) {
     check(f.w >= eh * 0.2 && f.w <= eh * 0.62, `${k}: part frame ${f.w}px out of proportion to a ${eh}px enemy`);
   } else if (SIZES[grp]) {
     const [w0, h] = SIZES[grp];
-    const w = DIE_W[grp] && /_(die\d|dead)$/.test(k) ? DIE_W[grp] : w0;
-    check(f.w === w && f.h === h, `${k}: size ${f.w}x${f.h}, expected ${w}x${h}`);
-    check(pct >= 0.03 && pct <= 0.70, `${k}: coverage ${(pct * 100).toFixed(1)}% outside 3-70%`);
+    const w = DIE_W[grp] && /_(die\d|dead)$/.test(k) ? DIE_W[grp]
+      : ATK_W[grp] && /_(aim\d|fire\d|recover)$/.test(k) ? ATK_W[grp] : w0;
+    const trimmed = !['wasp', 'mutter', 'maw'].includes(grp);
+    check(f.h === h && (trimmed ? f.w <= w && f.w > 8 && (w - f.w) % 2 === 0 : f.w === w),
+      `${k}: size ${f.w}x${f.h}, expected ${trimmed ? 'at most ' : ''}${w}x${h}`);
+    check(pct >= 0.03 && pct <= 0.75, `${k}: coverage ${(pct * 100).toFixed(1)}% outside 3-75%`);
   }
   // walking humanoids must have their feet on the floor and not bounce
   if (/_walk\d_\d$/.test(k) && grp !== 'wasp') {
@@ -195,7 +210,7 @@ for (const id of [...ENEMIES, ...MUTANTS]) {
   if (id === 'wasp') continue;
   for (let d = 0; d < 4; d++) {
     const bots = [];
-    for (let fi = 0; fi < 4; fi++) {
+    for (let fi = 0; fi < WALK_N; fi++) {
       const f = frames[`${id}_walk${d}_${fi}`];
       if (!f) continue;
       let bottom = -1;
@@ -209,15 +224,17 @@ for (const id of [...ENEMIES, ...MUTANTS]) {
   }
 }
 
-// silhouette sanity: a sprite should not be one solid blob edge-to-edge
+// a walk has to actually move: every frame of a cycle differs from the next
 for (const id of [...ENEMIES, ...MUTANTS]) {
-  const f = frames[`${id}_walk0_1`];
-  if (!f) continue;
-  let cols = 0;
-  for (let x = 0; x < f.w; x++) {
-    for (let y = 0; y < f.h; y++) if (f.data[y * f.w + x] >>> 24) { cols++; break; }
+  for (let d = 0; d < 4; d++) {
+    for (let fi = 0; fi < WALK_N; fi++) {
+      const a = frames[`${id}_walk${d}_${fi}`], b = frames[`${id}_walk${d}_${(fi + 1) % WALK_N}`];
+      if (!a || !b) continue;
+      let same = a.w === b.w && a.h === b.h;
+      if (same) for (let i = 0; i < a.data.length; i++) if (a.data[i] !== b.data[i]) { same = false; break; }
+      check(!same, `${id}_walk${d}_${fi} and the next frame are identical`);
+    }
   }
-  if (cols > f.w - 2) warn.push(`${id}: silhouette spans the full frame width (${cols}/${f.w})`);
 }
 
 // ---------------------------------------------------------------------------
@@ -237,9 +254,21 @@ if (typeof maim === 'function') {
         check(Number.isFinite(r[j]) && r[j] > 0 && r[j] < 1, `rig.${id}.${j} = ${r[j]} is not a fraction`);
       }
       check(r.neck >= r.shoulder - 0.05 && r.head >= r.neck - 0.05, `rig.${id}: joints out of order (${JSON.stringify(r)})`);
+      // the walk's length on the floor: the game's hand-worked stride must be
+      // the art's, or the feet skate by the difference
+      const d = ENEMY_TYPES[id];
+      if (id === 'priest') check(!r.cycle, 'rig.priest.cycle: a robe has no feet to plant');
+      else {
+        check(r.cycle > 0.3 && r.cycle < 4, `rig.${id}.cycle = ${r.cycle} is not a walk`);
+        const want = r.cycle * d.height * (d.slip || 1);
+        check(Math.abs(d.stride / want - 1) < 0.03, `ENEMY_TYPES.${id}.stride ${d.stride} is not the art's ${want.toFixed(3)}`);
+        check(d.slip >= 1 && d.slip <= 1.35, `ENEMY_TYPES.${id}.slip ${d.slip}: the feet skate`);
+        const fps = 8 * d.speed / want;
+        check(fps < 28, `${id} walks at ${fps.toFixed(1)} frames a second`);
+      }
     }
-    const keys = [`${id}_walk0_0`, `${id}_walk1_2`, `${id}_walk2_1`, `${id}_walk3_3`,
-      `${id}_aim`, `${id}_fire`, `${id}_pain`, `${id}_die1`, `${id}_die3`, `${id}_dead`];
+    const keys = [`${id}_walk0_0`, `${id}_walk1_2`, `${id}_walk2_5`, `${id}_walk3_7`, `${id}_idle0_1`,
+      `${id}_aim1`, `${id}_fire0`, `${id}_recover`, `${id}_pain1`, `${id}_die1`, `${id}_die4`, `${id}_dead`];
     for (const key of keys) {
       check(maim(key, 0) === frames[key], `maim(${key}, 0) is not frames[${key}]`);
       for (const m of MASKS) {
@@ -291,7 +320,7 @@ if (typeof maim === 'function') {
   // every maim-capable kind x a spread of masks, on a walk, an attack and a corpse
   const sheet = [];
   for (const id of MAIMABLE) {
-    for (const key of [`${id}_walk0_1`, `${id}_walk1_2`, `${id}_fire`, `${id}_die2`, `${id}_dead`]) {
+    for (const key of [`${id}_walk0_1`, `${id}_walk1_2`, `${id}_fire0`, `${id}_die2`, `${id}_dead`]) {
       for (const m of [0, 1, 2, 4, 8, 16, 24, 31]) { const f = maim(key, m); if (f) sheet.push(f); }
     }
   }
@@ -303,11 +332,8 @@ if (typeof maim === 'function') {
 }
 
 for (const id of [...ENEMIES, ...MUTANTS]) {
-  const rows = [];
-  for (let d = 0; d < 4; d++) for (let f = 0; f < 4; f++) rows.push(`${id}_walk${d}_${f}`);
-  rows.push(`${id}_aim`, `${id}_fire`, `${id}_pain`, `${id}_dead`);
-  rows.push(`${id}_die0`, `${id}_die1`, `${id}_die2`, `${id}_die3`);
-  writeSheet(path.join(OUT, `spr-${id}.png`), pick(rows), { cols: 4, scale: 3, pad: 3 });
+  // rows of eight: the four walks, then idles, the attack, flinches, deaths
+  writeSheet(path.join(OUT, `spr-${id}.png`), pick(enemyKeys(id)), { cols: 8, scale: 2, pad: 3 });
 }
 
 writeSheet(path.join(OUT, 'spr-boss.png'), pick([
@@ -347,8 +373,8 @@ writeSheet(path.join(OUT, 'spr-gore.png'), pick([
 writeSheet(path.join(OUT, 'spr-mutants-1x.png'), pick(
   MUTANTS.flatMap((id) => {
     const a = [];
-    for (let d = 0; d < 4; d++) for (let f = 0; f < 4; f++) a.push(`${id}_walk${d}_${f}`);
-    a.push(`${id}_aim`, `${id}_fire`, `${id}_pain`, `${id}_die1`, `${id}_die3`, `${id}_dead`);
+    for (let d = 0; d < 4; d++) for (let f = 0; f < WALK_N; f += 2) a.push(`${id}_walk${d}_${f}`);
+    a.push(`${id}_aim1`, `${id}_fire0`, `${id}_pain0`, `${id}_die1`, `${id}_die4`, `${id}_dead`);
     return a;
   }).concat(['gib0', 'gib1', 'gib3', 'gib4', 'gore_pool2', 'viscera1', 'acid1'])),
   { cols: 22, scale: 1, pad: 2 });
@@ -361,9 +387,9 @@ writeSheet(path.join(OUT, 'spr-small.png'), pick(expected.filter((k) => !k.start
 writeSheet(path.join(OUT, 'spr-walk-1x.png'), pick(
   ENEMIES.flatMap((id) => {
     const a = [];
-    for (let d = 0; d < 4; d++) for (let f = 0; f < 4; f++) a.push(`${id}_walk${d}_${f}`);
+    for (let d = 0; d < 4; d++) for (let f = 0; f < WALK_N; f++) a.push(`${id}_walk${d}_${f}`);
     return a;
-  })), { cols: 16, scale: 1, pad: 2 });
+  })), { cols: 32, scale: 1, pad: 2 });
 
 // ---------------------------------------------------------------------------
 // report

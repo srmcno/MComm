@@ -16,10 +16,12 @@ unfailingly polite about the people it is killing, and has read your personnel
 file. It considers your romantic history relevant operational context and will
 tell you which of your exes lives in whichever city is currently on fire.
 
-Every pixel, every sound and every note of music in this game is generated from
-code at load time. There are no image files. There are no audio files. The
-voices are your browser's own, cast per machine, with a formant synthesiser
-standing by for when it has none.
+Every pixel, every sound effect and every note of music in this game is
+generated from code at load time. There are no image files. The one exception
+is the cast: the lines you hear most were recorded by voice actors (ElevenLabs)
+and ship inside the game as small clips. Everything else is said by your
+browser's own voices, with a formant synthesiser standing by for when it has
+none.
 
 ## Play it
 
@@ -272,7 +274,21 @@ fight, and the siege track thickens as the barrage does.
 
 ## The voices
 
-The cast speaks through the browser's own speech engine (`src/audio/speech.js`),
+**The recorded cast.** The lines heard most (the story on every floor, the gore
+quips, the kills, the sky, the city losses, MUTTER reading your file) were
+recorded with ElevenLabs: Hardigan is "John Texas", a deep gravelly American;
+Vance is "German Petra", English with a hard German accent; MUTTER is "Daniel",
+a steady British broadcaster. The takes are trimmed, levelled to one loudness
+and stored as 32 kbps mono MP3 in `src/audio/voicepack.js`; `src/audio/acted.js`
+plays them through Web Audio, Vance through a radio band-pass and MUTTER with a
+faint metallic comb. A line that has takes plays one of them (never the same one
+twice running, and the right one for the city a line names). A floor opening,
+or one of Hardigan's distracted moments, is only played when the whole exchange
+was recorded, so no scene switches voices halfway. Anything without a take is
+spoken by the browser voice as below. **CALIBRATION > VOICE** shows RECORDED
+CAST while this is on; ROBOT and OFF turn it off.
+
+The rest of the cast speaks through the browser's own speech engine (`src/audio/speech.js`),
 which on any desktop or phone is far easier to follow mid-firefight than
 anything synthesised in a few kilobytes. Each character is cast from whatever
 voices the machine offers, by language, apparent gender and quality: Hardigan

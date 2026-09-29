@@ -2095,7 +2095,7 @@ const BK = Object.create(null);
  * outshouts a gunshot and a ghoul's pain no longer outshouts the ghoul.
  */
 const MIX = Object.assign(Object.create(null), {
-  flak_fire: 2.3, splitter_fire: 2, nailer_fire: 2.2, deadman_blow: 1.3, pipebomb_blow: 1.4,
+  flak_fire: 2.3, splitter_fire: 2, widow_fire: 2.3, nailer_fire: 2.2, deadman_blow: 1.3, pipebomb_blow: 1.4,
   wrencher_alert: 0.55, wrencher_pain: 0.5, wrencher_die: 0.5, enemy_pain: 0.45, enemy_die: 0.5,
   ghoul_alert: 0.45, ghoul_pain: 0.38, ghoul_die: 0.45, howler_alert: 0.5, howler_pain: 0.42,
   howler_die: 0.45, priest_pain: 0.45, priest_die: 0.5, bellows_pain: 0.7, sparker_fire: 0.7,
@@ -2111,7 +2111,7 @@ const MIX = Object.assign(Object.create(null), {
 const PUMP = Object.assign(Object.create(null), {
   deadman_blow: 0.6, city_hit: 0.5, boss_death: 0.55, maw_die: 0.4, roof_open: 0.3,
   barrel_explode: 0.35, pipebomb_blow: 0.35, gorger_burst: 0.3, airburst: 0.22,
-  splitter_fire: 0.16, flak_fire: 0.1, halo_fire: 0.14, player_die: 0.5,
+  splitter_fire: 0.16, widow_fire: 0.12, flak_fire: 0.1, halo_fire: 0.14, player_die: 0.5,
 });
 
 /** Pitch jitter: every repeat of a sound lands a little differently. */
@@ -2147,6 +2147,34 @@ bake('widow', 0.6, 2, (d, sr, R) => {
   kMode(d, sr, b, 2450 * j, 0.011, 0.07);
   kMode(d, sr, b, 4100 * j, 0.006, 0.05);
   kClick(d, sr, b, 0.08, 4);
+});
+
+// THE WIDOW as a hand cannon: a whip-crack of a muzzle, a thump you feel in
+// the sternum, the frame ringing, the room slapping it back, and the slide
+// slamming home a quarter second later.
+bake('cannon', 0.7, 2, (d, sr, R) => {
+  const j = 1 + (R() - 0.5) * 0.06;
+  kClick(d, sr, 0, 1.6, 2);
+  kNoise(d, sr, R, 0, 0.02, { type: 'hp', f0: 3200, q: 0.8, atk: 0.0001, tau: 0.004, amp: 6 });
+  kNoise(d, sr, R, 0.0003, 0.05, { type: 'bp', f0: 2400, f1: 900, q: 1, atk: 0.0002, tau: 0.012, amp: 5 });
+  kThump(d, sr, 0.0006, 150 * j, 36 * j, 0.02, 0.13, 1.35, 5, 0.0005);
+  kThump(d, sr, 0.001, 72 * j, 30 * j, 0.03, 0.2, 0.7, 2, 0.002);
+  kNoise(d, sr, R, 0.0004, 0.42, { type: 'lp', f0: 9000, f1: 300, sw: 0.12, q: 1, atk: 0.0005, tau: 0.06, amp: 7.5, col: 1 });
+  kNoise(d, sr, R, 0.0008, 0.18, { type: 'bp', f0: 1100, f1: 420, q: 1.2, atk: 0.0007, tau: 0.035, amp: 6 });
+  kMode(d, sr, 0.0012, 410 * j, 0.05, 0.5, 0.9);
+  kMode(d, sr, 0.001, 1870 * j, 0.06, 0.12);
+  kMode(d, sr, 0.001, 3020 * j, 0.04, 0.08);
+  kSlap(d, sr, [[0.011, 0.4], [0.02, 0.28], [0.034, 0.18], [0.056, 0.11], [0.088, 0.06]], 0.2);
+  kSat(d, 2.6);
+  kNorm(d, 1);
+  // the slide, back and home
+  const a = 0.2 + R() * 0.02, b = a + 0.04;
+  kClick(d, sr, a, 0.1, 3);
+  kMode(d, sr, a, 3000 * j, 0.007, 0.09);
+  kThump(d, sr, b, 460, 240, 0.008, 0.016, 0.14, 1.8);
+  kMode(d, sr, b, 2300 * j, 0.012, 0.09);
+  kMode(d, sr, b, 3900 * j, 0.007, 0.06);
+  kClick(d, sr, b, 0.12, 4);
 });
 
 // THE SPLITTER. Three shells through one breech: three cracks a few ms apart,
@@ -2332,13 +2360,24 @@ const SFX = {
     S._nz(v, t + 0.006, 0.55, { type: 'lowpass', f: 1400 * r, f2: 110, q: 0.8, g: 0.26, atk: 0.004, dec: 0.5, pink: true });
   },
 
-  // THE SPLITTER. weapons.js still points the Splitter at flak_fire; this is
-  // the sound it should be making.
+  // THE SPLITTER: three shells through one breech, a sub kick under them,
+  // and the room.
   splitter_fire(S, t, o) {
     const v = V(S, o, 8, 0.34, 0.16); if (!v) return;
     const r = jr(S, o, 0.04);
-    smp(S, v, t, 'splitter', { g: 1.1, rate: r });
+    smp(S, v, t, 'splitter', { g: 1.15, rate: r });
+    S._tone(v, t, 0.22, { type: 'sine', f: 78 * r, f2: 34, sweep: 0.12, g: 0.55, atk: 0.002, dec: 0.2 });
     S._nz(v, t + 0.008, 0.8, { type: 'lowpass', f: 1200 * r, f2: 90, q: 0.8, g: 0.34, atk: 0.005, dec: 0.72, pink: true });
+  },
+
+  // THE WIDOW, the hand cannon: the baked shot, a sub boom under it, and the
+  // corridor answering in stereo.
+  widow_fire(S, t, o) {
+    const v = V(S, o, 8, 0.3, 0.14); if (!v) return;
+    const r = jr(S, o, 0.05);
+    smp(S, v, t, 'cannon', { g: 1.1, rate: r });
+    S._tone(v, t, 0.18, { type: 'sine', f: 64 * r, f2: 30, sweep: 0.1, g: 0.5, atk: 0.002, dec: 0.16 });
+    S._nz(v, t + 0.006, 0.6, { type: 'lowpass', f: 1500 * r, f2: 110, q: 0.8, g: 0.3, atk: 0.004, dec: 0.55, pink: true });
   },
 
   // The fuse dial. Plays on every wheel notch, so: one buffer, pitched by rate.

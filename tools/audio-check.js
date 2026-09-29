@@ -251,7 +251,7 @@ const SFX_NAMES = [
   // --- a voice per enemy, the Splitter's own blast, and dismemberment ---
   'wrencher_pain', 'wrencher_die', 'sparker_alert', 'sparker_pain', 'sparker_die',
   'bellows_pain', 'bellows_die', 'wasp_pain', 'wasp_die', 'priest_pain', 'priest_die',
-  'splitter_fire',
+  'splitter_fire', 'widow_fire',
   'limb_rip', 'head_pop', 'blood_spurt', 'meat_thud', 'bone_bounce', 'body_slam', 'head_punt',
 ];
 

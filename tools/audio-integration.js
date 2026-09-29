@@ -308,12 +308,30 @@ check('the VOICE option exists and reports what is playing', !!r.label && r.mode
     const out = { engine: g.vox.engine, casting: g.vox.casting };
     window.__speechLog.length = 0;
     g.newGame(1); g.loadLevel(0); g.setState('play');
-    const dur = g.speakAs('ilsa', 'ilsa_intro', '');
+    // A line with no recorded take, so it is the browser voice that says it.
+    const dur = g.speakAs('ilsa', 'ilsa_city_lost', '');
     out.dur = dur;
     out.caption = g.lastSpoken && g.lastSpoken.text;
     await sleep(80);
     out.first = window.__speechLog.slice();
     out.busy = g.vox.busy;
+    // The recorded cast: a line with a take plays from the pack through Web
+    // Audio, and the browser voice says nothing.
+    const { VOICE_PACK } = await import('./src/audio/voicepack.js');
+    out.pack = VOICE_PACK.clips.length;
+    if (out.pack) {
+      const key = VOICE_PACK.clips.find((c) => c.k && !c.a).k;
+      g.vox.cancel();
+      await sleep(50);
+      const n0 = window.__speechLog.length;
+      const d2 = g.speakAs(VOICE_PACK.clips.find((c) => c.k === key).r, key, '');
+      await sleep(120);
+      out.take = { key, acted: g.vox.acted, d: d2, tts: window.__speechLog.length - n0,
+        caption: g.lastSpoken && g.lastSpoken.text,
+        recorded: VOICE_PACK.clips.filter((c) => c.k === key).map((c) => c.t) };
+      g.vox.cancel();
+      await sleep(50);
+    }
     g.radio.say('brick', 'brick_boot', 'Doctor Vance. Sit tight.', { priority: 3 });
     g.radio.update(1 / 60);
     const cancels = window.speechSynthesis.cancels;
@@ -348,12 +366,45 @@ check('the VOICE option exists and reports what is playing', !!r.label && r.mode
   check('natural voices: Ilsa speaks in Katja with a duration and a caption',
     /Katja/.test(u.voice || '') && v.dur > 1 && !!v.caption && v.busy, `${v.dur}s "${String(v.caption).slice(0, 40)}"`);
   check('natural voices: nothing spoken or captioned carries phones or braces', !v.leak);
+  if (v.pack) {
+    const t = v.take;
+    check('recorded cast: a line with a take plays the take, captioned with its words, and no browser voice',
+      t.acted && t.d > 0.3 && t.tts === 0 && t.recorded.includes(t.caption), `${t.key}: ${t.d}s "${t.caption}" tts ${t.tts}`);
+  }
   check('natural voices: pausing cancels speech and holds the radio line', v.pauseCancelled && v.held >= 1, `held ${v.held}`);
   check('VOICE: ROBOT switches to the formant synth', v.robot.mode === 'robot' && v.robot.engine === 'robot' && v.robot.label === 'ROBOT');
   check('VOICE: OFF is silent', v.off.mode === 'off' && v.off.said === 0);
   check('natural voices: going back to the title stops speech', v.titleCancelled);
   check('VOICE: back to NATURAL, and the choice is stored', v.back.mode === 'natural' && v.back.engine === 'natural' &&
     (v.back.stored === 'natural' || v.back.stored === 'blocked'), `${v.back.stored}`);
+}
+
+// Every take in the pack decodes in a real browser to about the length it claims.
+{
+  const pg = await browser.newPage();
+  pg.on('pageerror', (e) => errs.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/index.html`);
+  await pg.waitForFunction(() => window.NUKEHAUS && window.NUKEHAUS.game, null, { timeout: 120000 });
+  const d = await pg.evaluate(async () => {
+    const { ClipBank } = await import('./src/audio/acted.js');
+    const { VOICE_PACK } = await import('./src/audio/voicepack.js');
+    const ctx = new OfflineAudioContext(1, 22050, 22050);
+    const bank = new ClipBank(VOICE_PACK);
+    bank.attach(ctx, ctx.destination);
+    const out = { n: VOICE_PACK.clips.length, bad: [], worst: 0 };
+    for (const c of VOICE_PACK.clips) {
+      try {
+        const buf = await bank._decode(c);
+        const off = Math.abs(buf.duration - c.d);
+        out.worst = Math.max(out.worst, off);
+        if (off > 0.2) out.bad.push(`${c.k}.${c.i}: ${buf.duration.toFixed(2)} vs ${c.d}`);
+      } catch (e) { out.bad.push(`${c.k}.${c.i}: ${e && e.message}`); }
+    }
+    return out;
+  });
+  await pg.close();
+  check(`every recorded take decodes to its stated length (${d.n})`, d.bad.length === 0,
+    d.bad.length ? d.bad.slice(0, 4).join('; ') : `worst ${d.worst.toFixed(3)}s off`);
 }
 
 if (errs.length) { console.log('\nPAGE ERRORS:'); for (const e of errs.slice(0, 6)) console.log('  ' + e); }

@@ -17,7 +17,8 @@ import { clamp, damp, lerp, dist, dist3, wrapAngle, makeRng, randRange, commas, 
 import { rgba } from '../core/pixels.js';
 import { recordRun, bestFor } from '../core/scores.js';
 import {
-  Radio, LEVEL_STORY, BRICK_LINES, EXES, MUTTER_MUTANT, MUTTER_BRICK_FILE, MUTTER_GORE, ILSA_GORE, SPEAKERS,
+  Radio, LEVEL_STORY, LEVEL_STORY_SETS, BRICK_LINES, EXES, MUTTER_MUTANT, MUTTER_BRICK_FILE, MUTTER_GORE,
+  ILSA_GORE, SPEAKERS,
 } from './story.js';
 import { plainText } from '../audio/speech.js';
 
@@ -692,12 +693,27 @@ export class Game {
         this.speak('boot', {}, 'Good morning. Bunker Sieben is operating normally. Please ignore the sirens.');
       }
       // The level's opening exchange, queued behind the boot line.
-      const beats = LEVEL_STORY[this.levelIndex] || [];
+      const beats = this.storyBeats(this.levelIndex);
       for (const b of beats) {
         this.radio.say(b.speaker, b.key, b.text, { priority: 3, delay: 0.4 });
       }
       this.storyQueued = true;
     }
+  }
+
+  /**
+   * The floor's opening exchange. Each read hands out the next one in turn;
+   * with the recorded cast speaking, the next one it has takes of wins, so a
+   * scene is never half actor and half browser voice.
+   */
+  storyBeats(floor) {
+    const sets = LEVEL_STORY_SETS[floor] || [];
+    let beats = LEVEL_STORY[floor] || [];
+    const v = this.vox;
+    if (!v || !v.acted || typeof v.hasTake !== 'function') return beats;
+    const taken = (set) => set.every((b) => v.hasTake(b.key));
+    for (let n = 1; n < sets.length && !taken(beats); n++) beats = LEVEL_STORY[floor] || [];
+    return beats;
   }
 
   updatePause(dt, input) {
@@ -810,9 +826,23 @@ export class Game {
       const axes = input.axes();
       p.moveWith(dt, axes, lv, this);
 
-      // The wheel changes weapons, the way every shooter since 1993 does.
-      if (input.wheel && !p.pendingWeapon) {
-        if (p.cycleWeapon(input.wheel > 0 ? 1 : -1)) this.sound.sfx('weapon_switch');
+      // The wheel changes weapons, the way every shooter since 1993 does, but
+      // only for a real notch. A touch-surface mouse or a trackpad sends a
+      // trickle of tiny wheel events while the hand just moves, and counting
+      // each one as a change flipped the gun back and forth mid-aim. The
+      // trickle is summed per gesture (it forgets after a quarter second of
+      // quiet), a change takes a notch's worth, and changes are spaced out.
+      if (input.wheel) {
+        if (this.time - (this._wheelAt || 0) > 0.25 || Math.sign(input.wheel) !== Math.sign(this._wheelSum || 0)) {
+          this._wheelSum = 0;
+        }
+        this._wheelAt = this.time;
+        this._wheelSum = (this._wheelSum || 0) + input.wheel;
+        if (Math.abs(this._wheelSum) >= 0.9 && !p.pendingWeapon && this.time >= (this._wheelNext || 0)) {
+          if (p.cycleWeapon(this._wheelSum > 0 ? 1 : -1)) this.sound.sfx('weapon_switch');
+          this._wheelSum = 0;
+          this._wheelNext = this.time + 0.3;
+        }
       }
       for (let s = 1; s <= 6; s++) if (input.justPressed('slot' + s)) {
         if (p.selectSlot(s)) this.sound.sfx('weapon_switch');
