@@ -126,6 +126,8 @@ export function deliver(role, text) {
   const t = String(text || '');
   if (role === 'brick' && t.length <= 64) return t.replace(/\.(["')\]]?)$/, '!$1');
   if (role === 'mutter') return t.replace(/!+/g, '.');
+  // Somebody on the end of a chainsaw does not do full stops.
+  if (role === 'victim') return t.replace(/\.(["')\]]?)$/, '!$1');
   return t;
 }
 
@@ -339,6 +341,8 @@ const MOOD = {
   dying: { pitch: 0.86, rate: 0.80 },
 };
 export const ROLES = Object.freeze(['brick', 'ilsa', 'mutter']);
+/** Everyone who can be heard: the three of them, and whoever is on the chainsaw. */
+export const VOICED = Object.freeze([...ROLES, 'victim']);
 
 function prosodyFor(role, v) {
   const base = PROSODY[role];
@@ -374,6 +378,7 @@ export function castVoices(list) {
   const out = {};
   if (!voices.length) {
     for (const r of ROLES) out[r] = { voice: null, name: '', lang: 'en-US', ...prosodyFor(r, null), score: 0 };
+    out.victim = { voice: null, name: '', lang: 'en-US', pitch: 1.3, rate: 1.2, score: 0 };
     return out;
   }
   const top = {};
@@ -409,6 +414,10 @@ export function castVoices(list) {
       out.mutter.rate = Math.min(out.mutter.rate, 0.84);
     }
   }
+  // The man on the chainsaw is Brick's voice, higher, faster and in a panic:
+  // one more voice would cost a casting slot the machine may not have.
+  const b = out.brick;
+  out.victim = { ...b, pitch: clamp(b.pitch * 1.85, 1.0, 1.7), rate: clamp(b.rate * 1.2, 1.1, 1.5) };
   return out;
 }
 
@@ -764,7 +773,7 @@ export class Speech {
 
   /* ---------------- internals ------------------------------------------- */
 
-  _role(o) { return ROLES.includes(o.voice) ? o.voice : 'mutter'; }
+  _role(o) { return VOICED.includes(o.voice) ? o.voice : 'mutter'; }
 
   _prosody(role, o) {
     const c = this.cast[role] || { pitch: 1, rate: 1 };

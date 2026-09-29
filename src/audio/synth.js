@@ -2107,6 +2107,7 @@ const MIX = Object.assign(Object.create(null), {
   radio_open: 2, radio_close: 2.5, radio_static: 1.8,
   wood_hit: 1.5, wood_break: 1.2, metal_hit: 1.2, glass_break: 1.7, coin_clink: 0.9, soda_pop: 0.9,
   pinball_play: 0.6, buzz_deny: 0.6, console_blip: 0.65, water_burst: 0.75, paper_flurry: 0.9,
+  saw_run: 1.6, saw_cut: 1.5, saw_bind: 1.4, saw_catch: 1.3, saw_wall: 1.3, saw_start: 1.3,
 });
 
 /** How far each big hit pushes the music down (see Sound._pumpMusic). */
@@ -4860,7 +4861,98 @@ bake('can_rattle', 0.75, 2, (d, sr, R) => {
   kThump(d, sr, 0, 110, 55, 0.02, 0.06, 0.7, 2);
 });
 
+// THE SEVERANCE: a diamond-chain concrete saw. The engine is one cycle of a
+// two-stroke, built to loop: twenty periods of 100 Hz in 0.2 s, so back to back
+// it is a steady chug, and played faster it revs.
+bake('saw_run', 0.2, 3, (d, sr, R) => {
+  const f = 100 * (1 + (R() - 0.5) * 0.02);
+  kTone(d, sr, 0, 0.2, f, f, 0.55, 0.001, 0, 2);
+  kTone(d, sr, 0, 0.2, f * 2, f * 2, 0.28, 0.001, 0, 1);
+  kTone(d, sr, 0, 0.2, f * 3.02, f * 3.02, 0.16, 0.001, 0, 0);
+  for (let i = 0; i < 10; i++) kThump(d, sr, i * 0.02, 230, 140, 0.004, 0.011, 0.22, 1.5);
+  kNoise(d, sr, R, 0, 0.2, { type: 'bp', f0: 3400, f1: 3400, q: 0.7, atk: 0.001, hold: 0.2, tau: 0.5, amp: 0.5, grain: 0.5 });
+  kSat(d, 2.2);
+});
+
+// The chain in something wet: a rasp, an engine labouring and a lot of small red noises.
+bake('saw_cut', 0.24, 3, (d, sr, R) => {
+  const j = 1 + (R() - 0.5) * 0.06;
+  kNoise(d, sr, R, 0, 0.24, { type: 'bp', f0: 1400, f1: 2200, q: 1.2, atk: 0.005, hold: 0.14, tau: 0.06, amp: 2.2, am: [70, 0.7], grain: 0.3 });
+  kTone(d, sr, 0, 0.24, 95 * j, 88 * j, 0.42, 0.004, 0, 2);
+  kSquish(d, sr, R, 0, 0.22, 14, 300, 1400, 0.22, 1.2);
+  kDebris(d, sr, R, 0.02, 0.2, 6, 800, 3200, 0.15, 0.008);
+  kSat(d, 1.6);
+});
+
+// Stuck: the chain has bitten something it cannot get through and the motor
+// is going down, pitch dragging, with a squeal from the bar.
+bake('saw_bind', 0.5, 2, (d, sr, R) => {
+  const j = 1 + (R() - 0.5) * 0.06;
+  kTone(d, sr, 0, 0.5, 78 * j, 46 * j, 0.7, 0.01, 0, 2, [11, 0.08]);
+  kNoise(d, sr, R, 0, 0.5, { type: 'bp', f0: 520, f1: 300, q: 1.2, atk: 0.01, hold: 0.3, tau: 0.15, amp: 2, am: [34, 0.8], col: 1 });
+  kTone(d, sr, 0.02, 0.45, 1850 * j, 1380 * j, 0.1, 0.02, 0, 0, [9, 0.04]);
+  kSquish(d, sr, R, 0, 0.48, 10, 160, 700, 0.2, 1);
+  kSat(d, 2);
+});
+
+// The chain catches. The engine surges, and whatever was hung on it is not any more.
+bake('saw_catch', 0.75, 1, (d, sr, R) => {
+  kTone(d, sr, 0, 0.3, 62, 190, 0.8, 0.004, 0, 2);
+  kThump(d, sr, 0, 95, 42, 0.03, 0.14, 0.9, 2.5);
+  kNoise(d, sr, R, 0, 0.35, { type: 'bp', f0: 900, f1: 380, q: 0.9, atk: 0.002, tau: 0.12, amp: 3, col: 1 });
+  kSquish(d, sr, R, 0.02, 0.55, 34, 200, 1200, 0.4, 1.3);
+  kDebris(d, sr, R, 0.03, 0.4, 12, 500, 3500, 0.25, 0.012);
+  kSlap(d, sr, [[0.02, 0.3], [0.04, 0.18]], 0.3);
+  kSat(d, 2);
+});
+
+// Chain on concrete or steel: a shriek and a fistful of sparks.
+bake('saw_wall', 0.24, 3, (d, sr, R) => {
+  const j = 1 + (R() - 0.5) * 0.1;
+  kNoise(d, sr, R, 0, 0.24, { type: 'hp', f0: 2800, f1: 5200, q: 0.8, atk: 0.003, hold: 0.14, tau: 0.06, amp: 2.4, am: [95, 0.5] });
+  kTone(d, sr, 0, 0.24, 1500 * j, 1900 * j, 0.18, 0.005, 0, 1);
+  kTone(d, sr, 0, 0.24, 96, 92, 0.3, 0.004, 0, 2);
+  kCrackle(d, sr, R, 0, 0.24, 700, 0.5, 1);
+  kSat(d, 1.4);
+});
+
+// A pull cord, two coughs and the catch.
+bake('saw_start', 0.95, 1, (d, sr, R) => {
+  for (const t0 of [0, 0.24]) kNoise(d, sr, R, t0, 0.14, { type: 'bp', f0: 1500, f1: 700, q: 1.4, atk: 0.005, tau: 0.05, amp: 1.6 });
+  for (const [t0, a] of [[0.44, 0.6], [0.54, 0.75], [0.62, 0.9]]) {
+    kThump(d, sr, t0, 130, 70, 0.02, 0.05, a, 2);
+    kTone(d, sr, t0, 0.06, 95, 80, a * 0.3, 0.004, 0.03, 2);
+  }
+  kTone(d, sr, 0.68, 0.27, 70, 105, 0.7, 0.01, 0, 2);
+  kNoise(d, sr, R, 0.68, 0.27, { type: 'bp', f0: 3000, f1: 3800, q: 0.7, atk: 0.02, tau: 0.3, amp: 0.4, grain: 0.5 });
+  kSat(d, 1.8);
+});
+
 Object.assign(SFX, {
+  saw_run(S, t, o) {
+    const v = V(S, o, 3, 0.15, 0); if (!v) return;
+    smp(S, v, t, 'saw_run', { g: 0.8, rate: o.rate });
+  },
+  saw_cut(S, t, o) {
+    const v = V(S, o, 4, 0.2, 0); if (!v) return;
+    smp(S, v, t, 'saw_cut', { g: 0.9, rate: jr(S, o, 0.08) });
+  },
+  saw_bind(S, t, o) {
+    const v = V(S, o, 4, 0.25, 0); if (!v) return;
+    smp(S, v, t, 'saw_bind', { g: 0.9, rate: jr(S, o, 0.06) });
+  },
+  saw_catch(S, t, o) {
+    const v = V(S, o, 5, 0.3, 0.05); if (!v) return;
+    smp(S, v, t, 'saw_catch', { g: 1, rate: jr(S, o, 0.05) });
+  },
+  saw_wall(S, t, o) {
+    const v = V(S, o, 3, 0.2, 0); if (!v) return;
+    smp(S, v, t, 'saw_wall', { g: 0.8, rate: jr(S, o, 0.1) });
+  },
+  saw_start(S, t, o) {
+    const v = V(S, o, 4, 0.2, 0); if (!v) return;
+    smp(S, v, t, 'saw_start', { g: 0.85, rate: jr(S, o, 0.03) });
+  },
   wood_hit(S, t, o) {
     const v = V(S, o, 3, 0.25, 0); if (!v) return;
     smp(S, v, t, 'wood_hit', { g: 0.9, rate: jr(S, o, 0.14) });

@@ -3038,6 +3038,143 @@ function drawPipebomb3(sc, P) {
   return { muzzle: [0, -4, 0] };
 }
 
+
+// ---------------------------------------------------------------------------
+// WEAPON 7 - THE SEVERANCE: a diamond-chain concrete saw
+// ---------------------------------------------------------------------------
+
+const SAW3 = {
+  pos: [6.8, 5.6, 12], yaw: -0.3, pitch: 0.02, roll: 0.5,
+  barFrom: 13.6, barTo: 44, barTop: 0.4, barBot: 8.4,
+};
+const SAW_ORANGE = rgba(222, 104, 26, 255);
+
+/**
+ * A point round the stadium the chain runs in, in the bar's own plane: s in 0..1
+ * is a fraction of the loop, from the rear of the top run, forward, round the
+ * nose and back along the bottom. Returns [y, z, facing] (facing is the angle
+ * the tooth points, for the nose where it turns).
+ */
+function sawLoop(s, B) {
+  const r = (B.barBot - B.barTop) / 2, cy = (B.barBot + B.barTop) / 2;
+  const zN = B.barTo - r, run = zN - B.barFrom, arc = PI * r, total = 2 * run + 2 * arc;
+  let d = ((s % 1) + 1) % 1 * total;
+  if (d < run) return [B.barTop, B.barFrom + d, 0];
+  d -= run;
+  if (d < arc) { const a = -PI / 2 + (d / arc) * PI; return [cy + sin(a) * r, zN + cos(a) * r, a + PI / 2]; }
+  d -= arc;
+  if (d < run) return [B.barBot, zN - d, PI];
+  d -= run;
+  // round the rear sprocket, inside the clutch cover where nobody can see it
+  return [B.barBot + (B.barTop - B.barBot) * (d / arc), B.barFrom, 0];
+}
+
+function drawSaw3(sc, P) {
+  const B = SAW3;
+  const phase = P.phase || 0, blood = P.blood || 0;
+  const steel = metal3(rgba(74, 76, 84, 255), { gl: 0.55, grain: 0.1, scratch: 0.7, wear: 0.7, seed: 183, bevel: 0.25 });
+  const dark = metal3(rgba(40, 40, 46, 255), { gl: 0.45, grain: 0.12, scratch: 0.6, wear: 0.5, seed: 185, bevel: 0.3 });
+  const gore = (S) => {
+    if (blood <= 0) return;
+    const n = nz3(S.u * 0.7 + 3.1, S.v * 0.9 + 1.7);
+    if (n < blood * 0.85) { S.col = mix(S.col, rgba(120, 10, 16, 255), 0.75); S.gl = 0.7; }
+  };
+  const orange = paint3(SAW_ORANGE, {
+    seed: 181, bevel: 0.7,
+    decal: (S) => {
+      if (S.face === F_LEFT) {
+        if (glyph3('SEVERANCE', S.prim.su - S.u, S.v, 1.0, 1.2, 1.1)) S.col = mix(S.col, rgba(24, 20, 16, 255), 0.85);
+        if (glyph3('DIAMOND CHAIN  NOT FOR PERSONNEL', S.prim.su - S.u, S.v, 1.0, 3.2, 0.42)) S.col = mix(S.col, rgba(30, 24, 18, 255), 0.8);
+        if (S.u > 9 && S.u < 12.6 && S.v > 5.0 && S.v < 7.6 && ((S.v * 1.5) % 1) < 0.45) { S.col = rgba(16, 14, 12, 255); S.gl = 0.1; S.ao *= 0.6; }
+      }
+      if (S.face === F_TOP) {
+        const f = S.v;
+        if (f > S.prim.sv - 2.6) S.col = mix(S.col, (((S.u + S.v) * 0.6) % 1) < 0.5 ? rgba(20, 18, 16, 255) : S.col, 0.85);
+      }
+      gore(S);
+    },
+  });
+  const bar = metal3(rgba(122, 126, 136, 255), {
+    gl: 0.6, grain: 0.08, scratch: 0.9, wear: 0.6, seed: 187, bevel: 0.35, bare: rgba(210, 212, 220, 255),
+    decal: gore,
+  });
+  const tooth = metal3(rgba(170, 174, 184, 255), { gl: 0.75, grain: 0.06, scratch: 0.3, wear: 0.3, seed: 189, bevel: 0.2, bare: rgba(240, 242, 250, 255), decal: gore });
+  const link = metal3(rgba(46, 46, 52, 255), { gl: 0.4, grain: 0.1, scratch: 0.3, wear: 0.4, seed: 191, bevel: 0.15, decal: gore });
+
+  // ---- motor housing, with a scoop on top and a cooling vent on the flank ----
+  box3(sc, -3.5, 0, 0, 3.5, 7.4, 13.8, orange, {
+    mod: (C) => { for (const k of [0, 1, 4, 5]) C[k][0] *= 0.8; C[4][1] = C[5][1] = 0.5; },
+  });
+  box3(sc, -2.6, -1.6, 2.4, 2.6, 0.1, 9.4, orange, { mod: (C) => { C[4][0] *= 0.8; C[5][0] *= 0.8; C[0][0] *= 0.7; C[1][0] *= 0.7; } });
+  // the clutch cover the bar bolts to, and the bar's own mounting plate
+  tube3(sc, [-2.9, 3.6, 13.2], [2.9, 3.6, 13.2], 3.5, 3.5, dark, { segs: 20, capStart: 'flat', capEnd: 'flat' });
+  box3(sc, -1.1, B.barTop - 0.1, B.barFrom - 1.6, 1.1, B.barBot + 0.1, B.barFrom + 1.4, steel);
+  // fuel cap and pull-start on the back, because it is a real saw
+  tube3(sc, [1.5, -1.5, 5.2], [1.5, -2.2, 5.2], 1.3, 1.3, paint3(rgba(190, 40, 30, 255), { seed: 193 }), { segs: 12, capEnd: 'flat', capStart: 'flat' });
+  box3(sc, -0.7, 2.6, -1.0, 0.7, 5.0, 0.2, dark);
+
+  // ---- the bar: a flat slab with a rounded nose ----
+  const r = (B.barBot - B.barTop) / 2, cyB = (B.barBot + B.barTop) / 2, zN = B.barTo - r;
+  box3(sc, -0.75, B.barTop + 0.2, B.barFrom, 0.75, B.barBot - 0.2, zN, bar);
+  tube3(sc, [-0.75, cyB, zN], [0.75, cyB, zN], r - 0.25, r - 0.25, bar, { segs: 20, capStart: 'flat', capEnd: 'flat' });
+  // a nose sprocket you can see spinning if you look closely
+  tube3(sc, [0.7, cyB, zN], [0.95, cyB, zN], 1.1, 1.1, dark, { segs: 12, capEnd: 'flat', capStart: 'flat' });
+
+  // ---- the chain: cutters and links round the stadium, carried by `phase` ----
+  const N = 34, spacing = 1 / N;
+  for (let k = 0; k < N; k++) {
+    const [y, z] = sawLoop(k * spacing + phase * spacing * 2, B);
+    const cutter = (k & 1) === 0;
+    // cutters stand proud with a diamond face; links sit flat between them
+    if (cutter) box3(sc, -1.25, y - 0.85, z - 0.75, 1.25, y + 0.85, z + 0.75, tooth);
+    else box3(sc, -1.0, y - 0.55, z - 0.6, 1.0, y + 0.55, z + 0.6, link);
+  }
+
+  // ---- side handle on the left flank, and the rear grip: the Naildriver's hands ----
+  box3(sc, -6.2, 3.0, 9.6, -3.0, 4.4, 12.2, dark);
+  const vgTop = [-5.4, 4.4, 10.8], vgDir = vNorm([0, 1, -0.25]);
+  const vg = [];
+  for (let i = 0; i <= 5; i++) vg.push(vAdd(vgTop, vMul(vgDir, i * 2.0)));
+  loft(sc, vg, (t) => [1.45, 1.8 - t * 0.15], {
+    col: rgba(40, 38, 36, 255), gl: 0.3,
+    shade(S) {
+      const k = (S.u * 1.4) % 1;
+      S.col = shadeC(S.col, k < 0.28 ? 0.62 : 1.0 + nz3(S.u, S.v * 5) * 0.25);
+      S.col = mix(S.col, rgba(8, 8, 8, 255), clamp((1 - S.ao) * 1.0, 0, 0.6));
+    },
+  }, { segs: 14, capEnd: 'round', up: [1, 0, 0] });
+
+  const gTop = [0, 6.4, 1.6], gDir = vNorm([0, 12, -4.8]);
+  const gpts = [];
+  for (let i = 0; i <= 6; i++) gpts.push(vAdd(gTop, vMul(gDir, i * 2.3)));
+  loft(sc, gpts, (t) => [1.75, 2.7 - t * 0.2], {
+    col: rgba(34, 32, 30, 255), gl: 0.3,
+    shade(S) {
+      const k = (S.u * 1.6) % 1;
+      S.col = shadeC(S.col, k < 0.25 ? 0.6 : 1.0 + nz3(S.u, S.v * 5) * 0.3);
+      S.col = mix(S.col, rgba(8, 8, 8, 255), clamp((1 - S.ao) * 1.0, 0, 0.6));
+    },
+  }, { segs: 16, up: [1, 0, 0], capEnd: 'flat', capMat: dark });
+  const guard = spline([[0, 6.4, 8.2], [0, 9.0, 7.6], [0, 9.6, 5.4], [0, 8.8, 3.4], [0, 7.4, 2.4]], 4);
+  loft(sc, guard, () => [0.42, 0.7], dark, { segs: 8, up: [1, 0, 0] });
+  loft(sc, spline([[0, 6.4, 5.4], [0, 7.6, 5.8], [0, 8.6, 5.4]], 3), (t) => [0.34, 0.6 - t * 0.1],
+    paint3(rgba(190, 40, 30, 255), { seed: 195 }), { segs: 8, up: [1, 0, 0], capEnd: 'round' });
+
+  rightGrip3(sc, gTop, gDir, [0, 7.4, 5.6], { thumbY: -1.2, thumbX: -3.7 });
+  const la = vgDir, lp = [-1, 0, 0], lq = vNorm(vMul(vCross(lp, la), -1));
+  hand3(sc, {
+    c: vAdd(vgTop, vMul(la, 0.4)), a: la, p: lp, q: lq, rp: 1.45, rq: 1.8,
+    s: [0.4, 2.45, 4.45, 6.25], sMid: 3.3, mcpQ: 0.4, slope: 0.0,
+    thumbL: [[-8.4, 6.6, 6.4], [-7.4, 5.0, 7.6], [-5.6, 4.6, 8.6], [-4.0, 5.0, 9.2], [-3.4, 5.4, 10.2]],
+    thumbCut: 4.2, thumbNailV: 0.6, thumbR: [1.45, 1.2, 1.08, 0.98], thumbUp: [0, -1, 0],
+    wristL: [-9.0, 8.2, 6.0], wristQ: -6.4,
+    arm: [-0.55, 0.3, -1], armLen: 38, armUp: [-1, -0.3, 0], armBend: [-0.1, 0.25, 0],
+    tattoo: { u: 14, v: 0.35, s: 2.4, word: 'NUKE' }, seed: 13,
+  });
+
+  return { muzzle: [0, cyB, B.barTo + 0.5] };
+}
+
 // ---------------------------------------------------------------------------
 // 3D weapon frame assembly
 // ---------------------------------------------------------------------------
@@ -3077,6 +3214,10 @@ const WEAPON3 = {
     draw: drawPipebomb3, pos: PIPEBOMB3.pos, yaw: PIPEBOMB3.yaw, pitch: PIPEBOMB3.pitch, roll: PIPEBOMB3.roll,
     pivot: [0, 4, -4],
   },
+  saw: {
+    draw: drawSaw3, pos: SAW3.pos, yaw: SAW3.yaw, pitch: SAW3.pitch, roll: SAW3.roll,
+    pivot: [0, 6, 2],
+  },
 };
 
 // The gun rig's key sits further round to the left than the portrait rig's,
@@ -3088,7 +3229,7 @@ function buildWeapon3(out, name) {
   const poses = WEAPON_POSES3[name];
   ntab();
   let seed = 9000;
-  for (const k of POSE_KEYS) {
+  for (const k of Object.keys(poses)) {
     const pose = poses[k] || poses.idle;
     const R = pose.R || {};
     const sc = scene3();
@@ -3175,6 +3316,23 @@ const WEAPON_POSES3 = {
     fire2: { R: { dy: 5.5, dz: -5.5, rx: -0.09 }, P: { ext: 0.75, mud: 0.55, blood: 0.75 } },
     reload0: { R: { dy: 6.2, dz: -6, rx: -0.1 }, P: { ext: 0.6, mud: 0.55, blood: 0.6 } },
     reload1: { R: { dy: 7, dz: -6.6, rx: -0.11 }, P: { ext: 0.2, mud: 0.5 } },
+  },
+  // the saw is held, not fired: idle is the engine ticking over, reload0/1 shudder
+  // at idle, fire0-2 are the chain running (phase walks a third of a tooth a
+  // frame so three frames loop), bloody0-2 the same in meat, jam0/1 the chain
+  // snagged on someone and the whole thing straining
+  saw: {
+    idle: { P: { phase: 0, blood: 0.1 } },
+    fire0: { flash: 0.3, flashR: 80, R: { dx: 0.15, dy: 0.25, dz: -0.6 }, P: { phase: 0, blood: 0.1 } },
+    fire1: { flash: 0.12, flashR: 60, R: { dx: -0.2, dy: -0.15, dz: -0.3 }, P: { phase: 0.34, blood: 0.1 } },
+    fire2: { R: { dx: 0.1, dy: 0.3, dz: -0.5 }, P: { phase: 0.67, blood: 0.1 } },
+    reload0: { R: { dx: 0.1, dy: 0.1, dz: -0.1 }, P: { phase: 0.2, blood: 0.1 } },
+    reload1: { R: { dx: -0.1, dy: -0.1 }, P: { phase: 0.55, blood: 0.1 } },
+    bloody0: { flash: 0.4, flashR: 110, flashCol: [1.0, 0.36, 0.28], R: { dx: 0.3, dy: 0.35, dz: -1.0 }, P: { phase: 0, blood: 0.95 } },
+    bloody1: { flash: 0.2, flashR: 90, flashCol: [1.0, 0.36, 0.28], R: { dx: -0.3, dy: -0.25, dz: -0.6 }, P: { phase: 0.34, blood: 0.95 } },
+    bloody2: { flash: 0.1, flashR: 70, flashCol: [1.0, 0.36, 0.28], R: { dx: 0.2, dy: 0.4, dz: -0.8 }, P: { phase: 0.67, blood: 0.95 } },
+    jam0: { flash: 0.3, flashR: 100, flashCol: [1.0, 0.3, 0.24], R: { dx: 0.6, dy: -0.4, dz: -1.8, rz: 0.05 }, P: { phase: 0.1, blood: 1 } },
+    jam1: { flash: 0.3, flashR: 100, flashCol: [1.0, 0.3, 0.24], R: { dx: -0.6, dy: 0.5, dz: -1.3, rz: -0.05 }, P: { phase: 0.15, blood: 1 } },
   },
   // the pipe bomb: held, thrown, then the next one comes up out of the bag
   pipebomb: {
@@ -3831,7 +3989,7 @@ export function buildViewmodels() {
   frames.contrail = drawContrail();
 
   // --- expansion: the kick and the pipe bomb ---
-  for (const name of ['boot', 'pipebomb']) buildWeapon3(frames, name);
+  for (const name of ['boot', 'pipebomb', 'saw']) buildWeapon3(frames, name);
   setModel();
 
   // --- expansion: radio portraits ---

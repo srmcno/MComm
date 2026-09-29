@@ -1118,6 +1118,117 @@ s = await page.evaluate(() => {
 check('breaking every piece of furniture on every floor leaves no invisible wall behind',
   s.broke > 100 && s.bad.length === 0, `${s.broke} pieces broken over ${s.levels} floors, ghosts ${s.bad.join(' ') || 'none'}`);
 
+// ------ 28s. THE SEVERANCE: a concrete chainsaw (round four). It lies on the first
+// floor, has a slot and a picture, saws what is in front of it, hangs a body on a
+// dull chain, and cuts it in half, across or down, into two pieces that fly
+s = await page.evaluate(async () => {
+  const { Enemy } = await import('./src/game/entities.js');
+  const { splitFrame } = await import('./src/game/gore.js');
+  const { WEAPONS, WEAPON_ORDER } = await import('./src/game/weapons.js');
+  const g = window.NUKEHAUS.game;
+  g.player.owned.saw = false;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  const p = g.player, lv = g.level;
+  const onFloor = g.items.some((it) => it.kind === 'weapon' && it.weapon === 'saw');
+  const art = !!g.art.sprites.weapon_saw && ['idle', 'fire0', 'fire2', 'reload1', 'bloody1', 'jam0'].every((k) => !!g.art.vm['saw_' + k]);
+  const slot = WEAPONS.saw.slot === 7 && WEAPON_ORDER.includes('saw');
+  // a straight open run to work in
+  let spot = null;
+  for (let y = 3; y < lv.H - 3 && !spot; y++) for (let x = 3; x < lv.W - 6 && !spot; x++) {
+    let ok = true; for (let k = 0; k < 5; k++) if (lv.blocked(x + 0.5 + k, y + 0.5)) ok = false;
+    if (ok) spot = [x + 0.5, y + 0.5];
+  }
+  const ownFiring = Object.getOwnPropertyDescriptor(g.input, 'firing');
+  g.input.firing = () => window.FIRE;
+  const arm = (mode) => {
+    p.owned.saw = true; p.weapon = 'saw'; p.pendingWeapon = null; p.swapT = 0; p.health = 100;
+    p.x = spot[0]; p.y = spot[1]; p.ang = 0; p.z = 0.56; p.kickCooldown = 0;
+    p.pitch = mode === 'v' ? 40 : mode === 'h' ? -40 : 0;
+    g.enemies.length = 0; g.gore.clear(); g.saw = g.freshSaw(); g.hud.sawHint = '';
+  };
+  const victim = (kind, d = 1.05) => { const e = new Enemy(kind, p.x + d, p.y); e.ang = Math.PI; e.state = 2; g.enemies.push(e); return e; };
+  const run = (sec) => { for (let i = 0; i < Math.round(sec * 60); i++) g.update(1 / 60, g.input); };
+  const real = g.rng;
+
+  // 1. hung on the blade
+  arm('v'); window.FIRE = true;
+  const e1 = victim('wrencher');
+  g.rng = () => 0.01; run(0.5); g.rng = real;
+  const pinned = !!g.saw.stuck && e1.pinned && e1.alive && g.saw.pose.startsWith('jam');
+  const held = Math.hypot(e1.x - p.x, e1.y - p.y);
+  const hint = g.hud.sawHint;
+  const hpWhileStuck = e1.hp;
+  // 2. it catches: cut in two, and it is a kill
+  const kills0 = g.levelKills, score0 = p.score;
+  for (let i = 0; i < 600 && !e1._bisected; i++) run(1 / 60);
+  run(0.3);
+  const halves = g.gore.parts.filter((c) => c.part === 'half');
+  const bisected = { done: !!e1._bisected, gone: !!e1.vanish, dead: !e1.alive, halves: halves.length,
+    kill: g.levelKills === kills0 + 1, paid: p.score - score0 >= 800, stuckClear: !g.saw.stuck };
+  // 3. let go while stuck: he slides off, alive
+  arm('h'); window.FIRE = true;
+  const e2 = victim('wrencher');
+  g.rng = () => 0.01; run(0.5); g.rng = real;
+  const slid0 = !!e2.pinned;
+  window.FIRE = false; run(0.3);
+  const slid = { was: slid0, now: !e2.pinned, alive: e2.alive, hurt: e2.hp < e2.maxHp, clear: !g.saw.stuck };
+  // 4. the boot gets him off
+  arm('h'); window.FIRE = true;
+  const e3 = victim('wrencher');
+  g.rng = () => 0.01; run(0.5); g.rng = real;
+  g.tryKick(); run(0.05);
+  const booted = { off: !e3.pinned, clear: !g.saw.stuck };
+  // 5. a plain cut: sawing what has not been snagged kills it
+  arm('x'); window.FIRE = true;
+  const e4 = victim('wrencher', 0.9);
+  g.saw.seen.add(e4);
+  let sawKilled = false;
+  for (let i = 0; i < 240 && e4.alive; i++) run(1 / 60);
+  sawKilled = !e4.alive;
+  // 6. furniture in front goes to pieces
+  window.FIRE = false;
+  arm('x');
+  let deskOk = null;
+  const desk = lv.decor.find((d) => d.kind === 'crate' || d.kind === 'desk');
+  if (desk) {
+    for (let a = 0; a < 16 && !deskOk; a++) {
+      const ang = a * Math.PI / 8, x = desk.x + Math.cos(ang) * 1.0, y = desk.y + Math.sin(ang) * 1.0;
+      if (lv.blocked(x, y) || !lv.lineOfSight(x, y, desk.x, desk.y)) continue;
+      p.x = x; p.y = y; p.ang = Math.atan2(desk.y - y, desk.x - x); p.pitch = ((desk.z + desk.h * 0.5 - 0.56) / 1.0) * g.rc.projY;
+      window.FIRE = true; run(1.5); window.FIRE = false;
+      deskOk = desk.broken;
+    }
+  }
+  // 7. switching away drops him
+  arm('h'); window.FIRE = true;
+  const e5 = victim('wrencher');
+  g.rng = () => 0.01; run(0.5); g.rng = real;
+  p.pendingWeapon = 'pistol'; run(0.1); p.pendingWeapon = null; p.weapon = 'pistol';
+  const dropped = !e5.pinned && !g.saw.stuck;
+  window.FIRE = false; p.weapon = 'pistol';
+  // 8. the cut itself: two pieces that between them are the whole body
+  const src = g.art.sprites['wrencher_walk0_0'];
+  const count = (f) => { let n = 0; for (let i = 0; i < f.data.length; i++) if (f.data[i] >>> 24) n++; return n; };
+  const cutOk = ['h', 'v'].map((m) => {
+    const [a, b] = splitFrame(src, m, 0.5, 1234);
+    return !!a && !!b && count(a.frame) + count(b.frame) === count(src);
+  });
+  if (ownFiring) Object.defineProperty(g.input, 'firing', ownFiring); else delete g.input.firing;
+  window.FIRE = false; p.weapon = 'pistol'; p.pendingWeapon = null; g.saw = g.freshSaw();
+  return { onFloor, art, slot, pinned, held, hint, hpWhileStuck, bisected, slid, booted, sawKilled, deskOk, dropped, cutOk, maxHp: e1.maxHp };
+});
+check('THE SEVERANCE lies on floor one with a slot and a picture; hung on a dull chain the body is held at the blade, screaming, and is not hurt much',
+  s.onFloor && s.art && s.slot && s.pinned && s.held > 0.6 && s.held < 1.3 && /BOOT/.test(s.hint) && s.hpWhileStuck > s.maxHp * 0.85,
+  `on floor ${s.onFloor}, art ${s.art}, slot ${s.slot}, pinned ${s.pinned}, held at ${s.held && s.held.toFixed(2)}, hint "${s.hint}", hp ${s.hpWhileStuck}/${s.maxHp}`);
+check('when the chain catches the body is cut in two: gone, counted as a kill, paid for, and two halves fly',
+  s.bisected.done && s.bisected.gone && s.bisected.dead && s.bisected.halves === 2 && s.bisected.kill && s.bisected.paid && s.bisected.stuckClear,
+  JSON.stringify(s.bisected));
+check('letting go of the trigger slides him off alive and hurt; the Boot gets him off too; switching guns drops him',
+  s.slid.was && s.slid.now && s.slid.alive && s.slid.hurt && s.slid.clear && s.booted.off && s.booted.clear && s.dropped,
+  `slid ${JSON.stringify(s.slid)}, booted ${JSON.stringify(s.booted)}, dropped ${s.dropped}`);
+check('the saw kills what it is walked into, breaks the furniture in front of it, and cuts a sprite into two pieces that add up',
+  s.sawKilled && s.deskOk && s.cutOk[0] && s.cutOk[1], `killed ${s.sawKilled}, furniture ${s.deskOk}, cut h ${s.cutOk[0]} v ${s.cutOk[1]}`);
+
 // ------ 28b. the wheel changes guns on a real notch, not on the trickle a
 // touch-surface mouse or trackpad sends while the hand is only aiming
 s = await page.evaluate(() => {

@@ -11,7 +11,7 @@
 import fs from 'node:fs';
 import {
   Speech, castVoices, voiceInfo, plainText, ttsText, splitChunks, estimateSeconds, deliver,
-  detectSpeech, loadVoiceMode, saveVoiceMode, VOICE_MODES, ROLES,
+  detectSpeech, loadVoiceMode, saveVoiceMode, VOICE_MODES, ROLES, VOICED,
 } from '../src/audio/speech.js';
 import { LINES, PHONE_SET, textToPhonemes, voiceOf } from '../src/audio/vox.js';
 import { Radio, SPEAKERS } from '../src/game/story.js';
@@ -787,7 +787,7 @@ function rig(plat, behaviour = {}, opts = {}) {
 
 /* 7. the cast table and the engine agree */
 {
-  check('every SPEAKERS voice is a cast role', Object.values(SPEAKERS).every((s) => ROLES.includes(s.voice)));
+  check('every SPEAKERS voice is a cast role', Object.values(SPEAKERS).every((s) => VOICED.includes(s.voice)));
   check('voiceOf routes line keys to the cast', voiceOf('brick_kill') === 'brick' && voiceOf('ilsa_intro') === 'ilsa' && voiceOf('boot') === 'mutter');
   const src = fs.readFileSync(new URL('../src/audio/speech.js', import.meta.url), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');

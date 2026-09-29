@@ -3776,6 +3776,7 @@ const PR = {
   white: mat(rgba(226, 228, 232, 255), { contrast: 1.1 }),
   red: mat(rgba(198, 48, 44, 255), { contrast: 1.25 }),
   copper: mat(rgba(178, 106, 52, 255), { contrast: 1.25 }),
+  orange: mat(rgba(222, 108, 30, 255), { contrast: 1.2 }),
 };
 
 function finishProp(f, ink) {
@@ -4209,6 +4210,23 @@ function paintWeapon(kind) {
     blob(f, 38, cy - 5, 2.6, 1.8, PR.red, { shift: 1 });
     glow(f, 38, cy - 5, 5, rgba(255, 70, 60, 255), { halo: 0.28, seed: 1944, base: rgba(30, 8, 8, 255) });
     stencil(f, 12, cy + 6, 'HE', mix(PR.hazard[3], PR.olive[0], 0.15), 0.9);
+  } else if (kind === 'saw') {
+    // a concrete saw: orange housing, a long bar carrying a diamond chain, a rear handle
+    capsule(f, 20, cy, 45, cy, 3.6, 3.2, PR.steel, { grain: 0.06, seed: 1961 });
+    for (let i = 0; i < 13; i++) {
+      const bx = 22 + i * 2;
+      px(f, bx, cy - 4, i % 2 ? PR.brass[4] : PR.dark[1]);
+      px(f, bx, cy + 4, i % 2 ? PR.dark[1] : PR.brass[4]);
+    }
+    blob(f, 45, cy, 4.2, 4.2, PR.dark, { shift: 1 });
+    blob(f, 45, cy, 1.6, 1.6, PR.steel, {});
+    box(f, 5, cy - 6, 16, 12, PR.orange, { grain: 0.07, seed: 1962 });
+    fillRect(f, 5, cy - 6, 16, 1, PR.orange[4]);
+    fillRect(f, 8, cy - 3, 8, 1, PR.dark[1]); fillRect(f, 8, cy - 1, 8, 1, PR.dark[1]);
+    capsule(f, 8, cy - 7, 17, cy - 9, 1.5, 1.5, PR.dark, {});
+    capsule(f, 6, cy + 4, 3, cy + 11, 2.6, 2.2, PR.dark, {});
+    fillRect(f, 18, cy - 5, 2, 10, PR.red[2]);
+    stencil(f, 7, cy + 2, 'SEV', mix(PR.hazard[3], PR.orange[0], 0.2), 0.9);
   } else {
     // deadman: boxy launcher with a big red plunger and a chain
     box(f, 8, cy - 7, 26, 15, PR.steel, { grain: 0.08, seed: 1931 });
@@ -4848,6 +4866,7 @@ function paintProps(out) {
   out.weapon_halo = paintWeapon('halo');
   out.weapon_pipebomb = paintWeapon('pipebomb');
   out.weapon_deadman = paintWeapon('deadman');
+  out.weapon_saw = paintWeapon('saw');
   // set dressing (maps.js DECOR names these prop_<kind>)
   out.prop_desk = paintDesk();
   out.prop_chair = paintChair();

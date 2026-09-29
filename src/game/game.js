@@ -3,7 +3,7 @@
 
 import { Raycaster, LightGrid } from '../engine/raycaster.js';
 import { Sky } from '../engine/skybox.js';
-import { Level } from './level.js';
+import { Level, CELL_EMPTY, CELL_DOOR } from './level.js';
 import { Player, EYE_HEIGHT, FUSE_MAX } from './player.js';
 import { Enemy, Bolt, PipeBomb, Acid, ENEMY_TYPES, ST } from './entities.js';
 import { Particles } from './particles.js';
@@ -152,6 +152,7 @@ export class Game {
     this.player = new Player();
     this.particles = new Particles();
     this.props = new Props(this);
+    this.saw = this.freshSaw();
     this.gore = new Gore(this);
     this.sky = new SkyWar(this);
     this.skyDome = new Sky(art.vm);
@@ -245,6 +246,7 @@ export class Game {
     this.items.length = 0;
     this.props.load(this.level);
     this.levelDamage = 0;
+    this.saw = this.freshSaw();
     this.bolts.length = 0;
     this.bombs.length = 0;
     this.acids.length = 0;
@@ -345,6 +347,34 @@ export class Game {
         this.items.push({ kind: 'weapon', x: spot[0], y: spot[1], z: 0,
           weapon: 'pipebomb', taken: false, bob: 0 });
       }
+    }
+
+    // The demolition crew left a concrete saw in the first corridor. It is not on
+    // any plan, and Ilsa did not know it was there.
+    if (this.levelIndex === 0 && !this.player.owned.saw) {
+      // Walk out from the start room (through doors that open without a key) and
+      // put it about a dozen steps along, off the path's trigger and exit cells.
+      const lv = this.level, W = lv.W, H = lv.H;
+      const seen = new Int16Array(W * H).fill(-1);
+      const q = [(parsed.start.y | 0) * W + (parsed.start.x | 0)];
+      seen[q[0]] = 0;
+      let spot = null, bestD = 1e9;
+      for (let h = 0; h < q.length; h++) {
+        const i = q[h], x = i % W, y = (i / W) | 0, d = seen[i];
+        if (d >= 7 && !lv.propBlock[i] && !lv.trigger[i] && !lv.exit[i] && lv.wall[i] !== CELL_DOOR
+          && !this.items.some((it) => it.kind === 'weapon' && dist(it.x, it.y, x + 0.5, y + 0.5) < 3)
+          && Math.abs(d - 12) < bestD) { bestD = Math.abs(d - 12); spot = [x + 0.5, y + 0.5]; }
+        if (d >= 20) continue;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 1 || ny < 1 || nx >= W - 1 || ny >= H - 1) continue;
+          const j = ny * W + nx;
+          if (seen[j] >= 0 || lv.propBlock[j]) continue;
+          if (lv.wall[j] !== CELL_EMPTY && !(lv.wall[j] === CELL_DOOR && !lv.doorKind[j])) continue;
+          seen[j] = d + 1; q.push(j);
+        }
+      }
+      if (spot) this.items.push({ kind: 'weapon', x: spot[0], y: spot[1], z: 0, weapon: 'saw', taken: false, bob: 0 });
     }
 
     this.enemyTotal = this.enemies.length;
@@ -851,7 +881,7 @@ export class Game {
           this._wheelNext = this.time + 0.3;
         }
       }
-      for (let s = 1; s <= 6; s++) if (input.justPressed('slot' + s)) {
+      for (let s = 1; s <= 7; s++) if (input.justPressed('slot' + s)) {
         if (p.selectSlot(s)) this.sound.sfx('weapon_switch');
       }
       if (input.justPressed('weapNext')) { if (p.cycleWeapon(1)) this.sound.sfx('weapon_switch'); }
@@ -864,6 +894,7 @@ export class Game {
     }
 
     p.update(dt, input, lv, this);
+    this.updateSaw(dt, !p.dead && (input.firing ? input.firing() : input.isDown('fire')));
 
     // The lead bracket: point near a warhead and the HUD shows where to aim.
     this.updateRangeLock();
@@ -1125,10 +1156,16 @@ export class Game {
       return;
     } else if (def.papers >= 20 && this.rng() < 0.5) {
       this.chat('brick', 'brick_papers', { cooldown: 8 });
+    } else if ((d.kind === 'crate' || d.kind === 'crates') && this.rng() < 0.6) {
+      this.chat('brick', 'brick_crate', { cooldown: 8 });
     } else {
       this.chat('brick', 'brick_smash', { chance: 0.4, cooldown: 7 });
     }
-    this.chat('mutter', 'mutter_prop', { chance: 0.3, cooldown: 16, delay: 1.2 });
+    // MUTTER has a line for each kind of thing that broke, and a few for any of them.
+    const cls = { desk: 'desk', chair: 'desk', pew: 'desk', filing: 'filing', locker: 'filing', console: 'tech',
+      pinball: 'tech', cooler: 'office', plant: 'office' }[d.kind];
+    const key = cls && this.voxLines[`mutter_prop_${cls}`] && this.rng() < 0.7 ? `mutter_prop_${cls}` : 'mutter_prop';
+    this.chat('mutter', key, { chance: 0.3, cooldown: 16, delay: 1.2 });
     this.chat('ilsa', 'ilsa_prop', { chance: 0.12, cooldown: 40, delay: 2.4 });
   }
 
@@ -1241,7 +1278,8 @@ export class Game {
         if (isNew) {
           after = () => {
             this.hud.popup(WEAPONS[w].blurb, { size: 9, life: 3.4, y: 22, dy: -8, color: rgba(200, 194, 180, 255), glow: 0.2 });
-            this.radio.say('brick', 'brick_pickup_weapon', this.radio.pick('weap', BRICK_LINES.weapon), { priority: 1 });
+            if (w === 'saw') this.chat('brick', 'brick_saw_get', { cooldown: 0, delay: 0.3, priority: 2 });
+            else this.radio.say('brick', 'brick_pickup_weapon', this.radio.pick('weap', BRICK_LINES.weapon), { priority: 1 });
             this.chat('mutter', 'weapon_taken', { chance: 0.7, cooldown: 0, delay: 1.8, priority: 0 });
           };
         }
@@ -1490,6 +1528,17 @@ export class Game {
     this.input.rumble(0.35, 0.2, 90);
 
     const ca = Math.cos(p.ang), sa = Math.sin(p.ang);
+    // Whatever is hung on the saw gets the boot: it is off the blade, and airborne.
+    if (this.saw.stuck) {
+      const e = this.saw.stuck.e;
+      this.unpin(e);
+      e.shove(ca, sa, 15, 3.4);
+      e.hurt(Math.max(12, e.hp * 0.5), this, p.x, p.y);
+      this.sound.sfx('kick_hit', { pan: this.panOf(e) });
+      this.hud.popup('GET OFF MY SAW', { size: 13, life: 1.2, color: rgba(255, 208, 72, 255) });
+      this.hitStop = Math.max(this.hitStop, 0.1);
+      return;
+    }
     let best = null, bestScore = Infinity;
     for (const e of this.enemies) {
       if (!e.alive || e.state === ST.DEAD) continue;
@@ -1613,7 +1662,7 @@ export class Game {
     // Then the dead, who slide.
     let corpse = null, cBest = Infinity;
     for (const e of this.enemies) {
-      if (e.alive || e.def.boss || e.def.miniboss) continue;
+      if (e.alive || e.vanish || e.def.boss || e.def.miniboss) continue;
       const dx = e.x - p.x, dy = e.y - p.y;
       const d = Math.hypot(dx, dy);
       if (d > BOOT.range + e.radius) continue;
@@ -1687,6 +1736,244 @@ export class Game {
     blast.gore = spec.gore || null;
   }
 
+  // ------------------------------------------------------- THE SEVERANCE
+  //
+  // A concrete saw: hold the button and walk it into things. It cuts what is in
+  // reach a hundred milliseconds at a time, takes limbs off as it goes, and now
+  // and then finishes a body by cutting it in two. The chain is dull for a bit,
+  // and while it is, whatever it has just bitten into hangs on the blade,
+  // screaming, until the chain catches. Then it goes in half: across the waist
+  // or down the middle, whichever way the warden is aiming.
+
+  freshSaw() {
+    return { rev: 0, dull: 0.25, audioT: 0, tickT: 0, cutT: 0, contact: 0, stuck: null, pose: 'idle',
+      poseT: 0, phase: 0, seen: new Set(), hint: '', wallT: 0 };
+  }
+
+  /** Where the blade is aimed: 'v' (skull to crotch) high, 'h' (across the waist) low, or a coin. */
+  sawMode() {
+    const p = this.player;
+    const up = p.pitch / (this.rc.projY || 300);
+    if (up > 0.05) return 'v';
+    if (up < -0.05) return 'h';
+    return this.rng() < 0.5 ? 'v' : 'h';
+  }
+
+  updateSaw(dt, firing) {
+    const p = this.player, S = this.saw, spec = p.spec;
+    const held = spec.kind === 'saw' && !p.pendingWeapon && !p.dead;
+    if (held && !S.wasHeld) this.sound.sfx('saw_start', { vol: 0.8 });
+    S.wasHeld = held;
+    if (!held) {
+      if (S.stuck) this.unpin(S.stuck.e);
+      S.rev = Math.max(0, S.rev - dt * 3);
+      S.hint = '';
+      this.hud.sawHint = '';
+      return;
+    }
+    // The engine spools up on the button and drops to a mutter off it.
+    S.rev += ((firing ? 1 : 0.28) - S.rev) * Math.min(1, dt * (firing ? 7 : 3));
+    S.audioT -= dt;
+    if (S.audioT <= 0) {
+      const r = 0.72 + S.rev * 0.55;
+      S.audioT = 0.19 / r;
+      this.sound.sfx('saw_run', { rate: r, vol: 0.32 + S.rev * 0.55 });
+    }
+    S.poseT += dt;
+    if (firing) {
+      this.shake = Math.max(this.shake, 0.4);
+      p.kick = Math.max(p.kick, 1.6);
+    }
+    if (S.stuck) { this.updateStuck(dt, firing); return; }
+    S.contact = Math.max(0, S.contact - dt * 3);
+    this.hud.sawHint = '';
+    if (!firing || S.rev < 0.55) { this.sawPose(firing, false); return; }
+
+    const ca = Math.cos(p.ang), sa = Math.sin(p.ang);
+    const reach = spec.reach;
+    const a = p.aimVector(this.rc.projY);
+    const flat = Math.hypot(a.x, a.y) || 1;
+    let target = null, best = 99;
+    for (const e of this.enemies) {
+      if (!e.alive || e.vanish || e.state === ST.DYING || e.pinned) continue;
+      const dx = e.x - p.x, dy = e.y - p.y, d = Math.hypot(dx, dy);
+      if (d > reach + e.radius) continue;
+      const cosA = (dx * ca + dy * sa) / (d || 1);
+      if (cosA < 0.7) continue;
+      if (!this.level.lineOfSight(p.x, p.y, e.x, e.y)) continue;
+      const zAt = p.z + (a.z / flat) * d;
+      if (zAt < e.z - 0.2 || zAt > e.z + e.height + 0.25) continue;
+      if (d - cosA < best) { best = d - cosA; target = e; }
+    }
+    if (target) { S.contact = 1; this.sawFlesh(target, dt); this.sawPose(true, true); return; }
+
+    // Nothing living: furniture, then the wall.
+    S.dull = Math.max(0, S.dull - dt * 0.05);
+    S.tickT -= dt;
+    const prop = this.props.sawFront(p, reach);
+    if (prop) {
+      if (S.tickT <= 0) {
+        S.tickT = 0.09;
+        this.props.hit(prop, spec.dps * 0.09 * 0.9, prop.x, prop.y, prop.z + prop.h * 0.5, 'kick');
+        this.particles.sparks(prop.x - ca * 0.3, prop.y - sa * 0.3, prop.z + prop.h * 0.5, 4, 1.6, [255, 214, 140], 4);
+        this.sound.sfx('saw_wall', { pan: this.panAt(prop.x, prop.y), vol: 0.7 });
+        this.shake = Math.max(this.shake, 1.1);
+      }
+      this.sawPose(true, false);
+      return;
+    }
+    const wx = p.x + ca * 0.85, wy = p.y + sa * 0.85;
+    if (this.level.blocked(wx, wy) && S.tickT <= 0) {
+      S.tickT = 0.1;
+      this.particles.sparks(p.x + ca * 0.7, p.y + sa * 0.7, p.z - 0.05, 7, 1.4, [255, 200, 120], 5);
+      this.sound.sfx('saw_wall', { vol: 0.6 });
+      this.shake = Math.max(this.shake, 0.9);
+    }
+    this.sawPose(true, false);
+  }
+
+  sawPose(firing, flesh) {
+    const S = this.saw;
+    const n = Math.floor(S.poseT * (firing ? 22 : 11));
+    if (firing) S.pose = (flesh ? 'bloody' : 'fire') + (n % 3);
+    else S.pose = S.rev > 0.18 ? 'reload' + (n & 1) : 'idle';
+  }
+
+  /** One frame of the blade in something warm. */
+  sawFlesh(e, dt) {
+    const p = this.player, S = this.saw, spec = p.spec;
+    const ca = Math.cos(p.ang), sa = Math.sin(p.ang);
+    S.dull = Math.min(1, S.dull + dt * 0.11);
+    // Fresh meat, and the chain is not what it was: it may just hang there.
+    if (!S.seen.has(e)) {
+      S.seen.add(e);
+      if (this.gore.canMaim(e) && this.rng() < clamp(0.16 + S.dull * 0.7, 0.16, 0.8)) { this.pin(e); return; }
+    }
+    S.tickT -= dt;
+    if (S.tickT > 0) return;
+    S.tickT = 0.09;
+    const dmg = spec.dps * 0.09;
+    const zy = p.z + (p.aimVector(this.rc.projY).z / (Math.hypot(Math.cos(p.ang), Math.sin(p.ang)) || 1)) * Math.hypot(e.x - p.x, e.y - p.y);
+    // A hard enough cut finishes the body in two, sometimes.
+    if (e.hp - dmg <= 0 && this.gore.canMaim(e) && this.rng() < 0.4) { this.bisectEnemy(e, this.sawMode()); return; }
+    const killed = e.hurt(dmg, this, p.x, p.y);
+    this.particles.blood(e.x - ca * 0.2, e.y - sa * 0.2, p.z - 0.05, 7, -ca, -sa);
+    this.sound.sfx('saw_cut', { pan: this.panOf(e), vol: 0.8 });
+    this.hud.hitMark(killed);
+    if (this.rng() < 0.4) this.hud.splatter(1);
+    this.shake = Math.max(this.shake, 1.3);
+    this.input.rumble(0.5, 0.4, 90);
+    if (!killed && this.gore.canMaim(e) && this.rng() < 0.2) {
+      const bit = this.gore.zoneAt(e, e.x, e.y, zy);
+      if (bit) this.gore.sever(e, bit, ca, sa, 6);
+    }
+    if (killed && !e._bisected) {
+      // Not in two, but not in one piece either.
+      this.gore.launch(e, ca, sa, 4, 1);
+      this.gib(e);
+    }
+  }
+
+  /** The chain snags. Whoever it snagged is on the end of it now. */
+  pin(e) {
+    const p = this.player, S = this.saw;
+    S.stuck = { e, t: 0, dur: randRange(this.rng, 2.4, 3.8), said: 0, replied: false };
+    S.dull = 0;
+    e.pinned = true; e.kvx = 0; e.kvy = 0; e.launched = false; e.headlessT = 0; e._pinT = 0;
+    this.sound.sfx('saw_bind', { vol: 0.9 });
+    this.hud.popup('THE CHAIN IS DULL', { size: 11, life: 1.4, y: -36, color: rgba(255, 186, 64, 255) });
+    this.hud.setFace('face_grin', 2.4);
+    this.victimSay('victim_stuck', 0.2);
+  }
+
+  unpin(e) {
+    const S = this.saw;
+    if (e) { e.pinned = false; e._pinT = 0; if (e.alive && !e.vanish) { e.state = ST.CHASE; e.stateT = 0; } }
+    S.stuck = null;
+  }
+
+  updateStuck(dt, firing) {
+    const p = this.player, S = this.saw, st = S.stuck, e = st.e;
+    const ca = Math.cos(p.ang), sa = Math.sin(p.ang);
+    st.t += dt;
+    if (!e || !e.alive || e.vanish) { S.stuck = null; return; }
+    // Held out at the end of the bar, a little closer if the wall is in the way.
+    for (const d of [1.1, 0.9, 0.7]) {
+      const x = p.x + ca * d, y = p.y + sa * d;
+      if (this.level.blocked(x, y)) continue;
+      e.x = x + (this.rng() - 0.5) * 0.03; e.y = y + (this.rng() - 0.5) * 0.03;
+      break;
+    }
+    e.z = e.def.z + 0.05 + Math.sin(st.t * 38) * 0.02;
+    e.ang = Math.atan2(p.y - e.y, p.x - e.x);
+    this.hud.sawHint = 'HOLD FIRE  ·  V TO BOOT HIM OFF';
+    // Let go and he slides off, hurt and furious.
+    if (!firing && st.t > 0.4) {
+      this.unpin(e);
+      e.shove(ca, sa, 5, 0);
+      e.hurt(Math.max(6, e.hp * 0.3), this, p.x, p.y);
+      this.hud.popup('SLIPPED OFF', { size: 11, life: 1, color: rgba(200, 194, 180, 255) });
+      return;
+    }
+    // The grind: a lot of noise and blood for very little progress.
+    S.tickT -= dt;
+    if (S.tickT <= 0) {
+      S.tickT = 0.11;
+      this.particles.blood(e.x - ca * 0.15, e.y - sa * 0.15, e.z + e.height * (0.35 + this.rng() * 0.4), 8, -ca, -sa);
+      this.shake = Math.max(this.shake, 1.7);
+      this.input.rumble(0.7, 0.55, 110);
+      if (this.rng() < 0.55) this.hud.splatter(1);
+    }
+    S.audioT2 = (S.audioT2 || 0) - dt;
+    if (S.audioT2 <= 0) { S.audioT2 = 0.42; this.sound.sfx('saw_bind', { pan: 0, vol: 0.75, rate: 0.9 + this.rng() * 0.2 }); }
+    // He has things to say. Brick answers once.
+    if (st.said === 0 && st.t > 1.5 && st.dur - st.t > 1.1) { st.said = 1; this.victimSay('victim_stuck', 0); }
+    if (!st.replied && st.t > 1.0) {
+      st.replied = true;
+      this.chat('brick', 'brick_saw_stuck', { cooldown: 0, delay: 0.6, priority: 2 });
+    }
+    this.sawPose(true, true);
+    S.pose = 'jam' + (Math.floor(S.poseT * 14) & 1);
+    if (st.t >= st.dur) {
+      // It catches.
+      this.sound.sfx('saw_catch', { vol: 1 });
+      this.unpin(e);
+      this.bisectEnemy(e, this.sawMode());
+    }
+  }
+
+  /** Cut a body in half and pay for it. */
+  bisectEnemy(e, mode) {
+    const p = this.player;
+    if (!this.gore.bisect(e, mode, Math.cos(p.ang), Math.sin(p.ang))) return false;
+    if (e.alive) e.hurt(e.hp + 9999, this, p.x, p.y);
+    if (this.saw.stuck && this.saw.stuck.e === e) this.saw.stuck = null;
+    this.sound.sfx('saw_catch', { pan: this.panOf(e), vol: 0.9 });
+    this.sound.sfx('gib', { pan: this.panOf(e), vol: 0.8, rate: 0.85 });
+    p.score += 800;
+    const words = mode === 'v'
+      ? ['SPLIT DECISION', 'DOWN THE MIDDLE', 'HALF AND HALF', 'LENGTHWISE', 'TWO FOR ONE', 'BOOK LEARNING']
+      : ['DOWNSIZED', 'MID-LIFE CRISIS', 'WAIST MANAGEMENT', 'CUT OFF AT THE WAIST', 'SEVERANCE PACKAGE', 'RESTRUCTURED'];
+    this.hud.popup(`${words[(this.rng() * words.length) | 0]}  +800`, {
+      size: 17, life: 1.8, color: rgba(255, 96, 70, 255), y: -50,
+    });
+    this.hud.setFace('face_grin', 2.6);
+    this.input.rumble(1, 0.8, 240);
+    const tag = mode === 'v' ? 'v' : 'h';
+    this.victimSay(`victim_split_${tag}`, 0.2);
+    this.chat('brick', `brick_saw_split_${tag}`, { cooldown: 0, delay: 1.5, priority: 2 });
+    this.chat('mutter', 'mutter_saw', { chance: 0.35, cooldown: 25, delay: 3.4 });
+    this.chat('ilsa', 'ilsa_saw', { chance: 0.2, cooldown: 40, delay: 4.4 });
+    return true;
+  }
+
+  /** A line from a mutated employee at the wrong end of a chainsaw. */
+  victimSay(key, delay = 0) {
+    const pool = this.voxLines[key];
+    if (!Array.isArray(pool) || !pool.length) return false;
+    return this.radio.say('victim', key, this.radio.pick(key, pool), { priority: 3, delay }) !== false;
+  }
+
   // ---------------------------------------------------------------- firing
 
   tryUse() {
@@ -1723,6 +2010,8 @@ export class Game {
 
   tryFire() {
     const p = this.player;
+    // The saw is not fired, it is held: updateSaw runs it every frame.
+    if (p.spec.kind === 'saw') return;
     if (p.spec.kind === 'throw') {
       if (p.cooldown > 0) return;
       p.cooldown = p.spec.refire;
@@ -1990,7 +2279,7 @@ export class Game {
    * and taken apart like anyone else; that is half of what a barrel is for.
    */
   blastCorpse(e, x, y, z, force, gore) {
-    if (force < 6) return;
+    if (force < 6 || e.vanish) return;
     const d = dist(x, y, e.x, e.y);
     const L = d || 1;
     const dx = d > 0.05 ? (e.x - x) / L : 1, dy = d > 0.05 ? (e.y - y) / L : 0;
@@ -2310,13 +2599,14 @@ export class Game {
         });
       }
     }
-    // A body that has just lost its head has nothing left to scream with.
-    if (!e._headPop) this.sound.sfx(e.def.die || (e.def.boss ? 'boss_death' : 'enemy_die'), { pan: this.panOf(e) });
+    // A body that has just lost its head has nothing left to scream with, and
+    // one cut in half has already said what it had to.
+    if (!e._headPop && !e._bisected) this.sound.sfx(e.def.die || (e.def.boss ? 'boss_death' : 'enemy_die'), { pan: this.panOf(e) });
     this.particles.blood(e.x, e.y, e.z + e.height * 0.5, e.def.gib * 5 + 8, 0, 0);
     this.addDecal(e.x, e.y, e.def.mutant ? 'gore' : 'blood');
     if (e.def.gib >= 5) this.gib(e);
     // The gore lines are funnier than the generic ones; leave them the room.
-    if (this.rng() < 0.30 && !e._headPop && !e.maim) {
+    if (this.rng() < 0.30 && !e._headPop && !e.maim && !e._bisected) {
       this.brick(e.def.mutant ? 'brick_kill_mutant' : 'brick_kill',
         e.def.mutant ? BRICK_LINES.kill_mutant : BRICK_LINES.kill);
     }

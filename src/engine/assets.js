@@ -144,7 +144,7 @@ export function requiredSpriteKeys() {
   for (let i = 0; i < 3; i++) keys.push(`viscera${i}`, `acid${i}`);
   keys.push('key_red', 'key_blue', 'key_gold', 'medkit_small', 'medkit_big',
     'ammo_flak', 'ammo_crate', 'barrel', 'barrel_lit', 'pillar', 'lamp',
-    'weapon_splitter', 'weapon_nailer', 'weapon_halo', 'weapon_pipebomb', 'weapon_deadman',
+    'weapon_splitter', 'weapon_nailer', 'weapon_halo', 'weapon_pipebomb', 'weapon_deadman', 'weapon_saw',
     'wh_stick', 'wh_mirv', 'wh_smart', 'wh_screamer', 'wh_buster', 'scorch');
   for (let i = 0; i < 4; i++) keys.push(`treasure${i}`, `skymine${i}`);
   for (let i = 0; i < 3; i++) keys.push(`flare${i}`);
@@ -183,9 +183,10 @@ function fallbackSprites() {
 
 export function requiredViewmodelKeys() {
   const keys = [];
-  for (const w of ['pistol', 'splitter', 'nailer', 'halo', 'deadman', 'pipebomb', 'boot']) {
+  for (const w of ['pistol', 'splitter', 'nailer', 'halo', 'deadman', 'pipebomb', 'boot', 'saw']) {
     keys.push(`${w}_idle`, `${w}_fire0`, `${w}_fire1`, `${w}_fire2`, `${w}_reload0`, `${w}_reload1`);
   }
+  keys.push('saw_bloody0', 'saw_bloody1', 'saw_bloody2', 'saw_jam0', 'saw_jam1');
   keys.push('flash_small', 'flash_medium', 'flash_large', 'flash_ring', 'flash_plume');
   for (let i = 0; i < 8; i++) keys.push(`boom${i}`);
   for (let i = 0; i < 10; i++) keys.push(`nuke${i}`);

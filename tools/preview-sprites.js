@@ -58,7 +58,7 @@ for (const k of ['desk', 'chair', 'filing', 'locker', 'vending', 'cooler', 'toil
   'corpse', 'corpse2', 'nosecone', 'pinball', 'candles', 'pew', 'trash']) expected.push(`prop_${k}`);
 for (const k of ['wood', 'salt', 'rust', 'tech']) expected.push(`pillar_${k}`);
 for (let i = 0; i < 3; i++) expected.push(`flare${i}`);
-expected.push('weapon_splitter', 'weapon_nailer', 'weapon_halo', 'weapon_pipebomb', 'weapon_deadman');
+expected.push('weapon_splitter', 'weapon_nailer', 'weapon_halo', 'weapon_pipebomb', 'weapon_deadman', 'weapon_saw');
 expected.push('wh_stick', 'wh_mirv', 'wh_smart', 'wh_screamer', 'wh_buster');
 for (let i = 0; i < 4; i++) expected.push(`skymine${i}`);
 for (let i = 0; i < 3; i++) expected.push(`blood${i}`);
@@ -103,7 +103,7 @@ for (const k of ['key_red', 'key_blue', 'key_gold', 'medkit_small', 'medkit_big'
   'treasure0', 'treasure1', 'treasure2', 'treasure3']) EXACT[k] = [32, 32];
 for (const k of ['barrel', 'barrel_lit', 'pillar']) EXACT[k] = [40, 64];
 EXACT.lamp = [32, 24];
-for (const k of ['weapon_splitter', 'weapon_nailer', 'weapon_halo', 'weapon_pipebomb', 'weapon_deadman']) EXACT[k] = [48, 28];
+for (const k of ['weapon_splitter', 'weapon_nailer', 'weapon_halo', 'weapon_pipebomb', 'weapon_deadman', 'weapon_saw']) EXACT[k] = [48, 28];
 for (const k of ['wh_stick', 'wh_mirv', 'wh_smart', 'wh_screamer', 'wh_buster',
   'skymine0', 'skymine1', 'skymine2', 'skymine3']) EXACT[k] = [48, 56];
 for (const k of ['blood0', 'blood1', 'blood2', 'scorch']) EXACT[k] = [48, 24];
@@ -347,7 +347,7 @@ writeSheet(path.join(OUT, 'spr-props.png'), pick([
   'key_red', 'key_blue', 'key_gold', 'medkit_small', 'medkit_big', 'ammo_flak',
   'ammo_crate', 'treasure0', 'treasure1', 'treasure2', 'treasure3', 'lamp',
   'flare0', 'flare1', 'flare2', 'weapon_splitter', 'weapon_nailer', 'weapon_halo',
-  'weapon_pipebomb', 'weapon_deadman', 'barrel', 'barrel_lit', 'pillar', 'blood0', 'blood1',
+  'weapon_pipebomb', 'weapon_deadman', 'weapon_saw', 'barrel', 'barrel_lit', 'pillar', 'blood0', 'blood1',
   'blood2', 'scorch',
 ]), { cols: 6, scale: 3, pad: 3 });
 

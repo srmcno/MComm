@@ -256,6 +256,8 @@ const SFX_NAMES = [
   // --- round three: furniture that fights back ---
   'wood_hit', 'wood_break', 'metal_hit', 'metal_break', 'glass_break', 'can_clunk', 'soda_pop',
   'coin_clink', 'paper_flurry', 'pinball_play', 'console_blip', 'buzz_deny', 'water_burst', 'can_rattle',
+  // --- round four: the chainsaw ---
+  'saw_run', 'saw_cut', 'saw_bind', 'saw_catch', 'saw_wall', 'saw_start',
 ];
 
 /** Names that shipped in the first version. None of them may ever disappear. */
