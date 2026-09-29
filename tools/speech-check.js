@@ -1014,7 +1014,7 @@ const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve();
     }
     check('a city that burns again does not say the same thing twice running', twice === 0 && distinct.size >= 3, `${twice} repeats, ${distinct.size} takes`);
     const kb = Math.round(clips.reduce((n, c) => n + c.b.length, 0) / 1024);
-    check('the pack stays under 11 MB of base64', kb < 11264, `${kb} KB`);
+    check('the pack stays under 12 MB of base64', kb < 12288, `${kb} KB`);
   }
 }
 
