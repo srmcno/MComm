@@ -21,7 +21,7 @@ export const WEAPONS = {
     ammo: AMMO_FLAK, cost: 0, refire: 0.30,
     range: 42, damage: 34, headMul: 2.2, spread: 0.006, pellets: 1,
     kick: 5.2, shakeAmount: 0.6, flash: 'flash_small', light: [1.0, 0.72, 0.34],
-    sfx: 'pistol_fire',
+    sfx: 'widow_fire',
     // What a hit does to a body: chance the part it hit comes off, the extra
     // chance for the head, how many parts one hit may take, the shove, and the
     // force at which the whole thing goes.
@@ -35,7 +35,7 @@ export const WEAPONS = {
     ammo: AMMO_FLAK, cost: 1, refire: 0.50,
     flakSpeed: 126, blastRadius: 5.0, spread: 0.055, pellets: 3,
     kick: 9.5, shakeAmount: 1.1, flash: 'flash_medium', light: [1.0, 0.66, 0.3],
-    sfx: 'flak_fire', groundDamage: 26,
+    sfx: 'splitter_fire', groundDamage: 26,
     // Three shells, so up close three chances at a part each.
     gore: { sever: 0.85, head: 0.7, parts: 3, knock: 11, gib: 0, lift: 3.4 },
   },
