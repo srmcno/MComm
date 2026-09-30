@@ -413,6 +413,16 @@ export class Props {
     d.hp -= dmg;
     d.shake = 0.3;
     this._hitFx(d, x, y, z, how);
+    // the first hit: have its battered and wrecked pictures made now, from where
+    // the player is looking, so they are ready when it needs them
+    const st = this.studio;
+    if (!d._warm && st && st.has(d.kind)) {
+      d._warm = true;
+      const p = this.g.player;
+      const dir = viewDir(d.x, d.y, d.yaw, p.x, p.y, st.dirsOf(d.kind));
+      st.want(d.kind, dir, 'wreck', d.variant, 0);
+      st.want(d.kind, dir, 'hurt', d.variant, 0);
+    }
     // A round through a bottle lets out what is in it.
     if (def.vent && !d.vented && how !== 'blast' && d.hp > 0) this._vent(d, dx, dy);
     if (d.hp <= 0) { this.breakProp(d, how, x, y); return true; }
@@ -1528,6 +1538,13 @@ export class Props {
     const movers = this._movers || (this._movers = []);
     movers.length = 0;
     if (!p.dead && Math.hypot(p.vx, p.vy) > 0.6) movers.push([p.x, p.y, p.vx, p.vy, 0.3]);
+    // and a body thrown across the room takes the furniture with it
+    const bodies = this._bodies || (this._bodies = []);
+    bodies.length = 0;
+    for (const e of g.enemies) {
+      const kv = Math.hypot(e.kvx || 0, e.kvy || 0);
+      if (kv > 5) bodies.push([e.x, e.y, e.kvx, e.kvy, e.radius, kv, e]);
+    }
     for (const e of g.enemies) {
       if (e.alive && e._px !== undefined && dt > 0) {
         const vx = (e.x - e._px) / dt, vy = (e.y - e._py) / dt;
@@ -1539,6 +1556,19 @@ export class Props {
       if (d.busy > 0) d.busy = Math.max(0, d.busy - dt);
       if (d.shake > 0) d.shake = Math.max(0, d.shake - dt);
       if (d.fall && !d.fall.landed) this._fall(d, dt);
+      if (bodies.length && d.def && d.def.hp !== Infinity && !d.flying && !d.broken && !d.gone) {
+        for (const [bx, by, vx, vy, r, kv, e] of bodies) {
+          if (Math.hypot(d.hx - bx, d.hy - by) > r + (d.solid ? 0.55 : 0.3)) continue;
+          if ((d._hitBy || null) === e) continue;
+          d._hitBy = e;
+          const ux = vx / kv, uy = vy / kv;
+          this.hit(d, kv * 2.5, d.hx, d.hy, d.z + d.h * 0.4, 'crash', ux, uy);
+          if (d.broken || d.gone) break;
+          if (d.def.mass === 'light' && !d.solid) this._launch(d, ux, uy, kv * 0.8, 2 + kv * 0.1, true);
+          else if (d.def.tall && !d.fall && kv > 8) this.topple(d, ux, uy, 0);
+          break;
+        }
+      }
       if (movers.length && d.def && d.def.mass === 'light' && !d.solid && !d.flying && !d.broken && !d.gone) {
         for (const [mx, my, vx, vy, r] of movers) {
           const dx = d.x - mx, dy = d.y - my, q = Math.hypot(dx, dy);
