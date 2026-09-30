@@ -51,6 +51,8 @@ const STORE_KEY = 'nukehaus.voice.v1';
 export function loadVoiceMode() {
   try {
     const v = localStorage.getItem(STORE_KEY);
+    // ROBOT is gone: the cast is recorded or silent.
+    if (v === 'robot') return 'natural';
     if (VOICE_MODES.includes(v)) return v;
   } catch { /* private window, sandboxed frame: use the default */ }
   return 'natural';
@@ -469,6 +471,9 @@ export class Speech {
     const o = opts && typeof opts === 'object' ? opts : {};
     this.formant = o.formant || null;
     this.mode = VOICE_MODES.includes(o.mode) ? o.mode : 'natural';
+    // The game speaks recorded takes only; everything else is a subtitle.
+    // Off, the browser voice and the formant synth say what has no take.
+    this.recordedOnly = !!o.recordedOnly;
     this._gain = typeof o.gain === 'function' ? o.gain : () => 1;
     this._layer = o.layer !== false;
     this._now = typeof o.now === 'function' ? o.now : defaultNow;
@@ -707,11 +712,12 @@ export class Speech {
     try {
       const o = opts && typeof opts === 'object' ? opts : {};
       // A recorded take of this line, when there is one: its words are the line.
-      // Variants nobody recorded still get their turn (see ClipBank.pick), said
-      // by the browser voice, so a well-worn line is not five sentences forever.
+      // With recordedOnly (the game) every time, because a robot in the middle
+      // of a recorded cast is worse than hearing the same good take twice;
+      // otherwise the variants nobody recorded get a turn in the browser voice.
       let text = null;
       if (this._acted() && this.clips.has(key)) {
-        const spare = NO_MIX.test(key) ? [] : this._unrecorded(key);
+        const spare = this.recordedOnly || NO_MIX.test(key) ? [] : this._unrecorded(key);
         const take = this.clips.pick(key, { ...o, spare: spare.length });
         if (take) return this.say(take.t, { ...o, voice: o.voice || voiceOf(key), take });
         if (spare.length && !isNum(o.pick)) text = this._pickSpare(key, spare);
@@ -747,6 +753,8 @@ export class Speech {
       if (eng === 'off') return 0;
       const take = this._acted() ? (o.take || this.clips.find(this._role(o), plain)) : null;
       if (take) return this._sayTake(take, raw, o);
+      // Nothing recorded for these words: in the game they are a subtitle, not a voice.
+      if (this.recordedOnly) return 0;
       if (eng === 'robot' || (eng === 'pending' && this.formant)) return this._sayFormant(raw, o);
 
       this._pump();

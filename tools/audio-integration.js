@@ -308,8 +308,8 @@ check('the VOICE option exists and reports what is playing', !!r.label && r.mode
     const out = { engine: g.vox.engine, casting: g.vox.casting };
     window.__speechLog.length = 0;
     g.newGame(1); g.loadLevel(0); g.setState('play');
-    // A line with no recorded take, so it is the browser voice that says it:
-    // the first of Ilsa's pools that nobody has recorded (and that names no city).
+    // A line with no recorded take: the game reads it to nobody. It is a
+    // subtitle, not the browser voice (the first of Ilsa's pools nobody recorded).
     const { VOICE_PACK } = await import('./src/audio/voicepack.js');
     const { voiceOf } = await import('./src/audio/vox.js');
     const taken = new Set(VOICE_PACK.clips.map((c) => c.k));
@@ -345,11 +345,10 @@ check('the VOICE option exists and reports what is playing', !!r.label && r.mode
     out.pauseCancelled = window.speechSynthesis.cancels > cancels && !g.vox.busy;
     out.held = g.radio.queue.length;
     const opt = g.titleScreen.optionList(g).find((o) => o.label === 'VOICE');
-    opt.adj(1);                        // NATURAL -> ROBOT
-    out.robot = { mode: g.voiceMode, engine: g.vox.engine, label: opt.value() };
-    opt.adj(1);                        // ROBOT -> OFF
-    out.off = { mode: g.voiceMode, said: g.vox.say('Anyone there?', { voice: 'brick' }) };
-    opt.adj(1);                        // OFF -> NATURAL
+    out.onLabel = opt.value();
+    opt.adj(1);                        // ON -> OFF
+    out.off = { mode: g.voiceMode, said: g.vox.say('Anyone there?', { voice: 'brick' }), label: opt.value() };
+    opt.adj(1);                        // OFF -> ON
     let stored = null;
     try { stored = localStorage.getItem('nukehaus.voice.v1'); } catch { stored = 'blocked'; }
     out.back = { mode: g.voiceMode, engine: g.vox.engine, stored };
@@ -368,9 +367,8 @@ check('the VOICE option exists and reports what is playing', !!r.label && r.mode
   check('natural voices: Brick, Ilsa and MUTTER are cast to three voices',
     /Davis/.test(v.casting.brick) && /Katja/.test(v.casting.ilsa) && /Ryan/.test(v.casting.mutter),
     `${v.casting.brick} / ${v.casting.ilsa} / ${v.casting.mutter}`);
-  const u = v.first[0] || {};
-  check('natural voices: Ilsa speaks in Katja with a duration and a caption',
-    !!v.bare && /Katja/.test(u.voice || '') && v.dur > 1 && !!v.caption && v.busy, `${v.bare}: ${v.dur}s "${String(v.caption).slice(0, 40)}"`);
+  check('a line nobody recorded is a subtitle: captioned, and no browser (or any synthetic) voice says it',
+    !!v.bare && !v.first.length && !(v.dur > 0) && !!v.caption, `${v.bare}: ${v.dur}s, ${v.first.length} utterances, "${String(v.caption).slice(0, 40)}"`);
   check('natural voices: nothing spoken or captioned carries phones or braces', !v.leak);
   if (v.pack) {
     const t = v.take;
@@ -378,8 +376,8 @@ check('the VOICE option exists and reports what is playing', !!r.label && r.mode
       t.acted && t.d > 0.3 && t.tts === 0 && t.recorded.includes(t.caption), `${t.key}: ${t.d}s "${t.caption}" tts ${t.tts}`);
   }
   check('natural voices: pausing cancels speech and holds the radio line', v.pauseCancelled && v.held >= 1, `held ${v.held}`);
-  check('VOICE: ROBOT switches to the formant synth', v.robot.mode === 'robot' && v.robot.engine === 'robot' && v.robot.label === 'ROBOT');
-  check('VOICE: OFF is silent', v.off.mode === 'off' && v.off.said === 0);
+  check('VOICE reads as the recorded cast, and there is no ROBOT to pick', /RECORDED CAST|ON/.test(v.onLabel) && v.off.mode === 'off', `${v.onLabel} -> ${v.off.label}`);
+  check('VOICE: OFF is silent', v.off.mode === 'off' && v.off.said === 0 && v.off.label === 'OFF');
   check('natural voices: going back to the title stops speech', v.titleCancelled);
   check('VOICE: back to NATURAL, and the choice is stored', v.back.mode === 'natural' && v.back.engine === 'natural' &&
     (v.back.stored === 'natural' || v.back.stored === 'blocked'), `${v.back.stored}`);

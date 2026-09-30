@@ -928,3 +928,7 @@ export function viewDir(px, py, yaw, cx, cy, dirs = DIRS) {
   if (d < 0) d += dirs;
   return d;
 }
+
+// The same solids and surfaces, for the mesh baker (propmesh.js), which turns
+// a model into real geometry the renderer draws in 3D.
+export const STUDIO_INTERNALS = { prepare, albedo, hitPrim, toLocal, dirLocal, hashStr, T_BOX, T_CYL, T_CONE, T_SPH };

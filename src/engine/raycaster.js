@@ -15,6 +15,7 @@
 import { TEX } from '../core/pixels.js';
 import { clamp } from '../core/math.js';
 import { CEIL_H, PARAPET_H } from '../core/world.js';
+import { drawMeshes } from './meshdraw.js';
 
 export const WALL_WORLD_HEIGHT = 1.0;
 export const PARAPET_HEIGHT = PARAPET_H;
@@ -87,8 +88,9 @@ export class Raycaster {
    * @param {object} light  LightGrid
    * @param {Array}  sprites  billboards, unsorted
    * @param {object} opts   { fogFar, fogColor, ambient, time }
+   * @param {Array}  meshes   solid models (the furniture), see meshdraw.js
    */
-  render(lv, cam, art, light, sprites, opts) {
+  render(lv, cam, art, light, sprites, opts, meshes = null) {
     const { w, h, buf } = this;
     const horizon = (h * 0.5 + cam.pitch) | 0;
     const dirX = Math.cos(cam.ang), dirY = Math.sin(cam.ang);
@@ -116,6 +118,7 @@ export class Raycaster {
     this._castWalls(lv, cam, art, light, opts, horizon, dirX, dirY, planeX, planeY);
     this._castPlanes(lv, cam, art, light, opts, horizon);
     this._drawSky(art, cam, opts, horizon);
+    drawMeshes(this, cam, horizon, light, meshes, opts);
     this._drawSprites(lv, cam, art, light, sprites, opts, horizon, dirX, dirY, planeX, planeY);
     return buf;
   }
@@ -519,6 +522,8 @@ export class Raycaster {
       const invSW = fw / sw, invSH = fh / sh;
 
       const skyTop = this.skyTop;
+      // the furniture's depth, pixel by pixel (meshdraw.js); 1e9 where there is none
+      const pz = this.pz;
       for (let x = cx0; x < cx1; x++) {
         // Depth test per column, with one concession: a column capped by a
         // parapet still shows the horizon above it, so a distant warhead is
@@ -538,6 +543,7 @@ export class Raycaster {
           const t = data[sy * fw + sx];
           const a = (t >>> 24);
           if (!a) continue;
+          if (pz && pz[y * w + x] < near) continue;
           let r = (t & 255), g = (t >>> 8) & 255, b = (t >>> 16) & 255;
           if (ta) { r += (tr - r) * ta; g += (tg - g) * ta; b += (tb - b) * ta; }
           r = r * lr * keep + fr * fog;

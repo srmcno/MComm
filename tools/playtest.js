@@ -2991,6 +2991,80 @@ check('MUTTER remarks on a dead mutant and not on anything else, and no line wan
   s.mutantAsides === 1 && s.staffAsides === 0 && s.greedy.length === 0 && s.kill >= 8,
   `mutant kill asides ${s.mutantAsides}, other kills ${s.staffAsides}, ${s.kill} lines, greedy: ${s.greedy.join(',') || 'none'}`);
 
+// ------- 77. the anti-aircraft guns wreck furniture too: a shell into a desk bursts on the desk
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  const out = {};
+  for (const w of ['splitter', 'halo']) {
+    g.loadLevel(0); g.setState('play'); g._god = true;
+    const lv = g.level, p = g.player;
+    g.enemies.length = 0;
+    const d = lv.decor.find((o) => o.kind === 'desk' && o.def && !o.broken);
+    let placed = false;
+    for (let a = 0; a < 16 && !placed; a++) {
+      const ang = d.yaw + a * Math.PI / 8, x = d.x + Math.cos(ang) * 2.4, y = d.y + Math.sin(ang) * 2.4;
+      if (lv.blocked(x, y) || !lv.lineOfSight(x, y, d.x, d.y)) continue;
+      p.x = x; p.y = y; placed = true;
+    }
+    p.ang = Math.atan2(d.y - p.y, d.x - p.x);
+    p.pitch = ((d.z + d.h * 0.5 - p.z) / Math.hypot(d.x - p.x, d.y - p.y)) * g.rc.projY;
+    p.owned[w] = true; p.weapon = w; p.pendingWeapon = null; p.swapT = 0; p.health = 100;
+    const hp0 = d.hp;
+    for (let i = 0; i < 4 && !d.broken; i++) {
+      p.cooldown = 0; for (const k in p.ammo) p.ammo[k] = 99;
+      g.tryFire();
+      for (let k = 0; k < 30; k++) g.update(1 / 60, g.input);
+    }
+    out[w] = { hp0, hp: Math.round(d.hp), broken: d.broken, placed };
+  }
+  return out;
+});
+check('the Splitter and the Halo break a desk they are fired into (flak bursts on furniture and hurts it)',
+  s.splitter.broken && s.halo.broken, `splitter ${s.splitter.hp0}->${s.splitter.hp}, halo ${s.halo.hp0}->${s.halo.hp}`);
+
+// ------- 78. the Severance goes through furniture like it is not there
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  const lv = g.level, p = g.player;
+  g.enemies.length = 0;
+  const d = window.P3.stand('locker', 0.62);
+  if (!d) return { ok: false };
+  p.owned.saw = true; p.weapon = 'saw'; p.pendingWeapon = null; p.swapT = 0;
+  g.input.down.add('fire');
+  let t = 0;
+  for (; t < 3 && !d.broken; t += 1 / 60) g.update(1 / 60, g.input);
+  g.input.down.delete('fire');
+  for (let i = 0; i < 20; i++) g.update(1 / 60, g.input);
+  return { ok: true, broken: d.broken, t };
+});
+check('the saw cuts a locker down in well under two seconds', s.ok && s.broken && s.t < 2, `broken ${s.broken} after ${s.t && s.t.toFixed(2)} s`);
+
+// ------- 79. modelled furniture is solid 3D geometry, never a billboard that turns with you
+s = await page.evaluate(async () => {
+  const { renderWorld } = await import('./src/game/render.js');
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play');
+  const lv = g.level, p = g.player;
+  const d = lv.decor.find((o) => o.kind === 'desk');
+  p.x = d.x + Math.cos(d.yaw) * 1.6; p.y = d.y + Math.sin(d.yaw) * 1.6; p.ang = d.yaw + Math.PI;
+  renderWorld(g, 640, 400);
+  const solids = g.meshList.filter((m) => m.mesh && m.mesh.ready);
+  const modelled = new Set(Object.keys(g.art.meshes.models));
+  // any sprite in the list that is a modelled prop's studio picture?
+  const billboards = g.spriteList.filter((sp) => lv.decor.some((o) => o._spr === sp && modelled.has(o.kind)));
+  // the desk seen from its side covers a different shape on screen than from its front
+  const cover = () => { const pz = g.rc.pz; let n = 0; for (let i = 0; i < pz.length; i++) if (pz[i] < 1e8) n++; return n; };
+  const front = cover();
+  p.x = d.x + Math.cos(d.yaw + Math.PI / 2) * 1.6; p.y = d.y + Math.sin(d.yaw + Math.PI / 2) * 1.6; p.ang = Math.atan2(d.y - p.y, d.x - p.x);
+  renderWorld(g, 640, 400);
+  const side = cover();
+  return { solids: solids.length, billboards: billboards.length, front, side };
+});
+check('modelled furniture is drawn as solid 3D models with a depth buffer, and none of it as a billboard',
+  s.solids > 3 && s.billboards === 0 && s.front > 500 && s.side > 500 && s.front !== s.side,
+  `${s.solids} solid models, ${s.billboards} billboards, desk covers ${s.front} px from the front, ${s.side} from the side`);
+
 // ------------------------------------------------------------- report
 console.log('');
 if (errors.length) {

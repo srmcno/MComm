@@ -18,10 +18,9 @@ tell you which of your exes lives in whichever city is currently on fire.
 
 Every pixel, every sound effect and every note of music in this game is
 generated from code at load time. There are no image files. The one exception
-is the cast: the lines you hear most were recorded by voice actors (ElevenLabs)
-and ship inside the game as small clips. Everything else is said by your
-browser's own voices, with a formant synthesiser standing by for when it has
-none.
+is recorded sound: the cast's lines were recorded by voice actors (ElevenLabs)
+and ship inside the game as small clips, as does the chainsaw's engine. A line
+nobody recorded is a subtitle; no synthetic voice ever reads one out.
 
 ## Play it
 
@@ -138,6 +137,11 @@ the cut runs down the middle, aim low and it goes across the waist; either way
 you get two halves, spurting, that land on the floor separately. **V** boots
 the victim off the blade, letting go of the trigger or changing weapon slides
 him off, and what you hung is still standing there afterwards, cross.
+Its engine is recorded (ElevenLabs sound effects, in `src/audio/sawpack.js`): an
+idle and a flat-out loop crossfaded on the throttle, and the chain in meat,
+played on their own high-passed path so a saw held for ten seconds does not
+squash every other sound in the game. It goes through a desk in about a third of
+a second.
 
 The guns are built as real perspective geometry and held in real hands: the
 barrel runs away from you toward the crosshair, the slide kicks back, brass
@@ -169,9 +173,12 @@ The furniture is not painted, it is built: every desk, chair, locker, vending
 machine, toilet and server rack is a small model of boxes, cylinders, cones
 and spheres with real materials (wood with its grain along the plank, office
 steel worn back to bare metal at the edges, fabric, porcelain, lit green
-phosphor), ray-traced at load from eight directions around it with the
-ceiling lights' shadows, soft floor contact shadows and bevelled edges. Walk
-round a desk and you see its side, then its back. It stands with its back to
+phosphor). It is drawn as real 3D geometry, not a picture: each model is cut
+into triangles whose textures are baked from those materials with the ceiling
+light's shadows, ambient occlusion where parts meet and bevelled edges, and the
+renderer draws them with a depth buffer. Walk round a desk and it stays put
+while you see its side, then its back; a locker that goes over really falls
+flat on its face, and a chair you kick tumbles end over end. It stands with its back to
 the wall it was put against and its front to the room, the chair is turned to
 its desk, the pews face the altar, and each room has what that kind of room
 would have: an office has desks with a filing cabinet, a bin and a plant; a
@@ -323,10 +330,15 @@ in the classic mould, extended with the things this game actually needs:
 - **Sliding doors** on the cell mid-plane with proper jambs, and pushwall
   secrets.
 - **Z-buffered billboards** carrying a real world height, so a warhead 90 units
-  out and 60 up projects honestly. Furniture is a billboard too, but a
-  different one for each of eight directions, rendered from a model by a
-  small ray tracer (`src/engine/propstudio.js`, models in `propmodels*.js`)
-  while the briefing card is up, and in the gaps between frames after that.
+  out and 60 up projects honestly.
+- **Solid 3D furniture.** The models (`src/engine/propmodels*.js`) are baked
+  into textured triangle meshes (`propmesh.js`) while the briefing card is up,
+  and drawn by a small software rasterizer (`meshdraw.js`) with near-plane
+  clipping, perspective-correct texturing, the room's light grid sampled per
+  vertex and a per-pixel depth buffer that the billboards drawn after it test
+  against, so staff are hidden behind a desk they are behind. Wrecks and
+  opened lockers are baked in the gaps between frames when first needed. The
+  old ray-traced pictures (`propstudio.js`) remain only as a fallback.
 
 The software framebuffer goes to the GPU once per frame, where a WebGL2 chain
 does two-level bloom, chromatic aberration, barrel warp, aperture-grille
@@ -403,14 +415,13 @@ of them (never the same one twice running, and the right one for the city a line
 names: every city has four takes of how it burns and four of how it is lost, so
 a city that burns again says something new). A floor opening, or one of
 Hardigan's distracted moments, is only played when the whole exchange was
-recorded, so no scene switches voices halfway. Anything without a take is
-spoken by the browser voice as below. A line with more variants than takes
-speaks the unrecorded ones in the browser voice too, so a floor's worth of kills
-is never the same five sentences; the recorded ones keep the larger share, and
-the story and the finale are always exactly as recorded. **CALIBRATION > VOICE**
-shows RECORDED CAST while this is on; ROBOT and OFF turn it off.
+recorded, so no scene switches voices halfway. Anything without a take is a
+subtitle only: the game never reads a line out in a synthetic voice. **CALIBRATION
+> VOICE** shows RECORDED CAST, or OFF.
 
-The rest of the cast speaks through the browser's own speech engine (`src/audio/speech.js`),
+`src/audio/speech.js` can still speak unrecorded lines (its `recordedOnly`
+option, which the game turns on, is what stops it) through the browser's own
+speech engine,
 which on any desktop or phone is far easier to follow mid-firefight than
 anything synthesised in a few kilobytes. Each character is cast from whatever
 voices the machine offers, by language, apparent gender and quality: Hardigan
@@ -421,16 +432,11 @@ into the basement, with the old formant synthesiser murmuring underneath. No
 two characters share a voice while there is an alternative. Durations are
 estimated from syllables and rate, because `onend` is not to be trusted.
 
-Whoever is hanging on the saw is a fourth voice, the staff member. It is
-recorded too (19 takes); when a take is missing, or the recorded cast is off, it
-is Hardigan's browser voice pitched up and sped up.
+Whoever is hanging on the saw is a fourth voice, the staff member, recorded too
+(19 takes).
 
-**CALIBRATION > VOICE** switches between NATURAL, ROBOT (the formant
-synthesiser for everything) and OFF, and is remembered. Where the browser has
-no voices (headless, some Linux builds, a frame that refuses speech) the game
-falls back to ROBOT on its own and says so on that page.
-
-The robot voice is the original: all three characters are the same formant
+The formant synthesiser in `src/audio/vox.js` is the original voice, kept in
+the code but no longer offered: all three characters are the same formant
 synthesiser wearing different vocal
 tracts. Each voice scales the formant targets rather than just the pitch, which
 is what actually separates a register: Hardigan's tract is ~12% longer and his

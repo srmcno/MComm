@@ -7,6 +7,7 @@ import { fillRectBuf, addRectBuf, lineBuf, blitFrame } from './text.js';
 import { getScores } from '../core/scores.js';
 import { PAD_GLYPHS } from '../core/input.js';
 import { VOICE_MODES, saveVoiceMode } from '../audio/speech.js';
+import { saveVolumes } from '../game/game.js';
 
 const AMBER = rgba(255, 186, 64, 255);
 const HOT = rgba(255, 236, 190, 255);
@@ -114,9 +115,9 @@ export class TitleScreen {
     const s = game.post.settings;
     const step = (v, d, lo, hi) => clamp(v + d * 0.1, lo, hi);
     return [
-      { label: 'MASTER VOLUME', value: () => pct(game.volMaster), adj: (d) => { game.volMaster = step(game.volMaster, d, 0, 1); game.sound.setMaster(game.volMaster); } },
-      { label: 'MUSIC', value: () => pct(game.volMusic), adj: (d) => { game.volMusic = step(game.volMusic, d, 0, 1); game.sound.setMusicVol(game.volMusic); } },
-      { label: 'VOICE VOLUME', value: () => pct(game.volVox), adj: (d) => { game.volVox = step(game.volVox, d, 0, 1); game.vox.setVolume(game.volVox); } },
+      { label: 'MASTER VOLUME', value: () => pct(game.volMaster), adj: (d) => { game.volMaster = step(game.volMaster, d, 0, 1); game.sound.setMaster(game.volMaster); saveVolumes(game); } },
+      { label: 'MUSIC', value: () => pct(game.volMusic), adj: (d) => { game.volMusic = step(game.volMusic, d, 0, 1); game.sound.setMusicVol(game.volMusic); saveVolumes(game); } },
+      { label: 'VOICE VOLUME', value: () => pct(game.volVox), adj: (d) => { game.volVox = step(game.volVox, d, 0, 1); game.vox.setVolume(game.volVox); saveVolumes(game); } },
       { label: 'VOICE', value: () => voiceLabel(game), adj: (d) => cycleVoice(game, d) },
       { label: 'SUBTITLES', value: () => (game.subtitlesOn ? 'ON' : 'OFF'), adj: () => { game.subtitlesOn = !game.subtitlesOn; } },
       { label: 'CRT SCANLINES', value: () => pct(s.scan / 0.6), adj: (d) => { s.scan = clamp(s.scan + d * 0.06, 0, 0.6); } },
@@ -624,8 +625,8 @@ export class TitleScreen {
       '',
       'NUKEHAUS runs on nothing but arithmetic. Every wall, every fang, every',
       'warhead and every note of music is generated at load time from code.',
-      'There are no image files. There are no sound files. The cast speaks',
-      'in your browser\'s own voices, with a formant synthesiser as backup.',
+      'There are no image files. The only sounds not made here are the cast:',
+      'their lines were recorded, and what was not recorded is subtitled.',
       '',
       'Raycast renderer, WebGL post chain, procedural texture and sprite',
       'painters, Web Audio sequencer and voice, all built for this cabinet.',
@@ -645,19 +646,12 @@ function pct(v) { return `${Math.round(v * 100)}%`; }
 
 // ------------------------------------------------------------------ voice
 
-const VOICE_LABEL = { natural: 'NATURAL', robot: 'ROBOT', off: 'OFF' };
+const VOICE_LABEL = { natural: 'ON', robot: 'ON', off: 'OFF' };
 
 function voiceLabel(game) {
   const m = VOICE_MODES.includes(game.voiceMode) ? game.voiceMode : 'natural';
-  // The recorded cast is on: say so, rather than name the browser's voices.
-  if (m === 'natural' && game.vox && game.vox.acted) return 'RECORDED CAST';
-  // Asked for the browser's voices on a browser that has none: say what is
-  // actually playing instead of pretending.
-  if (m === 'natural' && game.vox && game.vox.engine === 'robot') {
-    // Voices that exist but never made a sound are a different complaint
-    // from a browser that has none.
-    return game.vox.fallback === 'silent' ? 'ROBOT (BROWSER VOICE MUTE)' : 'ROBOT (NO BROWSER VOICES)';
-  }
+  // Only recorded takes are ever spoken; anything else is a subtitle.
+  if (m !== 'off' && game.vox && game.vox.acted) return 'RECORDED CAST';
   return VOICE_LABEL[m];
 }
 
@@ -670,9 +664,8 @@ const VOICE_SAMPLES = [
 let voiceSample = 0;
 
 function cycleVoice(game, d) {
-  const n = VOICE_MODES.length;
-  const i = Math.max(0, VOICE_MODES.indexOf(game.voiceMode));
-  const m = VOICE_MODES[(i + (d < 0 ? n - 1 : 1)) % n];
+  // ON (the recorded cast) or OFF: there is no synthetic voice to choose any more.
+  const m = game.voiceMode === 'off' ? 'natural' : 'off';
   game.voiceMode = m;
   saveVoiceMode(m);
   const v = game.vox;

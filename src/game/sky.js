@@ -508,12 +508,27 @@ export class SkyWar {
       // Nothing bursts inside the arming distance: a shell that clips the parapet
       // at the player's elbow passes through it, the way real flak does, instead
       // of taking his face off for shooting across his own deck.
+      // Furniture is in the way too: a shell fired into a desk bursts on the
+      // desk (and takes it apart), not on the wall behind it. Any distance past
+      // the muzzle: a burst on something you hit does not hurt you.
+      let propT = 2, propX = 0, propY = 0, propZ = 0;
+      if (!pop && game.props && f.travelled > 0.3 && (f.z < 1.4 || pz < 1.4)) {
+        const n = Math.max(1, Math.ceil(step / 0.18));
+        for (let k = 1; k <= n; k++) {
+          const t = k / n;
+          if (prox && prox.t <= t) break;
+          const sx = px + (f.x - px) * t, sy = py + (f.y - py) * t, sz = pz + (f.z - pz) * t;
+          if (sz >= 1.4 || sz < 0) continue;
+          if (game.props.at(sx, sy, sz)) { propT = t; propX = sx; propY = sy; propZ = sz; break; }
+        }
+      }
       let wallT = 2;
       if (!pop && game.level && f.travelled > FLAK_ARM_DIST && (f.z < 1.4 || pz < 1.4)) {
         const n = Math.max(1, Math.ceil(step / 0.45));
         for (let k = 1; k <= n; k++) {
           const t = k / n;
           if (prox && prox.t <= t) break;   // it met something before this wall
+          if (t >= propT) break;            // or a piece of furniture
           const sx = px + (f.x - px) * t, sy = py + (f.y - py) * t, sz = pz + (f.z - pz) * t;
           if (sz >= 1.4) continue;
           if (game.level.blockedAt(sx, sy, sz)) {
@@ -525,7 +540,11 @@ export class SkyWar {
           }
         }
       }
-      if (prox && prox.t < wallT) {
+      if (propT < wallT && !(prox && prox.t < propT)) {
+        f.x = propX; f.y = propY; f.z = propZ;
+        f.contact = true;
+        pop = true;
+      } else if (prox && prox.t < wallT) {
         f.x = prox.x; f.y = prox.y; f.z = prox.z;
         f.proxDist = prox.near;
         f.contact = prox.body;

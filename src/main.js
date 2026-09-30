@@ -127,7 +127,7 @@ export async function boot() {
     let speech = null;
     if (!safe) {
       try {
-        speech = new Speech({ mode: game.voiceMode, gain: () => clamp(game.volMaster, 0, 1) });
+        speech = new Speech({ mode: game.voiceMode, gain: () => clamp(game.volMaster, 0, 1), recordedOnly: true });
         speech.unlock();
         game.vox = wrapVox(speech);
         game.vox.setVolume(game.volVox);
@@ -141,12 +141,13 @@ export async function boot() {
         sound.setSfxVol(0.95);
         if (vox && sound.ctx) {
           const v = new vox.ctor(sound.ctx, sound.sfxBus || sound.ctx.destination);
+          // Kept only as the (unused) ROBOT engine inside Speech: the cast is
+          // recorded or silent, so without Speech there is no voice at all.
           if (speech) speech.attachFormant(v);
-          else game.vox = wrapVox(v);
           game.vox.setVolume(game.volVox);
         }
         // The recorded cast: the lines heard most, played from takes through
-        // the same bus. Lines without a take stay on the browser voice.
+        // the same bus. Lines without a take are subtitles only.
         if (speech && sound.ctx && VOICE_PACK && VOICE_PACK.clips && VOICE_PACK.clips.length) {
           try {
             const bank = new ClipBank(VOICE_PACK);

@@ -89,9 +89,10 @@ export const DIFFICULTY = [
 function safeSound(s) {
   const noop = () => {};
   if (!s) return { sfx: noop, music: noop, stopMusic: noop, setMaster: noop, setMusicVol: noop,
-                   setSfxVol: noop, duck: noop, panic: noop, update: noop, ready: false, ctx: null };
+                   setSfxVol: noop, duck: noop, panic: noop, update: noop, clip: () => false, loop: () => false,
+                   hasClip: () => false, ready: false, ctx: null };
   const wrap = {};
-  for (const k of ['sfx', 'music', 'stopMusic', 'setMaster', 'setMusicVol', 'setSfxVol', 'duck', 'panic', 'update']) {
+  for (const k of ['sfx', 'music', 'stopMusic', 'setMaster', 'setMusicVol', 'setSfxVol', 'duck', 'panic', 'update', 'clip', 'loop', 'hasClip']) {
     wrap[k] = typeof s[k] === 'function' ? (...a) => { try { return s[k](...a); } catch (e) { /* audio never kills a frame */ } } : noop;
   }
   Object.defineProperty(wrap, 'ready', { get: () => !!s.ready });
@@ -188,10 +189,11 @@ export class Game {
     this.hitStop = 0;
     // Player-facing settings the title screen's calibration page edits directly.
     this.volMaster = 0.85;
-    // The band sits under the cast, not on top of it: at 0.7 the new metal
-    // mix buried every line a browser voice could say.
-    this.volMusic = 0.42;
+    // The band sits under the cast, not on top of it (the music bus is scaled
+    // down in synth.js, so 40% here is quiet).
+    this.volMusic = 0.4;
     this.volVox = 0.9;
+    loadVolumes(this);
     this.sens = 1.0;
     this.invertY = false;
     this.resScale = 1.0;
@@ -407,6 +409,8 @@ export class Game {
   }
 
   setState(s) {
+    // a saw left idling under the pause menu or the intermission card
+    if (this.sound) { this.sound.loop('saw_idle', false); this.sound.loop('saw_run', false); }
     this.state = s;
     if (s === STATE.PAUSE) { this.pauseSel = 0; this.pausePage = 'menu'; this.pauseOptSel = 0; this.pauseT = 0; }
     // The browser speaks on its own clock, so the hard stops stop it too. A
@@ -733,6 +737,7 @@ export class Game {
     this.briefT += dt;
     // The card is still: a good moment to draw the furniture for the floor.
     if (this.art.props) { try { this.art.props.pump(14); } catch (e) { /* the painted set stands in */ } }
+    if (this.art.meshes) { try { this.art.meshes.pump(14); } catch (e) { /* baked when first seen instead */ } }
     if (this.briefT > 0.6 && (input.anyPressed() || this.briefT > 6.5)) {
       this.setState(STATE.PLAY);
       if (this.levelIndex === 0) {
@@ -1776,8 +1781,12 @@ export class Game {
   updateSaw(dt, firing) {
     const p = this.player, S = this.saw, spec = p.spec;
     const held = spec.kind === 'saw' && !p.pendingWeapon && !p.dead;
-    if (held && !S.wasHeld) this.sound.sfx('saw_start', { vol: 0.8 });
+    if (held && !S.wasHeld) this.sound.sfx('saw_start', { vol: 0.6 });
     S.wasHeld = held;
+    // The recorded engine: one idle loop and one flat-out loop, crossfaded on
+    // the throttle, instead of short baked cycles stacked five a second.
+    const recorded = this.sound.loop('saw_idle', held && this.player.alive !== false, 0.42 * (1 - S.rev * 0.75), 0.92 + S.rev * 0.16)
+      & this.sound.loop('saw_run', held && S.rev > 0.3, Math.max(0, (S.rev - 0.3) / 0.7) * 0.5, 0.9 + S.rev * 0.14);
     if (!held) {
       if (S.stuck) this.unpin(S.stuck.e);
       S.rev = Math.max(0, S.rev - dt * 3);
@@ -1793,14 +1802,15 @@ export class Game {
     // idle, a scream with the chain whirring over it on the button.
     const rate = 0.8 + S.rev * 0.6;
     S.audioT -= dt;
-    if (S.audioT <= 0) {
+    // without the recording (it has not decoded, or audio is off), the baked engine, quieter
+    if (!recorded && S.audioT <= 0) {
       S.audioT = 0.376 / rate;
-      this.sound.sfx('saw_rumble', { rate, vol: 0.5 + S.rev * 0.5 });
+      this.sound.sfx('saw_rumble', { rate, vol: 0.3 + S.rev * 0.3 });
     }
     S.runT -= dt;
-    if (S.rev > 0.5 && S.runT <= 0) {
+    if (!recorded && S.rev > 0.5 && S.runT <= 0) {
       S.runT = 0.19 / rate;
-      this.sound.sfx('saw_run', { rate, vol: (S.rev - 0.4) * 0.6 });
+      this.sound.sfx('saw_run', { rate, vol: (S.rev - 0.4) * 0.4 });
     }
     // Blue two-stroke smoke off the exhaust stub, and more of it when the throttle
     // is open; it is drawn on the screen over the gun (render.js), because a world
@@ -1863,9 +1873,11 @@ export class Game {
     if (prop) {
       if (S.tickT <= 0) {
         S.tickT = 0.09;
-        this.props.hit(prop, spec.dps * 0.09 * 0.9, prop.x, prop.y, prop.z + prop.h * 0.5, 'kick');
+        // a concrete saw goes through an office desk like it is not there
+        this.props.hit(prop, spec.dps * 0.09 * 2.8, prop.x, prop.y, prop.z + prop.h * 0.5, 'kick', ca, sa);
         this.particles.sparks(prop.x - ca * 0.3, prop.y - sa * 0.3, prop.z + prop.h * 0.5, 4, 1.6, [255, 214, 140], 4);
-        this.sound.sfx('saw_wall', { pan: this.panAt(prop.x, prop.y), vol: 0.7 });
+        S.wallT = (S.wallT || 0) - 0.09;
+        if (S.wallT <= 0) { S.wallT = 0.26; this.sound.sfx('saw_wall', { pan: this.panAt(prop.x, prop.y), vol: 0.45 }); }
         this.shake = Math.max(this.shake, 1.1);
       }
       this.sawPose(true, false);
@@ -1913,7 +1925,15 @@ export class Game {
     if (e.hp - dmg <= 0 && this.gore.canMaim(e) && this.rng() < 0.4) { this.bisectEnemy(e, this.sawMode()); return; }
     const killed = e.hurt(dmg, this, p.x, p.y);
     this.particles.blood(e.x - ca * 0.2, e.y - sa * 0.2, p.z - 0.05, 7, -ca, -sa);
-    this.sound.sfx('saw_cut', { pan: this.panOf(e), vol: 0.8 });
+    // the chain in meat, recorded: a fresh bite every so often rather than a
+    // new sound every tick (that stacking is what flattened the rest of the mix)
+    S.meatT = (S.meatT || 0) - 0.09;
+    if (S.meatT <= 0) {
+      S.meatT = 0.62;
+      if (!this.sound.clip(this.rng() < 0.7 ? 'saw_meat' : 'saw_bite', { pan: this.panOf(e), vol: 0.75, rate: 0.94 + this.rng() * 0.12 })) {
+        this.sound.sfx('saw_cut', { pan: this.panOf(e), vol: 0.6 });
+      }
+    }
     this.hud.hitMark(killed);
     if (this.rng() < 0.4) this.hud.splatter(1);
     this.shake = Math.max(this.shake, 1.3);
@@ -2458,6 +2478,10 @@ export class Game {
       for (const it of this.items) {
         if (it.solid && !it.taken && dist(b.x, b.y, it.x, it.y) < b.maxR) this.damageProp(it, 999);
       }
+      // ...and the furniture, and the walls round it.
+      const pr = Math.min(b.maxR * 0.7, 3.2);
+      this.props.blast(b.x, b.y, b.z, pr, gd * 1.6);
+      if (this.walls) this.walls.blast(b.x, b.y, b.z, pr, gd * 1.2);
     }
   }
 
@@ -3088,4 +3112,19 @@ export class Game {
       });
     }
   }
+}
+
+
+// The volume sliders, kept between visits where storage allows.
+const VOL_KEY = 'nukehaus.volume.v2';
+export function loadVolumes(game) {
+  try {
+    const v = JSON.parse(localStorage.getItem(VOL_KEY) || 'null');
+    if (!v) return;
+    for (const k of ['volMaster', 'volMusic', 'volVox']) if (Number.isFinite(v[k])) game[k] = Math.max(0, Math.min(1, v[k]));
+  } catch { /* private window or sandboxed frame: defaults */ }
+}
+export function saveVolumes(game) {
+  try { localStorage.setItem(VOL_KEY, JSON.stringify({ volMaster: game.volMaster, volMusic: game.volMusic, volVox: game.volVox })); }
+  catch { /* it just will not survive a reload */ }
 }
