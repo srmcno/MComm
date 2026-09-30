@@ -775,6 +775,8 @@ export class PropStudio {
     this.cache = new Map();
     this.ms = 0;
     this.made = 0;
+    this.queue = [];
+    this.queued = new Set();
   }
 
   has(kind) { return !!this.models[kind]; }
@@ -817,17 +819,63 @@ export class PropStudio {
     return f;
   }
 
-  /** Make every frame these kinds will need standing, now rather than mid-fight. */
-  prewarm(kinds, states = ['ok']) {
+  /**
+   * The frame if it is made, else null, and it goes on the list to be made.
+   * The game asks with this while playing, so a prop never costs a hitch;
+   * until its frame is ready it shows the nearest direction that is.
+   */
+  want(kind, dir = 0, state = 'ok', variant = 0, pose = 0, piece = false) {
+    const def = piece ? this.pieces[kind] : this.models[kind];
+    if (!def) return null;
+    const dirs = def.dirs || DIRS;
+    dir = ((dir % dirs) + dirs) % dirs;
+    const nv = def.variants || 1;
+    variant = ((variant % nv) + nv) % nv;
+    const key = `${piece ? 'p:' : ''}${kind}|${variant}|${state}|${pose}|${dir}`;
+    const f = this.cache.get(key);
+    this.exact = f !== undefined;
+    if (f !== undefined) return f;
+    if (!this.queued.has(key)) { this.queued.add(key); this.queue.push([kind, dir, state, variant, pose, piece, key]); }
+    // meanwhile: the nearest direction already made, then any pose of it
+    for (let k = 1; k <= dirs >> 1; k++) {
+      for (const dd of [dir + k, dir - k]) {
+        const g = this.cache.get(`${piece ? 'p:' : ''}${kind}|${variant}|${state}|${pose}|${((dd % dirs) + dirs) % dirs}`);
+        if (g) return g;
+      }
+    }
+    return null;
+  }
+
+  /** Make queued frames until `budgetMs` is spent. Returns how many are left. */
+  pump(budgetMs = 3) {
+    const t0 = now();
+    // newest first: what was asked for this frame is what is on screen
+    while (this.queue.length && now() - t0 < budgetMs) {
+      const [kind, dir, state, variant, pose, piece, key] = this.queue.pop();
+      this.queued.delete(key);
+      if (!this.cache.has(key)) this.frame(kind, dir, state, variant, pose, piece);
+    }
+    return this.queue.length;
+  }
+
+  /**
+   * Make every frame these kinds will need standing, now rather than mid-fight,
+   * up to `budgetMs`; whatever is left is queued and made while playing.
+   */
+  prewarm(kinds, states = ['ok'], budgetMs = Infinity) {
+    const t0 = now();
     for (const k of kinds) {
       const def = this.models[k];
       if (!def) continue;
       const nv = def.variants || 1;
-      for (let v = 0; v < nv; v++) for (const s of states) for (let d = 0; d < (def.dirs || DIRS); d++) this.frame(k, d, s, v);
+      for (let v = 0; v < nv; v++) for (const s of states) for (let d = 0; d < (def.dirs || DIRS); d++) {
+        if (now() - t0 < budgetMs) this.frame(k, d, s, v);
+        else this.want(k, d, s, v);
+      }
     }
   }
 
-  clear() { this.cache.clear(); }
+  clear() { this.cache.clear(); this.queue.length = 0; this.queued.clear(); }
 }
 
 function hashStr(s) {

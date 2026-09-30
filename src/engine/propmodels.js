@@ -316,4 +316,115 @@ const MODELS_CORE = {
 /** Everything the studio can draw, by kind. */
 export const MODELS = { ...MODELS_OFFICE, ...MODELS_WORKS, ...MODELS_CORE };
 
-export const PIECES = {};
+// ------------------------------------------------------------------ debris
+
+// What a broken prop throws across the room. Each lies as it would come to
+// rest on the floor; in the air the game turns the picture as it tumbles.
+// variants pick the finish, so a pew breaks into dark oak and a vending
+// machine into red steel.
+const WOODS = [C.pine, C.oak, C.darkwood, C.laminate, C.crate];
+const SHEETS = [C.steelGrey, C.lockerBlue, C.colaRed, C.olive, C.beige, C.officeGreen, C.cream, C.black];
+const BOOKS = [[150, 40, 36], [40, 70, 130], [50, 110, 60], [200, 170, 60], [90, 60, 110], [220, 210, 190]];
+
+function piecePlank(M) {
+  const m = WOODS[M.variant % WOODS.length];
+  const L = 0.2 + (M.variant % 3) * 0.04;
+  M.slab(-L / 2, 0, -0.03, L / 2, 0.018, 0.03, m, { bevel: 0.003 });
+  // the splintered end
+  M.box([L / 2 + 0.015, 0.009, 0.01], [0.04, 0.014, 0.02], m, { yaw: 0.3 });
+  M.box([L / 2 + 0.01, 0.009, -0.015], [0.03, 0.012, 0.016], m, { yaw: -0.4 });
+}
+function piecePanel(M) {
+  const m = SHEETS[M.variant % SHEETS.length];
+  M.slab(-0.1, 0, -0.07, 0.02, 0.01, 0.07, m, { bevel: 0.002 });
+  M.box([0.06, 0.03, 0], [0.09, 0.01, 0.14], m, { roll: 0.7 });
+}
+function pieceDrawer(M) {
+  const m = SHEETS[M.variant % SHEETS.length];
+  M.slab(-0.1, 0, -0.13, 0.1, 0.01, 0.13, m);
+  M.slab(-0.1, 0, 0.12, 0.1, 0.09, 0.13, m, { bevel: 0.004 });
+  M.slab(-0.1, 0, -0.13, 0.1, 0.07, -0.12, m);
+  M.slab(-0.1, 0, -0.13, -0.09, 0.07, 0.13, m);
+  M.slab(0.09, 0, -0.13, 0.1, 0.07, 0.13, m);
+  M.slab(-0.03, 0.05, 0.13, 0.03, 0.06, 0.14, C.chrome);
+  M.slab(-0.08, 0.01, -0.1, 0.07, 0.05, 0.08, C.manila, { yaw: 0.1 });
+}
+function pieceLeg(M) {
+  M.rod([-0.1, 0.012, 0], [0.1, 0.012, 0.02], 0.011, M.variant % 2 ? C.chrome : C.darkMetal);
+  M.sph([0.11, 0.014, 0.02], 0.015, C.rubber);
+}
+function pieceMonitor(M) {
+  M.push([0, 0, 0], 0, -1.3);
+  M.slab(-0.065, 0, -0.07, 0.065, 0.11, 0.045, C.cream, { bevel: 0.008 });
+  M.slab(-0.05, 0.015, 0.045, 0.05, 0.095, 0.05, C.glass);
+  M.pop();
+}
+function pieceKeyboard(M) {
+  M.slab(-0.1, 0, -0.035, 0.1, 0.014, 0.035, C.cream, { bevel: 0.003,
+    paint: (u, v, face) => (face === 2 && (Math.floor(u * 18) + Math.floor(v * 5)) % 2 ? [150, 146, 136] : null) });
+}
+function pieceBook(M) {
+  const c = BOOKS[M.variant % BOOKS.length];
+  M.slab(-0.05, 0, -0.035, 0.05, 0.02, 0.035, mat('fabric', c), { bevel: 0.003 });
+  M.slab(-0.047, 0.003, -0.034, 0.05, 0.017, 0.034, C.paper);
+}
+function pieceCan(M) {
+  M.cyl([0, 0.022, 0], 0.022, 0.07, mat('metal', [[210, 40, 40], [60, 110, 210], [230, 190, 50]][M.variant % 3], { gloss: 0.5 }), { axis: 'x' });
+}
+function pieceChunk(M) {
+  const m = [mat('paint', [150, 146, 136], { wear: 0 }), mat('paint', [226, 222, 210], { wear: 0 }), mat('paint', [196, 190, 172], { wear: 0 })][M.variant % 3];
+  M.box([0, 0.035, 0], [0.09, 0.07, 0.08], m, { yaw: 0.4, roll: 0.2 });
+  M.box([0.04, 0.03, 0.03], [0.06, 0.05, 0.05], m, { yaw: -0.3, pitch: 0.3 });
+  M.box([-0.03, 0.02, -0.04], [0.05, 0.04, 0.05], m, { yaw: 0.9 });
+}
+function pieceTile(M) {
+  M.slab(-0.05, 0, -0.04, 0.05, 0.012, 0.05, C.porcelain, { yaw: 0.3 });
+}
+function pieceGlass(M) {
+  M.box([0, 0.004, 0], [0.07, 0.006, 0.04], mat('glass', [150, 200, 220]), { yaw: 0.5 });
+  M.box([0.04, 0.004, 0.02], [0.03, 0.006, 0.05], mat('glass', [150, 200, 220]), { yaw: -0.4 });
+}
+function pieceCushion(M) {
+  M.slab(-0.1, 0, -0.1, 0.1, 0.035, 0.1, M.variant % 2 ? C.fabricRed : C.fabricBlue, { bevel: 0.015 });
+}
+function pieceMeat(M) {
+  const flesh = mat('flesh', [150, 42, 40]);
+  M.sph([0, 0.035, 0], [0.07, 0.035, 0.05], flesh, { yaw: M.variant * 0.7 });
+  M.sph([0.03, 0.05, 0.01], [0.03, 0.02, 0.03], mat('flesh', [226, 196, 170]));
+}
+function pieceBottle(M) {
+  // a gas bottle or an extinguisher, lying down (and flying, in the worst case)
+  const col = [[180, 34, 30], [40, 120, 70], [140, 144, 150], [200, 30, 30]][M.variant % 4];
+  const m = mat('paint', col, { wear: 0.4 });
+  M.cyl([0, 0.055, 0], 0.055, 0.34, m, { axis: 'x' });
+  M.sph([0.17, 0.055, 0], [0.03, 0.05, 0.05], m);
+  M.cyl([0.205, 0.055, 0], 0.018, 0.04, C.brass, { axis: 'x' });
+  M.sph([-0.17, 0.055, 0], [0.012, 0.05, 0.05], m);
+}
+function pieceBoard(M) {
+  // a circuit board out of a console
+  M.slab(-0.07, 0, -0.05, 0.07, 0.006, 0.05, mat('plastic', [40, 110, 60]));
+  for (let k = 0; k < 4; k++) M.slab(-0.05 + k * 0.03, 0.006, -0.02, -0.035 + k * 0.03, 0.014, 0.02, C.black);
+}
+
+export const PIECES = {
+  plank: { build: piecePlank, variants: 5 },
+  panel: { build: piecePanel, variants: 8 },
+  drawer: { build: pieceDrawer, variants: 8 },
+  leg: { build: pieceLeg, variants: 2 },
+  monitor: { build: pieceMonitor },
+  keyboard: { build: pieceKeyboard },
+  book: { build: pieceBook, variants: 6 },
+  can: { build: pieceCan, variants: 3, dirs: 4 },
+  chunk: { build: pieceChunk, variants: 3, dirs: 4 },
+  tile: { build: pieceTile, dirs: 2 },
+  glass: { build: pieceGlass, dirs: 2 },
+  cushion: { build: pieceCushion, variants: 2, dirs: 2 },
+  meat: { build: pieceMeat, variants: 3, dirs: 4 },
+  bottle: { build: pieceBottle, variants: 4 },
+  board: { build: pieceBoard, dirs: 4 },
+};
+
+/** Which sheet-steel or wood finish a kind breaks into (the piece variant). */
+export const FINISH = { pine: 0, oak: 1, darkwood: 2, laminate: 3, crate: 4,
+  steelGrey: 0, lockerBlue: 1, colaRed: 2, olive: 3, beige: 4, officeGreen: 5, cream: 6, black: 7 };
