@@ -52,7 +52,7 @@ check('a frame is cheap enough to make between game frames (under 12 ms on avera
 check('the same model draws the same picture twice',
   (() => { const a = new PropStudio(MODELS, PIECES).frame('desk', 3), b = new PropStudio(MODELS, PIECES).frame('desk', 3); return a.data.join() === b.data.join(); })());
 check('every prop the game can break is modelled or keeps its painted sprite',
-  Object.keys(DECOR).every((k) => MODELS[k] || ['skeleton', 'chains', 'hook', 'corpse', 'corpse2', 'candles', 'sandbags', 'nosecone', 'pew', 'console', 'pinball'].includes(k)),
+  Object.keys(DECOR).every((k) => MODELS[k] || ['skeleton', 'chains', 'hook', 'corpse', 'corpse2'].includes(k)),
   Object.keys(DECOR).filter((k) => !MODELS[k]).join(','));
 check('every kind the maps place has rules in props.js', Object.keys(DECOR).every((k) => PROP_DEFS[k] || k === 'candles'),
   Object.keys(DECOR).filter((k) => !PROP_DEFS[k] && k !== 'candles').join(','));

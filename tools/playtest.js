@@ -1059,7 +1059,6 @@ s = await page.evaluate(async () => {
   const { Enemy } = await import('./src/game/entities.js');
   g.loadLevel(0); g.setState('play'); g._god = true;
   const lv = g.level, p = g.player;
-  const run = (sec) => { for (let i = 0; i < Math.round(sec * 60); i++) g.update(1 / 60, g.input); };
   // a locker, a wrencher standing in front of it, and two boots
   const d = window.P3.stand('locker', 1.25);
   if (!d) return { ok: false };
@@ -1067,14 +1066,16 @@ s = await page.evaluate(async () => {
   for (const o of lv.decor) if (o !== d && (Math.hypot(o.x - p.x, o.y - p.y) < 2.2 || Math.hypot(o.x - d.x, o.y - d.y) < 1.4)) o.gone = true;
   const ux = Math.cos(d.yaw), uy = Math.sin(d.yaw);
   const e = new Enemy('wrencher', d.x + ux * 0.62, d.y + uy * 0.62);
-  e.state = 0; e.speed = 0; g.enemies.push(e);
-  const hp0 = e.hp;
-  g.props.kick(p, 1.6, 0.4); run(0.1);
+  g.enemies.push(e);
+  const hp0 = e.hp, ex = e.x, ey = e.y;
+  // he stands his ground (left alone he would come after the player)
+  const hold = (sec) => { for (let i = 0; i < Math.round(sec * 60); i++) { if (e.alive) { e.x = ex; e.y = ey; } g.update(1 / 60, g.input); } };
+  g.props.kick(p, 1.6, 0.4); hold(0.1);
   const rocked = d.rock === 1 && !d.fall;
   g.props.kick(p, 1.6, 0.4);
   // step well back, past where its top will land
   p.x = d.x + ux * 2.6; p.y = d.y + uy * 2.6;
-  run(1.5);
+  hold(1.5);
   return { ok: true, rocked, fell: !!(d.fall && d.fall.landed), lying: d.pose === 4, notSolid: !lv.propBlock[lv.idx(d.x, d.y)],
     crushed: !e.alive || e.hp < hp0 - 60 };
 });
