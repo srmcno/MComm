@@ -57,8 +57,9 @@ npm install && node tools/bundle.js
 ```
 
 writes `dist/nukehaus.html`: the entire game (engine, art, levels, music,
-voice) in a single ~1.7 MB HTML file that makes no external requests. Open it
-directly, mail it to someone, put it anywhere.
+voice) in a single ~14 MB HTML file (about 2 MB of game and 12 MB of recorded
+voice) that makes no external requests. Open it directly, mail it to someone,
+put it anywhere.
 
 Mouse look uses pointer lock where the browser allows it. Where it doesn't (an
 embedded frame, a browser setting, a user who said no) the cursor steers the
@@ -339,16 +340,23 @@ fight, and the siege track thickens as the barrage does.
 ## The voices
 
 **The recorded cast.** The lines heard most (the story on every floor, the gore
-quips, the kills, the sky, the city losses, MUTTER reading your file) were
-recorded with ElevenLabs: Hardigan is "John Texas", a deep gravelly American;
-Vance is "German Petra", English with a hard German accent; MUTTER is "Daniel",
-a steady British broadcaster. The takes are trimmed, levelled to one loudness
-and stored as 32 kbps mono MP3 in `src/audio/voicepack.js`; `src/audio/acted.js`
-plays them through Web Audio, Vance through a radio band-pass and MUTTER with a
-faint metallic comb. A line that has takes plays one of them (never the same one
-twice running, and the right one for the city a line names). A floor opening,
-or one of Hardigan's distracted moments, is only played when the whole exchange
-was recorded, so no scene switches voices halfway. Anything without a take is
+quips, the kills, the sky, the city losses, MUTTER reading your file, the doors,
+the crates and the chain reactions) were recorded with ElevenLabs: Hardigan is
+"John Texas", a deep gravelly American; Vance is "German Petra", English with a
+hard German accent; MUTTER is "Daniel", a steady British broadcaster; and the
+staff on the saw are "Dexter Glitch", a nervous man who has read the safety
+manual twice. There are 408 takes, about 47 minutes of them (172 Hardigan, 177
+MUTTER, 40 Vance, 19 on the saw), covering 108 of the game's 126 line pools. The
+takes are trimmed, levelled to one loudness and stored as mono MP3 in
+`src/audio/voicepack.js`: the first 163 at 32 kbps, the rest at 24 kbps (Vance,
+who is on a band-limited radio, at 16 kbps and 16 kHz) to keep the file small.
+`src/audio/acted.js` plays them through Web Audio, Vance through a radio
+band-pass and MUTTER with a faint metallic comb. A line that has takes plays one
+of them (never the same one twice running, and the right one for the city a line
+names: every city has four takes of how it burns and four of how it is lost, so
+a city that burns again says something new). A floor opening, or one of
+Hardigan's distracted moments, is only played when the whole exchange was
+recorded, so no scene switches voices halfway. Anything without a take is
 spoken by the browser voice as below. A line with more variants than takes
 speaks the unrecorded ones in the browser voice too, so a floor's worth of kills
 is never the same five sentences; the recorded ones keep the larger share, and
@@ -366,9 +374,9 @@ into the basement, with the old formant synthesiser murmuring underneath. No
 two characters share a voice while there is an alternative. Durations are
 estimated from syllables and rate, because `onend` is not to be trusted.
 
-Whoever is hanging on the saw is a fourth voice, the staff member: it is
-Hardigan's browser voice pitched up and sped up, and it is never recorded, since
-nobody could tell one panicking maintenance man from the next.
+Whoever is hanging on the saw is a fourth voice, the staff member. It is
+recorded too (19 takes); when a take is missing, or the recorded cast is off, it
+is Hardigan's browser voice pitched up and sped up.
 
 **CALIBRATION > VOICE** switches between NATURAL, ROBOT (the formant
 synthesiser for everything) and OFF, and is remembered. Where the browser has

@@ -948,6 +948,21 @@ const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve();
   check('...and plays once the robot is done', ctx.started.length === 1 && synth.spoken.length === 0);
 }
 
+{
+  // The staff on the saw are a recorded voice too, once their lines have takes.
+  const { clock, synth, sp } = rig('Windows / Edge');
+  const ctx = fakeAudio(clock);
+  const take = { r: 'victim', k: 'victim_stuck', i: 0, a: null, t: "I'm just the maintenance guy! I came in for the donuts! There were no donuts! Nobody told me there'd be no fucking donuts!", d: 1.2, b: b64 };
+  const bank = new ClipBank({ clips: [take] }, { rng: () => 0 });
+  bank.attach(ctx, {});
+  sp.attachClips(bank);
+  sp.sayLine('victim_stuck', { voice: 'victim' });
+  await flush();
+  check('the staff on the saw speak from their own takes, not the pitched-up browser voice',
+    ctx.started.length === 1 && sp.lastRequested === take.t && synth.spoken.length === 0,
+    `${ctx.started.length} takes started, ${synth.spoken.length} browser lines`);
+}
+
 /* 9. the shipped takes match the script they claim to say */
 {
   const clips = (VOICE_PACK && VOICE_PACK.clips) || [];
@@ -957,7 +972,7 @@ const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve();
   for (const set of DISTRACTED) set.forEach((line, j) => gags.set(clipKey(j === 1 ? 'ilsa' : 'brick', plainText(line)), true));
   for (const c of clips) {
     const id = `${c.k || 'exact'}.${c.i}${c.a ? '.' + c.a : ''}`;
-    if (!ROLES.includes(c.r) || !c.t || !(c.d > 0.3 && c.d < 20)) { bad.push(id + ' fields'); continue; }
+    if (!(ROLES.includes(c.r) || c.r === 'victim') || !c.t || !(c.d > 0.3 && c.d < 20)) { bad.push(id + ' fields'); continue; }
     const bytes = Buffer.from(c.b || '', 'base64');
     const mp3 = bytes.length > 400 && ((bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) || (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0));
     if (!mp3) bad.push(id + ' audio');
@@ -968,7 +983,7 @@ const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve();
       const v = LINES[c.k];
       const src = Array.isArray(v) ? v[c.i] : v;
       if (!src || voiceOf(c.k) !== c.r) { bad.push(id + ' not in the script'); continue; }
-      let want = plainText(src.replace(/\s*%s remain\.\s*$/, '').replace('%s', c.a || ''));
+      let want = plainText(src.replace(/\s*(?:That leaves %s|%s (?:remain|left))\.\s*$/, '').replace('%s', c.a || ''));
       if (norm(want) !== norm(c.t)) bad.push(id + ' words differ');
     } else if (!gags.has(k)) {
       bad.push(id + ' exact line not in the script');
@@ -979,8 +994,27 @@ const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve();
     const bank = new ClipBank(VOICE_PACK);
     const whole = LEVEL_STORY_SETS.map((sets) => sets.some((set) => set.every((b) => bank.has(b.key))));
     check('every floor has an opening exchange the recorded cast can play whole', whole.every(Boolean), whole.join(','));
+    const CITY_NAMES = ['Saint Errol', 'Verity', 'Candlemark', 'Hollow Bay', 'Low Sabbath', 'Ashgrove'];
+    const few = [];
+    for (const key of ['city_burning', 'city_lost']) {
+      for (const city of CITY_NAMES) {
+        const n = clips.filter((t) => t.k === key && t.a === city).length;
+        if (n < 3) few.push(`${key}/${city}=${n}`);
+      }
+    }
+    check('every city has at least three takes of burning and of being lost', few.length === 0, few.join(', '));
+    let seed = 7;
+    const rep = new ClipBank(VOICE_PACK, { rng: () => (seed = (seed * 16807) % 2147483647) / 2147483647 });
+    let prev = null, twice = 0, distinct = new Set();
+    for (let i = 0; i < 60; i++) {
+      const t = rep.pick('city_burning', { args: ['VERITY'] });
+      if (t === prev) twice++;
+      prev = t;
+      if (t) distinct.add(t);
+    }
+    check('a city that burns again does not say the same thing twice running', twice === 0 && distinct.size >= 3, `${twice} repeats, ${distinct.size} takes`);
     const kb = Math.round(clips.reduce((n, c) => n + c.b.length, 0) / 1024);
-    check('the pack stays under 6 MB of base64', kb < 6144, `${kb} KB`);
+    check('the pack stays under 12 MB of base64', kb < 12288, `${kb} KB`);
   }
 }
 

@@ -15,7 +15,7 @@
 // grit; MUTTER is a building, so his get a faint metallic comb. Brick is in
 // the room and gets nothing.
 
-const MAX_CACHED = 48;
+const MAX_CACHED = 24;   // a decoded take is about 2 MB at the context rate
 
 /** Lowercase words only, for matching a request against a take's text. */
 export function clipKey(role, text) {
