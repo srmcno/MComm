@@ -146,7 +146,7 @@ const CAN_TINTS = [rgba(214, 56, 44, 140), rgba(60, 110, 210, 140), rgba(60, 170
 
 const REACH = 1.5;                 // how far the use key reaches
 const CAP_LITTER = 220;
-const CAP_DEBRIS = 170;
+const CAP_DEBRIS = 130;
 const HALF_PI = Math.PI / 2;
 
 const pack = (r, g, b, a) => ((a << 24) | (b << 16) | (g << 8) | r) >>> 0;

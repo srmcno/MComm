@@ -966,6 +966,15 @@ s = await page.evaluate(() => {
         for (let a = 0; a < 16; a++) {
           const ang = a * Math.PI / 8, x = d.x + Math.cos(ang) * dist, y = d.y + Math.sin(ang) * dist;
           if (lv.blocked(x, y) || !lv.lineOfSight(x, y, d.x, d.y)) continue;
+          // nothing solid between us and it (chairs are pulled up to tables now)
+          let clear = true;
+          for (let t = 0.1; t < 0.9 && clear; t += 0.05) {
+            const i = lv.idx(x + (d.x - x) * t, y + (d.y - y) * t);
+            if (lv.propBlock[i] && i !== lv.idx(d.x, d.y)) clear = false;
+          }
+          if (!clear) continue;
+          // and it is the only thing there: a vending machine has a bin beside it now
+          for (const o of lv.decor) if (o !== d && Math.hypot(o.x - d.x, o.y - d.y) < 1.1) o.gone = true;
           const p = g.player;
           p.x = x; p.y = y; p.z = 0.56; p.ang = Math.atan2(d.y - y, d.x - x);
           p.pitch = ((d.z + d.h * 0.5 - 0.56) / dist) * g.rc.projY;
@@ -993,7 +1002,9 @@ s = await page.evaluate(() => {
   window.T.step(0.3);
   return {
     ok: true, stopped, blockedBefore, shots, broken: d.broken, cellFree: !lv.propBlock[cell] && !lv.blocked(d.x, d.y),
-    litter: g.props.litter.length, dmg: g.levelDamage, wreck: !!d.altFrame,
+    litter: g.props.litter.length, dmg: g.levelDamage,
+    // the wreck is the studio's own, or the painted sprite cut down
+    wreck: !!d.altFrame || !!(g.art.props && g.art.props.has(d.kind) && g.art.props.frame(d.kind, 0, 'wreck', d.variant)),
   };
 });
 check('a desk stops a bullet, breaks under two Widow rounds, frees its cell, throws paper and goes on the invoice',
@@ -1042,6 +1053,97 @@ s = await page.evaluate(() => {
 check('the Boot sends a traffic cone flying; it lands, comes to rest a few cells away and can be shot again',
   s.ok && s.flyingMid && s.liftMid > 0 && s.landed && s.moved > 1 && s.inGrid,
   `flying ${s.flyingMid}, lift ${s.liftMid && s.liftMid.toFixed(2)}, landed ${s.landed}, moved ${s.moved && s.moved.toFixed(1)} cells, back in the grid ${s.inGrid}`);
+
+s = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game;
+  const { Enemy } = await import('./src/game/entities.js');
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  const lv = g.level, p = g.player;
+  const run = (sec) => { for (let i = 0; i < Math.round(sec * 60); i++) g.update(1 / 60, g.input); };
+  // a locker, a wrencher standing in front of it, and two boots
+  const d = window.P3.stand('locker', 1.25);
+  if (!d) return { ok: false };
+  // nothing else in reach of the boot
+  for (const o of lv.decor) if (o !== d && (Math.hypot(o.x - p.x, o.y - p.y) < 2.2 || Math.hypot(o.x - d.x, o.y - d.y) < 1.4)) o.gone = true;
+  const ux = Math.cos(d.yaw), uy = Math.sin(d.yaw);
+  const e = new Enemy('wrencher', d.x + ux * 0.62, d.y + uy * 0.62);
+  e.state = 0; e.speed = 0; g.enemies.push(e);
+  const hp0 = e.hp;
+  g.props.kick(p, 1.6, 0.4); run(0.1);
+  const rocked = d.rock === 1 && !d.fall;
+  g.props.kick(p, 1.6, 0.4);
+  // step well back, past where its top will land
+  p.x = d.x + ux * 2.6; p.y = d.y + uy * 2.6;
+  run(1.5);
+  return { ok: true, rocked, fell: !!(d.fall && d.fall.landed), lying: d.pose === 4, notSolid: !lv.propBlock[lv.idx(d.x, d.y)],
+    crushed: !e.alive || e.hp < hp0 - 60 };
+});
+check('a locker rocks at the first boot and goes over at the second, forward, and flattens whoever is in front of it',
+  s.ok && s.rocked && s.fell && s.lying && s.notSolid && s.crushed,
+  `rocked ${s.rocked}, fell ${s.fell}, lying ${s.lying}, cell free ${s.notSolid}, crushed ${s.crushed}`);
+
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  const lv = g.level;
+  const run = (sec) => { for (let i = 0; i < Math.round(sec * 60); i++) g.update(1 / 60, g.input); };
+  const cells = [...g.walls.hp.keys()];
+  if (!cells.length) return { ok: false };
+  const i = cells[0], x = (i % lv.W) + 0.5, y = ((i / lv.W) | 0) + 0.5;
+  // a round leaves a mark on the face it hits
+  const faces0 = g.walls.faces.length;
+  // the partition runs one way or the other; stand on one of its open sides
+  const [ax, ay] = lv.wall[i - 1] === 0 ? [-1, 0] : [0, -1];
+  g.walls.bulletHole(x + ax * 0.7, y + ay * 0.7, 0.5, -ax, -ay);
+  const marked = g.walls.faces.length > faces0;
+  g.explodeAt(x + ax * 0.9, y + ay * 0.9, 0.4, 3, 70);
+  run(0.5);
+  return { ok: true, marked, open: lv.wall[i] === 0, debris: g.props.debris.length, walk: !lv.blocked(x, y) };
+});
+check('a round marks a wall where it hits, and a blast brings a thin wall down into rubble you can walk through',
+  s.ok && s.marked && s.open && s.debris >= 8 && s.walk,
+  `marked ${s.marked}, open ${s.open}, ${s.debris} pieces, walkable ${s.walk}`);
+
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  const lv = g.level, p = g.player;
+  const run = (sec) => { for (let i = 0; i < Math.round(sec * 60); i++) g.update(1 / 60, g.input); };
+  // put an extinguisher and a rack of gas bottles in an open patch
+  let spot = null;
+  for (let y = 3; y < lv.H - 3 && !spot; y++) for (let x = 3; x < lv.W - 3 && !spot; x++) {
+    let ok = true;
+    for (let dy = -2; dy <= 2 && ok; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const j = (y + dy) * lv.W + x + dx;
+      if (lv.wall[j] || lv.propBlock[j] || lv.exit[j] || lv.trigger[j]) { ok = false; break; }
+    }
+    if (ok) spot = [x + 0.5, y + 0.5];
+  }
+  if (!spot) return { ok: false };
+  for (const o of lv.decor) if (Math.hypot(o.x - spot[0], o.y - spot[1]) < 3) o.gone = true;
+  p.x = spot[0] - 2; p.y = spot[1]; g.enemies.length = 0;
+  const ex = g.props.spawn('extinguisher', spot[0], spot[1] - 1, 0);
+  g.props.hit(ex, 4, ex.x, ex.y, 0.15, 'shot', 1, 0);
+  const flew = ex.gone && g.props.jets.length === 1;
+  run(3);
+  const landed = g.props.jets.length === 0;
+  const gas = g.props.spawn('gascyl', spot[0], spot[1] + 1, Math.PI);
+  const real = g.rng; g.rng = () => 0.9;
+  let boom = 0;
+  const explode = g.explodeAt.bind(g);
+  g.explodeAt = (...a) => { boom++; return explode(...a); };
+  const realP = g.props.rng;
+  g.props.rng = () => 0.9;
+  g.props.hit(gas, 6, gas.x, gas.y, 0.4, 'shot', 1, 0);
+  const vented = gas.vented;
+  g.props.rng = realP;
+  run(3);
+  g.rng = real; g.explodeAt = explode;
+  return { ok: true, flew, landed, vented, boom, broke: gas.broken };
+});
+check('a shot extinguisher flies off on its own foam and lands; a shot gas bottle vents and then the lot goes up',
+  s.ok && s.flew && s.landed && s.vented && s.boom >= 1 && s.broke,
+  `flew ${s.flew}, landed ${s.landed}, vented ${s.vented}, explosions ${s.boom}, broken ${s.broke}`);
 
 s = await page.evaluate(() => {
   const g = window.NUKEHAUS.game;

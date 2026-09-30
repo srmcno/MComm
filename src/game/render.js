@@ -130,6 +130,11 @@ export function renderWorld(game, W, H) {
       : it.kind === 'flare' ? `flare${Math.floor(game.time * 9) % 3}`
       : it.kind === 'ammo' ? 'ammo_flak'
       : it.kind;
+    // A barrel is modelled like the furniture it stands among.
+    if (it.kind === 'barrel' && art.props && art.props.has('barrel')) {
+      const bf = art.props.want('barrel', 0, 'ok', 0, 0);
+      if (bf) { S.push({ x: it.x, y: it.y, z: -bf.below, frame: bf, h: bf.h / bf.ppu }); continue; }
+    }
     const f = art.sprites[key];
     if (!f) continue;
     const bob = it.prop ? 0 : Math.sin((it.bob || 0)) * 0.035;

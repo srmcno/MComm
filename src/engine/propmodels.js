@@ -300,6 +300,30 @@ function crateSmall(M) {
   M.pop();
 }
 
+// ------------------------------------------------------------------ the barrel
+
+/** A 55-gallon drum of something you should not shoot: ribs, a hazard band, a bung. */
+function barrel(M) {
+  const drum = mat('paint', [150, 40, 30], { wear: 0.5, rust: 0.35 });
+  const R = 0.15, H = 0.58;
+  M.cyl([0, H / 2, 0], R, H - 0.01, drum, {
+    paint: (u, v, face, lx, ly, lz) => {
+      // the hazard band, as diagonal stripes round the middle
+      if (ly > 0.02 && ly < 0.1) {
+        const a = Math.atan2(lz, lx);
+        return (Math.floor(a * 7 + ly * 60) % 2 + 2) % 2 ? [236, 190, 40] : [30, 26, 22];
+      }
+      if (ly > -0.04 && ly < -0.015 && Math.atan2(lz, lx) > 0.9 && Math.atan2(lz, lx) < 2.2) return [236, 226, 206];
+      return null;
+    },
+  });
+  // rolling hoops and the chimes top and bottom
+  for (const y of [0.012, 0.19, 0.39, H - 0.012]) M.cyl([0, y, 0], R + 0.008, 0.018, drum);
+  M.cyl([0, H + 0.002, 0], R - 0.012, 0.006, mat('paint', [120, 34, 26], { wear: 0.6 }));
+  M.cyl([0.07, H + 0.012, 0.03], 0.022, 0.016, C.darkMetal);
+  M.cyl([-0.08, H + 0.008, -0.04], 0.012, 0.01, C.darkMetal);
+}
+
 // ------------------------------------------------------------------ the table
 
 const MODELS_CORE = {
@@ -311,6 +335,7 @@ const MODELS_CORE = {
   cooler: { build: cooler, front: 0.12 },
   crate: { build: crate, front: 0.23, variants: 4 },
   crates: { build: crates, front: 0.23 },
+  barrel: { build: barrel, front: 0.15, dirs: 1, noDamage: true },
 };
 
 /** Everything the studio can draw, by kind. */

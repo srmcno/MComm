@@ -165,16 +165,59 @@ ones behind them. Spent brass bounces on the deck.
 
 ## Breaking things
 
-Everything with a body in the bunker has hit points and a material, and comes
-apart in a way that suits what it was made of. Round, boot or blast: a desk
-splinters and throws its paperwork into the air (it flutters down and lies on
-the floor for a minute), a filing cabinet dents and sprays papers, a vending
-machine shatters and sprays cans and foam, a pinball machine goes off like
-a slot machine, a potted plant spreads itself over the carpet. What is left
-is the original sprite cut down to a scorched wreck. Solid furniture stops a
-bullet like a wall did, but stops being a wall once it is gone; a chair, a
-plant or a bin only takes the round on its way through. Every break goes on the
-invoice (**PROPERTY DAMAGE** on the floor card), and MUTTER has opinions on it.
+The furniture is not painted, it is built: every desk, chair, locker, vending
+machine, toilet and server rack is a small model of boxes, cylinders, cones
+and spheres with real materials (wood with its grain along the plank, office
+steel worn back to bare metal at the edges, fabric, porcelain, lit green
+phosphor), ray-traced at load from eight directions around it with the
+ceiling lights' shadows, soft floor contact shadows and bevelled edges. Walk
+round a desk and you see its side, then its back. It stands with its back to
+the wall it was put against and its front to the room, the chair is turned to
+its desk, the pews face the altar, and each room has what that kind of room
+would have: an office has desks with a filing cabinet, a bin and a plant; a
+washroom has sinks and a mop bucket; a store room has shelving, gas bottles
+and a workbench; a machine room has racks of tape drives and piles of dead
+monitors; the chapel has candelabras and a lectern; the meat locker has
+butcher's blocks.
+
+Everything with a body has hit points and a material, and comes apart the way
+it would. Round, boot or blast:
+
+- **Light things** (chairs, bins, cones, plants, a coat stand, the TV cart, a
+  cable reel) are shoved by rounds, thrown by blasts and hoofed across the
+  room by the boot. They tumble, bounce off the walls, smash if they hit one
+  hard enough, and hurt whatever they land on. Walk into one and it goes
+  where you are going. A kicked cable reel rolls, and bowls people over.
+- **Tall things** (lockers, filing cabinets, the vending machine, bookshelves,
+  shelving, server racks, candelabras) rock when you kick them and go over on
+  the second boot, forward, onto whoever is standing in front, which may be
+  you. A blast knocks them over too. Whatever is under one when it lands is
+  flattened, furniture included. A kicked canteen table flips onto its side.
+- **Broken things** throw their parts: planks, drawers, bent sheet steel,
+  books, cans, monitors, circuit boards, shards of porcelain. They bounce,
+  spin and stay on the floor, and the next blast throws them again. A desk
+  sprays its paperwork, a filing cabinet its files, a vending machine its cans
+  and foam, a photocopier a cloud of toner, a butcher's block its meat.
+- **Things under pressure**: shoot a **gas bottle** and it either screams off
+  across the room like a rocket and goes up where it lands, or stands there
+  venting fire until the rest of them go with it. An **extinguisher** shot or
+  kicked flies round the room on its own foam. A **server rack**, a **console**
+  or a **generator** that breaks arcs into whoever is nearest, and a generator
+  full of diesel explodes.
+
+What is left is the model's own wreck: snapped, collapsed, scorched and
+spilled. Solid furniture stops a bullet like a wall did, but stops being a
+wall once it is gone or lying down. Every break goes on the invoice
+(**PROPERTY DAMAGE** on the floor card), and MUTTER has opinions on it.
+
+The building takes it too. Rounds leave holes in the walls, blasts leave soot
+and cracks, and the thin walls come down: an office partition, a tiled wall, a
+salt wall, a sheet of rusted iron, a block of concrete between two rooms can be
+blown through, and the office board can be sawn through with THE SEVERANCE. A
+wall only comes down where both sides were already reachable without a key,
+so a hole makes a short cut, never a way round a locked door or into a secret.
+Strip lights can be shot out, one tube at a time, and the room goes darker.
+Shoot a pipe and it lets its steam out, which cooks whoever stands in it.
 
 Some of it can be used, with **SPACE / F**, and a prompt says so when you are
 facing one:
@@ -183,18 +226,18 @@ facing one:
   you when you walk over it; sometimes it eats the coin and jams (kick it),
   sometimes it pays out. A kick will also shake a can loose. Shoot it and it
   empties itself over the floor.
-- **Water coolers** are a drink of water, five times. **Lockers** open
-  once and have ammo, a first aid kit, loose change or gym socks in them.
-  **Filing cabinets and desks** have paperwork, and now and then something
-  worth having in the drawer.
+- **Water coolers** are a drink of water, five times, and a **sink** will wash
+  your hands. **Lockers** open once and have ammo, a first aid kit, loose
+  change or gym socks in them. **Filing cabinets and desks** have paperwork,
+  and now and then something worth having in the drawer. The **photocopier**
+  makes copies of your face, then of your backside.
 - **Consoles** can be hacked: half the time they hand over the floor plan (the
   automap fills in), half the time MUTTER says no. The **pinball machine** pays
   points, or tilts.
 - **Toilets** are a medkit with a flush. Shoot one and it turns into a
-  fountain.
-- **Chairs, traffic cones and bins** fly when you kick them, and hurt whatever
-  they hit on the way. **Ceiling lamps** can be shot out.
-- **Crates** may have supplies in them. Barrels, as ever, explode.
+  fountain. **Ceiling lamps** can be shot out.
+- **Crates, shelving, pallets and workbenches** may have supplies in them.
+  Barrels, as ever, explode.
 
 ## Writing on the walls
 
@@ -252,8 +295,7 @@ screens showing radar, error dialogs and a fish tank, a whiteboard of sales
 figures that only goes one way, a wall phone off the hook, a sign asking you
 not to punch the machine, and the dent that made it necessary), each floor has its own
 palette, tint and columns, and the rooms are dressed with what a bunker staff
-leaves behind: desks and office chairs, lockers, vending machines, a water
-cooler, a pinball machine, pews and candles, and the staff themselves. The
+leaves behind (see **Breaking things**), and the staff themselves. The
 toilets work, in the Duke tradition.
 
 ## How it is built
@@ -281,7 +323,10 @@ in the classic mould, extended with the things this game actually needs:
 - **Sliding doors** on the cell mid-plane with proper jambs, and pushwall
   secrets.
 - **Z-buffered billboards** carrying a real world height, so a warhead 90 units
-  out and 60 up projects honestly.
+  out and 60 up projects honestly. Furniture is a billboard too, but a
+  different one for each of eight directions, rendered from a model by a
+  small ray tracer (`src/engine/propstudio.js`, models in `propmodels*.js`)
+  while the briefing card is up, and in the gaps between frames after that.
 
 The software framebuffer goes to the GPU once per frame, where a WebGL2 chain
 does two-level bloom, chromatic aberration, barrel warp, aperture-grille
@@ -298,6 +343,8 @@ node tools/playtest.js            # 115 gameplay assertions in a real browser
 node tools/audio-integration.js   # static coverage + live audio graph measurement
 node tools/speech-check.js        # voice casting, captions, timing, fallback (mocked browsers)
 node tools/scrawl-check.js        # the wall messages: font coverage, fit, curses, faces
+node tools/props-check.js         # furniture models, facing, routes, breakable walls
+node tools/props-tour.js          # photographs the furniture in the game (no asserts)
 node tools/campaign.js [0|1|2]    # a bot plays the whole game and reports balance
 node tools/smoke.js               # boots, drives the UI, screenshots, frame cost
 node tools/beauty.js              # composes specific scenes and photographs them
