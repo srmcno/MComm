@@ -4,6 +4,7 @@
 // round a locked door.
 //   node tools/props-check.js
 import { PropStudio, DIRS, viewDir } from '../src/engine/propstudio.js';
+import { MeshBank } from '../src/engine/propmesh.js';
 import { MODELS, PIECES } from '../src/engine/propmodels.js';
 import { MAPS, DECOR, parseLevel } from '../src/game/maps.js';
 import { PROP_DEFS } from '../src/game/props.js';
@@ -59,6 +60,40 @@ check('every kind the maps place has rules in props.js', Object.keys(DECOR).ever
 check('every piece a broken prop throws exists', Object.values(PROP_DEFS).every((d) => !d.debris || d.debris.every(([p]) => PIECES[p])));
 check('viewDir: in front is 0, off its right side is 2, behind is 4',
   viewDir(0, 0, 0, 3, 0) === 0 && viewDir(0, 0, 0, 0, -3) === 2 && viewDir(0, 0, 0, -3, 0) === 4 && viewDir(0, 0, Math.PI / 2, 0, 3) === 0);
+
+// ------------------------------------------------------------------ solid models
+// The furniture is drawn as real 3D geometry now (propmesh.js, meshdraw.js);
+// the studio's pictures above are only its fallback.
+{
+  const bank = new MeshBank(MODELS, PIECES);
+  const badM = [];
+  let n = 0, worst = 0, worstK = '', tris = 0;
+  const t0 = performance.now();
+  for (const [kind, def] of Object.entries(MODELS)) {
+    for (const state of ['ok', 'hurt', 'wreck']) {
+      for (let v = 0; v < (def.variants || 1); v++) {
+        const a = performance.now();
+        const m = bank.make(kind, state, v);
+        const dt = performance.now() - a;
+        n++;
+        if (dt > worst) { worst = dt; worstK = `${kind}/${state}`; }
+        if (!m || !m.ready || !(m.tri.length >= 36) || m.patches.some((p) => !p.tex || !p.tex.length) || !(m.top > 0.05)) { badM.push(`${kind}/${state}/${v}`); continue; }
+        if (state === 'ok') tris = Math.max(tris, m.tri.length / 3);
+        // every texel written, and nothing floating under the floor
+        if (m.patches.some((p) => p.tex.some((c) => (c >>> 24) !== 255))) badM.push(`${kind}/${state}/${v} holes`);
+        if (m.minY < -0.02) badM.push(`${kind}/${state}/${v} below the floor ${m.minY.toFixed(3)}`);
+      }
+    }
+  }
+  for (const [piece, def] of Object.entries(PIECES)) for (let v = 0; v < (def.variants || 1); v++) {
+    const m = bank.make(piece, 'ok', v, true); n++;
+    if (!m || !m.ready || !(m.tri.length >= 12)) badM.push(`piece ${piece}/${v}`);
+  }
+  const per = (performance.now() - t0) / n;
+  check(`every model bakes into a solid 3D mesh, whole, battered and wrecked, and every piece too (${n} meshes)`, badM.length === 0, badM.slice(0, 6).join(', '));
+  check('a mesh bakes quickly enough to do while the briefing is up (under 60 ms on average, 250 ms worst)', per < 60 && worst < 250, `${per.toFixed(0)} ms average, worst ${worst.toFixed(0)} ms (${worstK})`);
+  check('no standing model is heavier than 4000 triangles', tris <= 4000, `${tris}`);
+}
 
 // ------------------------------------------------------------------ placement
 const art = { texIndex: new Map(TEXTURE_ORDER.map((n, i) => [n, i])), texNames: TEXTURE_ORDER, texAtlas: null };

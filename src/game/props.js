@@ -269,6 +269,8 @@ export class Props {
   }
 
   get studio() { return (this.g.art && this.g.art.props) || null; }
+  /** The same models as solid geometry, drawn in 3D (propmesh.js, meshdraw.js). */
+  get meshes() { return (this.g.art && this.g.art.meshes) || null; }
 
   /** A new level: forget the last one's rubble and register this one's furniture. */
   load(lv) {
@@ -316,6 +318,26 @@ export class Props {
     const st = this.studio;
     if (st) {
       try { st.trim(); } catch (e) { /* keep them */ }
+    }
+    // Every piece of this floor's furniture as a solid model, now, while the
+    // briefing card is up; then, in the gaps between frames, the battered and
+    // wrecked ones and the pieces they come apart into.
+    const mb = this.meshes;
+    if (mb) {
+      try {
+        mb.trim();
+        const mk = [...kinds].filter((k) => mb.has(k));
+        mb.prewarm(mk, ['ok'], Infinity);
+        const pieces = new Set();
+        for (const k of mk) for (const [pc] of (DEFS[k] && DEFS[k].debris) || []) pieces.add(pc);
+        for (const pc of ['chunk', 'plank', 'panel']) pieces.add(pc);
+        mb.prewarm([...pieces], ['ok'], Infinity, true);
+        for (const k of mk) {
+          const nv = (mb.models[k] && mb.models[k].variants) || 1;
+          for (let v = 0; v < nv; v++) { mb.get(k, 'wreck', v); mb.get(k, 'hurt', v); }
+        }
+      } catch (e) { /* the studio's pictures stand in */ }
+    } else if (st) {
       try { st.prewarm([...kinds].filter((k) => st.has(k)), ['ok'], 250); } catch (e) { /* the painted set stands in */ }
     }
   }
@@ -415,7 +437,13 @@ export class Props {
     this._hitFx(d, x, y, z, how);
     // the first hit: have its battered and wrecked pictures made now, from where
     // the player is looking, so they are ready when it needs them
-    const st = this.studio;
+    const mb = this.meshes;
+    if (!d._warm && mb && mb.has(d.kind)) {
+      d._warm = true;
+      mb.get(d.kind, 'wreck', d.variant);
+      mb.get(d.kind, 'hurt', d.variant);
+    }
+    const st = mb ? null : this.studio;
     if (!d._warm && st && st.has(d.kind)) {
       d._warm = true;
       const p = this.g.player;
@@ -1443,6 +1471,7 @@ export class Props {
     const g = this.g;
     d.opened = true;
     d._fk = null;
+    if (this.meshes) this.meshes.get(d.kind, 'open', d.variant);
     const st = this.studio;
     if (!(st && st.has(d.kind))) {
       const src = g.art.sprites[d.key];
@@ -1607,17 +1636,40 @@ export class Props {
     // frames for the studio, a little each frame
     const st = this.studio;
     if (st) st.pump(2.5);
+    if (this.meshes) this.meshes.pump(3);
   }
 
   /** The billboards for every piece of furniture, turned to the camera. */
-  collectDecor(out, cam, art) {
+  collectDecor(out, cam, art, solids = null) {
     const lv = this.g.level;
     if (!lv || !lv.decor) return;
     const st = this.studio;
+    const mb = solids ? this.meshes : null;
     const sx = -Math.sin(cam.ang), sy = Math.cos(cam.ang);
     for (let i = 0; i < lv.decor.length; i++) {
       const d = lv.decor[i];
       if (d.gone) continue;
+      if (mb && mb.has(d.kind)) {
+        const state = d.broken ? 'wreck' : d.opened ? 'open' : d.state === 'hurt' || (d.def && d.def.hp !== Infinity && d.hp < d.def.hp * 0.5) ? 'hurt' : 'ok';
+        const mesh = mb.get(d.kind, state, d.variant);
+        if (mesh) {
+          let x = d.x, y = d.y;
+          if (d.shake > 0 && !d.flying) {
+            const off = Math.sin(this.g.time * 55) * d.shake * 0.05;
+            x += sx * off; y += sy * off;
+          }
+          const m = d._mi || (d._mi = {});
+          m.mesh = mesh; m.x = x; m.y = y; m.z = (d.z || 0) + (d.lift || 0); m.yaw = d.yaw;
+          m.tilt = d.fall ? d.fall.ang : (d.rockA || 0);
+          m.front = mb.models[d.kind].front !== undefined ? mb.models[d.kind].front : 0.2;
+          m.roll = d.flying ? d.roll || 0 : 0;
+          m.rollY = undefined;
+          m.emissive = !!d.emissive && !d.broken && !d.fall;
+          m.shadow = !d.flying;
+          solids.push(m);
+          continue;
+        }
+      }
       let spr = d._spr;
       if (!spr) spr = d._spr = { x: d.x, y: d.y, z: 0, frame: null, h: 0, emissive: false };
       let f = null, h = 0, z = d.z || 0;
@@ -1666,6 +1718,16 @@ export class Props {
       const b = D[i];
       let s = recs[i];
       if (!s) { s = {}; recs[i] = s; }
+      if (mb && mb.has(b.piece, true)) {
+        const mesh = mb.get(b.piece, 'ok', b.v, true);
+        if (mesh) {
+          const m = b._mi || (b._mi = {});
+          m.mesh = mesh; m.x = b.x; m.y = b.y; m.z = b.z; m.yaw = b.yaw; m.tilt = 0; m.front = 0;
+          m.roll = b.roll || 0; m.rollY = undefined; m.emissive = false; m.shadow = false;
+          solids.push(m);
+          continue;
+        }
+      }
       let f = st ? st.want(b.piece, viewDir(b.x, b.y, b.yaw, cam.x, cam.y, st.dirsOf(b.piece)), 'ok', b.v, 0, true) : null;
       if (!f) continue;
       let h = f.h / f.ppu, z = b.z - f.below;

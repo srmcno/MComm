@@ -665,10 +665,12 @@ function rig(plat, behaviour = {}, opts = {}) {
   const store = new Map();
   globalThis.localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) };
   check('default VOICE is NATURAL', loadVoiceMode() === 'natural');
-  saveVoiceMode('robot');
-  check('VOICE persists', loadVoiceMode() === 'robot');
+  saveVoiceMode('off');
+  check('VOICE persists', loadVoiceMode() === 'off');
   saveVoiceMode('garbage');
-  check('junk is not persisted', loadVoiceMode() === 'robot');
+  check('junk is not persisted', loadVoiceMode() === 'off');
+  saveVoiceMode('robot');
+  check('a saved ROBOT comes back as NATURAL: the synthetic voice is not offered any more', loadVoiceMode() === 'natural');
   globalThis.localStorage = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); } };
   let ok = true;
   try { saveVoiceMode('off'); ok = loadVoiceMode() === 'natural'; } catch { ok = false; }
@@ -902,6 +904,20 @@ const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve();
   sp.sayLine('brick_kill');
   await flush();
   check('ROBOT ignores the takes', sp.acted === false && formant.said.length === f0 + 1 && sp.canVoice('brick', 'anything at all'));
+  // The game's setting: recorded takes or nothing. No browser voice, no formant.
+  sp.cancel();
+  sp.setMode('natural');
+  sp.recordedOnly = true;
+  const n2 = synth.spoken.length, f2 = formant.said.length;
+  const said = sp.say('Nobody ever recorded this sentence, and nobody should read it out.', { voice: 'brick' });
+  await flush();
+  clock.advance(0.1);
+  check('recordedOnly: a line with no take is not spoken by any synthetic voice (it is a subtitle)',
+    said === 0 && synth.spoken.length === n2 && formant.said.length === f2);
+  const took = sp.sayLine('brick_kill');
+  await flush();
+  check('recordedOnly: a line with takes is always one of them', took > 0 && synth.spoken.length === n2 && formant.said.length === f2);
+  sp.recordedOnly = false;
   sp.setMode('natural');
 }
 {

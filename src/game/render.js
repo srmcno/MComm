@@ -95,6 +95,9 @@ export function renderWorld(game, W, H) {
   // ------------------------------------------------------------- sprites
   const S = game.spriteList;
   S.length = 0;
+  // the furniture, as solid models (meshdraw.js)
+  const M = game.meshList || (game.meshList = []);
+  M.length = 0;
 
   for (const e of game.enemies) {
     if (e.vanish) continue;
@@ -131,6 +134,10 @@ export function renderWorld(game, W, H) {
       : it.kind === 'ammo' ? 'ammo_flak'
       : it.kind;
     // A barrel is modelled like the furniture it stands among.
+    if (it.kind === 'barrel' && art.meshes && art.meshes.has('barrel')) {
+      const bm = art.meshes.get('barrel', 'ok', 0);
+      if (bm) { M.push({ mesh: bm, x: it.x, y: it.y, z: 0, yaw: (it.x * 7.3 + it.y * 3.1) % 6.283 }); continue; }
+    }
     if (it.kind === 'barrel' && art.props && art.props.has('barrel')) {
       const bf = art.props.want('barrel', 0, 'ok', 0, 0);
       if (bf) { S.push({ x: it.x, y: it.y, z: -bf.below, frame: bf, h: bf.h / bf.ppu }); continue; }
@@ -148,7 +155,7 @@ export function renderWorld(game, W, H) {
 
   // Set dressing: desks, lockers, the odd colleague, each drawn from the side
   // the camera is on, plus whatever has been broken off them.
-  game.props.collectDecor(S, cam, art);
+  game.props.collectDecor(S, cam, art, M);
   // The thin man, when he is there to be seen.
   if (game.scribe) { const sr = game.scribe.sprite(art); if (sr) S.push(sr); }
   // Papers in the air, cans, coins: the litter of a room that has been visited.
@@ -248,7 +255,7 @@ export function renderWorld(game, W, H) {
 
   return rc.render(lv, cam, {
     texAtlas: art.texAtlas, texEmissive: art.texEmissive, sky: game.skyDome,
-  }, game.lights, S, opts);
+  }, game.lights, S, opts, M);
 }
 
 // -------------------------------------------------------------- viewmodel

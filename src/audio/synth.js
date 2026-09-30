@@ -13,6 +13,8 @@
 // its sources. Sources are always start()ed AND stop()ped, and the last source's
 // onended disconnects the whole voice. Nothing is ever left connected.
 
+import { SAW_PACK } from './sawpack.js';
+
 /* ------------------------------------------------------------------ helpers */
 
 const fin = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -100,6 +102,11 @@ export const POOL_LIMITS = Object.freeze({ voices: MAXV.slice(), nodes: BUDGET.s
 const SEND_LV = [0.16, 0.36, 0.7];
 
 /* =================================================================== Sound */
+
+// The score was mixed hot. Players turned MUSIC down to about an eighth of it
+// before it sat right under the guns and the cast, so the slider now covers
+// that range: the default 40% is where they left it, and 100% is still louder.
+const MUSIC_SCALE = 0.3;
 
 export class Sound {
   constructor() {
@@ -211,7 +218,7 @@ export class Sound {
     this._master.connect(this._comp);
 
     // music: track -> duck (the announcer) -> pump (the explosions) -> volume
-    this._music = g(this._vMusic);
+    this._music = g(this._vMusic * MUSIC_SCALE);
     this._duck = g(1);
     this._pump = g(1);
     this._music.connect(this._master);
@@ -310,6 +317,7 @@ export class Sound {
     });
 
     this._ready = true;
+    this._clipsFrom(SAW_PACK);
     bkWarm(this);
     if (this._pending) { const p = this._pending; this._pending = null; this.music(p.t, p.o); }
     return true;
@@ -537,7 +545,7 @@ export class Sound {
   /* -------------------------------------------------------------- mix / API */
 
   setMaster(x) { this._vMaster = clamp(fin(x, 1), 0, 1); this._ramp(this._master, this._vMaster); }
-  setMusicVol(x) { this._vMusic = clamp(fin(x, 1), 0, 1); this._ramp(this._music, this._vMusic); }
+  setMusicVol(x) { this._vMusic = clamp(fin(x, 1), 0, 1); this._ramp(this._music, this._vMusic * MUSIC_SCALE); }
   setSfxVol(x) { this._vSfx = clamp(fin(x, 1), 0, 1); this._ramp(this._sfx, this._vSfx); }
 
   _ramp(node, v) {
@@ -569,9 +577,105 @@ export class Sound {
     } catch (e) { /* ignore */ }
   }
 
+  /* ------------------------------------------------------ recorded clips */
+
+  /**
+   * Recorded sound effects (ElevenLabs), decoded once. They skip the effects
+   * bus compressor and go through their own high-pass straight to the effects
+   * volume: a saw engine held for ten seconds must not pump every gunshot and
+   * footstep under it, which is what the baked one did.
+   */
+  _clipsFrom(pack) {
+    if (!pack || !this.ctx) return;
+    this._clips = this._clips || {};
+    this._loops = this._loops || {};
+    if (!this._clipBus) {
+      const ctx = this.ctx;
+      const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 70; hp.Q.value = 0.6;
+      const g = ctx.createGain(); g.gain.value = 0.8;
+      hp.connect(g); g.connect(this._sfx);
+      this._clipBus = hp;
+    }
+    for (const [name, c] of Object.entries(pack)) {
+      try {
+        const bin = atob(c.b);
+        const u = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+        let done = false;
+        const ok = (buf) => { if (!done) { done = true; this._clips[name] = buf; } };
+        const p = this.ctx.decodeAudioData(u.buffer, ok, () => {});
+        if (p && p.then) p.then(ok, () => {});
+      } catch (e) { /* the baked sound stands in */ }
+    }
+  }
+
+  /** Is this recorded clip decoded and ready to play? */
+  hasClip(name) { return !!(this._ready && this._clips && this._clips[name]); }
+
+  /** Play a recorded clip once. Returns false if it is not there (use the baked sound). */
+  clip(name, o = {}) {
+    if (!this.hasClip(name)) return false;
+    try {
+      const ctx = this.ctx;
+      const src = ctx.createBufferSource();
+      src.buffer = this._clips[name];
+      src.playbackRate.value = clamp(fin(o.rate, 1), 0.25, 4);
+      const g = ctx.createGain();
+      g.gain.value = clamp(fin(o.vol, 1), 0, 2);
+      src.connect(g);
+      if (o.pan && ctx.createStereoPanner) {
+        const pn = ctx.createStereoPanner(); pn.pan.value = clamp(o.pan, -1, 1);
+        g.connect(pn); pn.connect(this._clipBus);
+      } else g.connect(this._clipBus);
+      src.onended = () => { try { g.disconnect(); } catch (e) { /* gone */ } };
+      src.start();
+      return true;
+    } catch (e) { return false; }
+  }
+
+  /**
+   * Keep a recorded loop running while `on` is true, at this level and speed;
+   * call every frame. Level and speed glide, so a throttle sounds like one.
+   * Returns false if the clip is not there (use the baked sound).
+   */
+  loop(name, on, vol = 1, rate = 1) {
+    if (!this._ready || !this._loops) return false;
+    const L = this._loops[name];
+    const t = this.ctx.currentTime;
+    if (!on) {
+      if (L) {
+        try { L.g.gain.setTargetAtTime(0, t, 0.06); L.src.stop(t + 0.4); } catch (e) { /* already gone */ }
+        delete this._loops[name];
+      }
+      return this.hasClip(name);
+    }
+    if (!this.hasClip(name)) return false;
+    if (!L) {
+      try {
+        const src = this.ctx.createBufferSource();
+        src.buffer = this._clips[name];
+        src.loop = true;
+        const g = this.ctx.createGain();
+        g.gain.value = 0;
+        src.connect(g); g.connect(this._clipBus);
+        src.onended = () => { try { g.disconnect(); } catch (e) { /* gone */ } };
+        // start somewhere inside the loop, so two starts in a row differ
+        src.start(t, Math.random() * src.buffer.duration * 0.9);
+        this._loops[name] = { src, g };
+      } catch (e) { return false; }
+    }
+    const M = this._loops[name];
+    try {
+      M.g.gain.setTargetAtTime(clamp(fin(vol, 1), 0, 2), t, 0.05);
+      M.src.playbackRate.setTargetAtTime(clamp(fin(rate, 1), 0.3, 3), t, 0.08);
+    } catch (e) { /* ignore */ }
+    return true;
+  }
+
   /** Hard stop. Death, level change, or the player alt-tabbing out of a firefight. */
   panic() {
     if (!this._ready) return;
+    if (this._loops) for (const k of Object.keys(this._loops)) this.loop(k, false);
     for (let i = this._voices.length - 1; i >= 0; i--) this._kill(this._voices[i]);
     for (let i = this._tracks.length - 1; i >= 0; i--) this._drop(this._tracks[i]);
     this._tracks.length = 0;

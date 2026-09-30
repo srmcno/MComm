@@ -11,6 +11,7 @@ import { TEX, rgba, mix, shade, makeFrame, fillRect, fillCircle, outline, makeRn
 import { buildTextures } from './textures.js';
 import { buildSprites } from './sprites.js';
 import { PropStudio } from './propstudio.js';
+import { MeshBank } from './propmesh.js';
 import { MODELS as PROP_MODELS, PIECES as PROP_PIECES } from './propmodels.js';
 import { buildViewmodels } from './viewmodels.js';
 import * as MAPS_MODULE from '../game/maps.js';
@@ -539,6 +540,10 @@ export async function loadAssets(onProgress = () => {}) {
   let props = null;
   try { props = new PropStudio(PROP_MODELS, PROP_PIECES); }
   catch (e) { warn('props.studio', e); }
+  // ...and drawn as solid models: the studio's pictures are only a fallback now.
+  let meshes = null;
+  try { meshes = new MeshBank(PROP_MODELS, PROP_PIECES); }
+  catch (e) { warn('props.meshes', e); }
 
   onProgress(0.9, 'TUNING THE PUBLIC ADDRESS');
   await yieldFrame();
@@ -548,7 +553,7 @@ export async function loadAssets(onProgress = () => {}) {
     texNames: textures.names || TEXTURE_ORDER,
     texIndex,
     sprites: sprites.frames,
-    props,
+    props, meshes,
     maim, rig,
     vm: viewmodels.frames,
     decalAtlas, decalNames, decalIndex, decalCount: decalNames.length,
