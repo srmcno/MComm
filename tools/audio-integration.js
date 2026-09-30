@@ -308,8 +308,15 @@ check('the VOICE option exists and reports what is playing', !!r.label && r.mode
     const out = { engine: g.vox.engine, casting: g.vox.casting };
     window.__speechLog.length = 0;
     g.newGame(1); g.loadLevel(0); g.setState('play');
-    // A line with no recorded take, so it is the browser voice that says it.
-    const dur = g.speakAs('ilsa', 'ilsa_city_lost', '');
+    // A line with no recorded take, so it is the browser voice that says it:
+    // the first of Ilsa's pools that nobody has recorded (and that names no city).
+    const { VOICE_PACK } = await import('./src/audio/voicepack.js');
+    const { voiceOf } = await import('./src/audio/vox.js');
+    const taken = new Set(VOICE_PACK.clips.map((c) => c.k));
+    const bare = Object.keys(g.voxLines).find((k) => Array.isArray(g.voxLines[k]) && voiceOf(k) === 'ilsa'
+      && !taken.has(k) && g.voxLines[k].every((s) => !s.includes('%s')));
+    out.bare = bare;
+    const dur = g.speakAs('ilsa', bare, '');
     out.dur = dur;
     out.caption = g.lastSpoken && g.lastSpoken.text;
     await sleep(80);
@@ -317,7 +324,6 @@ check('the VOICE option exists and reports what is playing', !!r.label && r.mode
     out.busy = g.vox.busy;
     // The recorded cast: a line with a take plays from the pack through Web
     // Audio, and the browser voice says nothing.
-    const { VOICE_PACK } = await import('./src/audio/voicepack.js');
     out.pack = VOICE_PACK.clips.length;
     if (out.pack) {
       const key = VOICE_PACK.clips.find((c) => c.k && !c.a).k;
@@ -364,7 +370,7 @@ check('the VOICE option exists and reports what is playing', !!r.label && r.mode
     `${v.casting.brick} / ${v.casting.ilsa} / ${v.casting.mutter}`);
   const u = v.first[0] || {};
   check('natural voices: Ilsa speaks in Katja with a duration and a caption',
-    /Katja/.test(u.voice || '') && v.dur > 1 && !!v.caption && v.busy, `${v.dur}s "${String(v.caption).slice(0, 40)}"`);
+    !!v.bare && /Katja/.test(u.voice || '') && v.dur > 1 && !!v.caption && v.busy, `${v.bare}: ${v.dur}s "${String(v.caption).slice(0, 40)}"`);
   check('natural voices: nothing spoken or captioned carries phones or braces', !v.leak);
   if (v.pack) {
     const t = v.take;
