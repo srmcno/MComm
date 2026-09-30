@@ -1192,7 +1192,11 @@ function dressLevel(def, idx, P) {
     let yaw;
     let wallSide = null;
     if (spec.wall) {
-      wallSide = sides[(hash3(x, y, seed + 41) * sides.length) | 0];
+      // back to a wall that has room in front of it (not the far wall of a corridor)
+      const roomy = sides.filter(([dx, dy]) => !solidWall(x - dx, y - dy));
+      if (!roomy.length && !force) return false;
+      const pool = roomy.length ? roomy : sides;
+      wallSide = pool[(hash3(x, y, seed + 41) * pool.length) | 0];
       const [dx, dy] = wallSide;
       px += dx * 0.2; py += dy * 0.2;
       yaw = Math.atan2(-dy, -dx);

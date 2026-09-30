@@ -781,6 +781,30 @@ export class PropStudio {
 
   has(kind) { return !!this.models[kind]; }
 
+  /** A model's footprint standing: { minX, maxX, minZ, maxZ, top } in world units. */
+  bounds(kind, variant = 0) {
+    const key = `b:${kind}|${variant}`;
+    let b = this.cache.get(key);
+    if (b) return b;
+    const def = this.models[kind];
+    if (!def) return null;
+    b = { minX: 0, maxX: 0, minZ: 0, maxZ: 0, top: 0 };
+    try {
+      const M = new Model('ok', hashStr(kind) ^ (variant * 7919), variant % (def.variants || 1));
+      def.build(M);
+      prepare(M.prims);
+      let first = true;
+      for (const p of M.prims) for (const c of p.corners) {
+        if (first) { b.minX = b.maxX = c[0]; b.minZ = b.maxZ = c[2]; first = false; }
+        b.minX = Math.min(b.minX, c[0]); b.maxX = Math.max(b.maxX, c[0]);
+        b.minZ = Math.min(b.minZ, c[2]); b.maxZ = Math.max(b.maxZ, c[2]);
+        b.top = Math.max(b.top, c[1]);
+      }
+    } catch (e) { /* no footprint: leave it where the map put it */ }
+    this.cache.set(key, b);
+    return b;
+  }
+
   dirsOf(kind) { const m = this.models[kind] || this.pieces[kind]; return m ? (m.dirs || DIRS) : 1; }
 
   /**
@@ -876,6 +900,16 @@ export class PropStudio {
   }
 
   clear() { this.cache.clear(); this.queue.length = 0; this.queued.clear(); }
+
+  /** Keep only standing, whole frames: the rest is made again when it is wanted. */
+  trim() {
+    for (const k of [...this.cache.keys()]) {
+      if (k.startsWith('b:')) continue;
+      const parts = k.split('|');
+      if (parts[2] !== 'ok' || parts[3] !== '0') this.cache.delete(k);
+    }
+    this.queue.length = 0; this.queued.clear();
+  }
 }
 
 function hashStr(s) {

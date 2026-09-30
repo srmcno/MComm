@@ -1,0 +1,157 @@
+// props-check.js - the furniture: every model draws, from every side and in
+// every state, in reasonable time; every floor's furniture faces the right
+// way and never cuts a route; the walls that can come down cannot open a way
+// round a locked door.
+//   node tools/props-check.js
+import { PropStudio, DIRS, viewDir } from '../src/engine/propstudio.js';
+import { MODELS, PIECES } from '../src/engine/propmodels.js';
+import { MAPS, DECOR, parseLevel } from '../src/game/maps.js';
+import { PROP_DEFS } from '../src/game/props.js';
+import { Level } from '../src/game/level.js';
+import { WallDamage } from '../src/game/walldamage.js';
+import { TEXTURE_ORDER } from '../src/engine/textures.js';
+
+let pass = 0, fail = 0;
+function check(name, ok, detail = '') {
+  if (ok) pass++; else fail++;
+  console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  ' + detail : ''}`);
+}
+
+// ------------------------------------------------------------------ models
+const studio = new PropStudio(MODELS, PIECES);
+const bad = [], slow = [];
+let frames = 0;
+const t0 = performance.now();
+for (const [kind, def] of Object.entries(MODELS)) {
+  const nv = def.variants || 1;
+  for (const state of ['ok', 'hurt', 'wreck']) {
+    for (let v = 0; v < nv; v++) {
+      for (let d = 0; d < (def.dirs || DIRS); d++) {
+        if (state !== 'ok' && d % 2) continue;
+        const f = studio.frame(kind, d, state, v);
+        frames++;
+        if (!f || !f.w || !f.h || f.w > 420 || f.h > 420 || !(f.below >= 0) || !(f.ppu > 0)) { bad.push(`${kind}/${state}/${v}/${d}`); continue; }
+        let opaque = 0;
+        for (let i = 0; i < f.data.length; i++) if ((f.data[i] >>> 24) === 255) opaque++;
+        if (opaque < 60) bad.push(`${kind}/${state}/${v}/${d} empty`);
+      }
+    }
+  }
+  // falling over, and flat
+  for (const pose of [2, 4]) { const f = studio.frame(kind, 1, 'ok', 0, pose); frames++; if (!f) bad.push(`${kind} pose ${pose}`); }
+}
+for (const [piece, def] of Object.entries(PIECES)) {
+  for (let v = 0; v < (def.variants || 1); v++) for (let d = 0; d < (def.dirs || DIRS); d++) {
+    const f = studio.frame(piece, d, 'ok', v, 0, true); frames++;
+    if (!f) bad.push(`piece ${piece}/${v}/${d}`);
+  }
+}
+const per = (performance.now() - t0) / frames;
+check(`every model and piece draws from every side, whole, battered, wrecked and falling (${frames} frames)`, bad.length === 0, bad.slice(0, 6).join(', '));
+check('a frame is cheap enough to make between game frames (under 12 ms on average)', per < 12, `${per.toFixed(1)} ms`);
+check('the same model draws the same picture twice',
+  (() => { const a = new PropStudio(MODELS, PIECES).frame('desk', 3), b = new PropStudio(MODELS, PIECES).frame('desk', 3); return a.data.join() === b.data.join(); })());
+check('every prop the game can break is modelled or keeps its painted sprite',
+  Object.keys(DECOR).every((k) => MODELS[k] || ['skeleton', 'chains', 'hook', 'corpse', 'corpse2', 'candles', 'sandbags', 'nosecone', 'pew', 'console', 'pinball'].includes(k)),
+  Object.keys(DECOR).filter((k) => !MODELS[k]).join(','));
+check('every kind the maps place has rules in props.js', Object.keys(DECOR).every((k) => PROP_DEFS[k] || k === 'candles'),
+  Object.keys(DECOR).filter((k) => !PROP_DEFS[k] && k !== 'candles').join(','));
+check('every piece a broken prop throws exists', Object.values(PROP_DEFS).every((d) => !d.debris || d.debris.every(([p]) => PIECES[p])));
+check('viewDir: in front is 0, off its right side is 2, behind is 4',
+  viewDir(0, 0, 0, 3, 0) === 0 && viewDir(0, 0, 0, 0, -3) === 2 && viewDir(0, 0, 0, -3, 0) === 4 && viewDir(0, 0, Math.PI / 2, 0, 3) === 0);
+
+// ------------------------------------------------------------------ placement
+const art = { texIndex: new Map(TEXTURE_ORDER.map((n, i) => [n, i])), texNames: TEXTURE_ORDER, texAtlas: null };
+const facingBad = [], chairBad = [], routeBad = [], yawBad = [];
+let total = 0;
+for (let li = 0; li < MAPS.length; li++) {
+  const P = parseLevel(li);
+  const lv = new Level(P, art);
+  const W = lv.W, H = lv.H;
+  total += lv.decor.length;
+  for (const d of lv.decor) {
+    if (!Number.isFinite(d.yaw) || !Number.isInteger(d.variant)) yawBad.push(`${li}:${d.kind}`);
+    if (d.wall) {
+      // its front is toward the room and its back to a wall
+      const fx = Math.floor(d.x + Math.cos(d.yaw) * 0.7), fy = Math.floor(d.y + Math.sin(d.yaw) * 0.7);
+      const bx = Math.floor(d.x - Math.cos(d.yaw) * 0.7), by = Math.floor(d.y - Math.sin(d.yaw) * 0.7);
+      if (lv.wall[fy * W + fx] === 1 || !lv.wall[by * W + bx]) facingBad.push(`${li}:${d.kind}@${d.x.toFixed(1)},${d.y.toFixed(1)}`);
+    }
+  }
+  // a chair by a desk faces the desk
+  for (const c of lv.decor) {
+    if (c.kind !== 'chair') continue;
+    const desk = lv.decor.find((d) => (d.kind === 'desk' || d.kind === 'console') && Math.hypot(d.x - c.x, d.y - c.y) < 0.7);
+    if (!desk) continue;
+    const want = Math.atan2(desk.y - c.y, desk.x - c.x);
+    let da = Math.abs(((c.yaw - want) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI);
+    if (da > 0.7) chairBad.push(`${li}@${c.x.toFixed(1)},${c.y.toFixed(1)}`);
+  }
+  // everything you could reach without the furniture, you can reach with it
+  const reach = (useProps) => {
+    const seen = new Uint8Array(W * H);
+    const s = lv.idx(P.start.x, P.start.y);
+    const st = [s]; seen[s] = 1; let n = 1;
+    while (st.length) {
+      const i = st.pop(), x = i % W, y = (i / W) | 0;
+      for (const j of [i - 1, i + 1, i - W, i + W]) {
+        if (j < 0 || j >= W * H || seen[j]) continue;
+        const jx = j % W; if (Math.abs(jx - x) > 1) continue;
+        if (lv.wall[j] === 1 && !lv.secret[j]) continue;
+        if (useProps && lv.propBlock[j]) continue;
+        seen[j] = 1; n++; st.push(j);
+      }
+    }
+    return { seen, n };
+  };
+  const a = reach(false), b = reach(true);
+  // cells that are blocked by props themselves do not count
+  let lost = 0;
+  for (let i = 0; i < W * H; i++) if (a.seen[i] && !b.seen[i] && !lv.propBlock[i]) lost++;
+  if (lost) routeBad.push(`level ${li}: ${lost} cells cut off`);
+}
+check(`every prop has a facing and a dressing (${total} props on ${MAPS.length} floors)`, yawBad.length === 0, yawBad.slice(0, 5).join(', '));
+check('everything that stands against a wall has its back to it and its front to the room', facingBad.length === 0, facingBad.slice(0, 5).join(', '));
+check('a chair pulled out from a desk is turned to the desk', chairBad.length === 0, chairBad.slice(0, 5).join(', '));
+check('no furniture cuts a route anywhere', routeBad.length === 0, routeBad.join('; '));
+
+// ------------------------------------------------------------------ walls
+const wallBad = [];
+let breakable = 0, withAny = 0;
+for (let li = 0; li < MAPS.length; li++) {
+  const P = parseLevel(li);
+  const lv = new Level(P, art);
+  const game = { art, level: lv };
+  const wd = new WallDamage(game);
+  wd.load(lv);
+  breakable += wd.hp.size;
+  if (wd.hp.size) withAny++;
+  // bring every breakable wall down and check the set of rooms reachable
+  // without keys does not grow
+  const W = lv.W, H = lv.H;
+  const region = (wall) => {
+    const seen = new Uint8Array(W * H);
+    const s = lv.idx(P.start.x, P.start.y);
+    const st = [s]; seen[s] = 1; let n = 1;
+    while (st.length) {
+      const i = st.pop(), x = i % W;
+      for (const j of [i - 1, i + 1, i - W, i + W]) {
+        if (j < 0 || j >= W * H || seen[j] || Math.abs((j % W) - x) > 1) continue;
+        if (wall[j] === 1 || lv.doorKind[j] || lv.secret[j]) continue;
+        seen[j] = 1; n++; st.push(j);
+      }
+    }
+    return n;
+  };
+  const before = region(lv.wall);
+  const opened = lv.wall.slice();
+  for (const i of wd.hp.keys()) opened[i] = 0;
+  const after = region(opened);
+  if (after - before > wd.hp.size) wallBad.push(`level ${li}: ${after - before} new cells reachable`);
+}
+check(`walls that can come down exist on most floors (${breakable} on ${withAny} of ${MAPS.length})`, withAny >= 3);
+check('bringing down every breakable wall opens nothing a key or a secret was guarding', wallBad.length === 0, wallBad.join('; '));
+
+console.log(`\nprops-check - furniture models, placement and breakable walls\n`);
+console.log(`${fail === 0 ? 'PASS' : 'FAIL'}  ${pass} passed, ${fail} failed\n`);
+process.exit(fail === 0 ? 0 : 1);

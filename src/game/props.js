@@ -29,6 +29,7 @@ import { rgba, makeFrame } from '../core/pixels.js';
 import { clamp, dist, makeRng, randRange, TAU } from '../core/math.js';
 import { viewDir } from '../engine/propstudio.js';
 import { rotFrame } from './gore.js';
+import { DECOR } from './maps.js';
 
 /**
  * What a thing is made of decides how it sounds, what flies off it and how it
@@ -291,15 +292,54 @@ export class Props {
       d.hx = d.x; d.hy = d.y; d.hr = 0.26;
       d.roll = 0; d.spin = 0; d.pose = 0; d.fall = null; d.rock = 0; d.vented = false; d.gone = false;
       d.h0 = d.h;
+      // Stand it with its back to the wall, not a hand's width off it: the map
+      // only knows which wall, the model knows how deep it is.
+      const st0 = this.studio;
+      if (d.wall && st0 && st0.has(d.kind)) {
+        const b = st0.bounds(d.kind, d.variant);
+        if (b) {
+          const ux = Math.cos(d.yaw), uy = Math.sin(d.yaw);
+          // how far the wall behind is from where it stands now
+          let gap = 0;
+          for (let r = 0.05; r <= 0.6; r += 0.01) { if (lv.blocked(d.x - ux * r, d.y - uy * r)) { gap = r; break; } }
+          const shift = gap - (-b.minZ) - 0.012;
+          if (gap && shift > 0 && shift < 0.3) { d.x -= ux * shift; d.y -= uy * shift; }
+        }
+      }
+      d.hx = d.x; d.hy = d.y;
       if (d.def) this._gridAdd(d, lv);
       kinds.add(d.kind);
     }
     // Draw what this floor holds now, while the briefing card is up; the rest
-    // (other sides, the wrecks) is made in the gaps between frames.
+    // (other sides, the wrecks) is made in the gaps between frames. The last
+    // floor's wrecks and falls are let go; they are made again if wanted.
     const st = this.studio;
     if (st) {
+      try { st.trim(); } catch (e) { /* keep them */ }
       try { st.prewarm([...kinds].filter((k) => st.has(k)), ['ok'], 250); } catch (e) { /* the painted set stands in */ }
     }
+  }
+
+  /**
+   * Put a prop down at (x, y) facing `yaw`, as if the level had it: for the
+   * tools, and for anything that wants to furnish a room after the fact.
+   */
+  spawn(kind, x, y, yaw = 0, variant = 0) {
+    const g = this.g, lv = g.level, spec = DECOR[kind];
+    if (!lv || !spec) return null;
+    const d = {
+      kind, key: `prop_${kind}`, x, y, z: spec.z || 0, h: spec.h, solid: !!spec.solid, emissive: !!spec.emissive,
+      fixture: spec.fixture || null, yaw, variant, wall: !!spec.wall,
+    };
+    d.def = DEFS[kind] || null;
+    d.hp = d.def && d.def.hp !== undefined ? d.def.hp : 0;
+    d.broken = false; d.flying = false; d.shake = 0; d.lift = 0; d.stock = kind === 'vending' ? 4 : 0; d.uses = 0;
+    d.gal = kind === 'cooler' ? 6 : 0; d.altFrame = null; d.altH = 0; d._spr = undefined; d._fk = null;
+    d.hx = x; d.hy = y; d.hr = 0.26; d.roll = 0; d.spin = 0; d.pose = 0; d.fall = null; d.rock = 0; d.vented = false; d.gone = false; d.h0 = d.h;
+    lv.decor.push(d);
+    if (d.def) this._gridAdd(d, lv);
+    if (d.solid) { const i = lv.idx(x, y); lv.propBlock[i] = 1; lv.propH[i] = Math.max(lv.propH[i], d.z + d.h); }
+    return d;
   }
 
   _gridAdd(d, lv) {
@@ -910,8 +950,10 @@ export class Props {
         life: 0.35, size: 0.14, r: 255, g: 160 + (rng() * 60) | 0, b: 50, drag: 2, grav: -1, additive: true, grow: 0.4 });
       if (rng() < 0.5) g.particles.smoke(bx, by, b.z, 1, 0.4);
     } else {
-      g.particles.spawn({ x: bx, y: by, z: b.z + 0.05, vx: -Math.cos(j.ang) * 2.5 + (rng() - 0.5), vy: -Math.sin(j.ang) * 2.5 + (rng() - 0.5), vz: 0.2,
-        life: 0.9, size: 0.12, r: 246, g: 246, b: 240, drag: 1.4, grav: 1.5, additive: false, grow: 0.3, fadePow: 1.2 });
+      for (let q = 0; q < 2; q++) {
+        g.particles.spawn({ x: bx, y: by, z: b.z + 0.05, vx: -Math.cos(j.ang) * 2.5 + (rng() - 0.5), vy: -Math.sin(j.ang) * 2.5 + (rng() - 0.5), vz: 0.2,
+          life: 1.2, size: 0.18, r: 246, g: 246, b: 240, drag: 1.4, grav: 1.2, additive: false, grow: 0.5, fadePow: 1.2 });
+      }
     }
     j.snd -= dt;
     if (j.snd <= 0) { j.snd = 0.7; g.sound.sfx(j.kind === 'gas' ? 'gas_hiss' : 'foam_spray', { pan: g.panAt(b.x, b.y), vol: 0.7 }); }
@@ -1482,10 +1524,32 @@ export class Props {
     this._updateLitter(dt);
     for (let i = this.flying.length - 1; i >= 0; i--) this._fly(this.flying[i], dt);
     this._updateDebris(dt);
+    // Walk into a chair and it goes where you are going. Enemies too.
+    const movers = this._movers || (this._movers = []);
+    movers.length = 0;
+    if (!p.dead && Math.hypot(p.vx, p.vy) > 0.6) movers.push([p.x, p.y, p.vx, p.vy, 0.3]);
+    for (const e of g.enemies) {
+      if (e.alive && e._px !== undefined && dt > 0) {
+        const vx = (e.x - e._px) / dt, vy = (e.y - e._py) / dt;
+        if (vx * vx + vy * vy > 0.36 && vx * vx + vy * vy < 400) movers.push([e.x, e.y, vx, vy, e.radius]);
+      }
+      e._px = e.x; e._py = e.y;
+    }
     for (const d of lv.decor) {
       if (d.busy > 0) d.busy = Math.max(0, d.busy - dt);
       if (d.shake > 0) d.shake = Math.max(0, d.shake - dt);
       if (d.fall && !d.fall.landed) this._fall(d, dt);
+      if (movers.length && d.def && d.def.mass === 'light' && !d.solid && !d.flying && !d.broken && !d.gone) {
+        for (const [mx, my, vx, vy, r] of movers) {
+          const dx = d.x - mx, dy = d.y - my, q = Math.hypot(dx, dy);
+          if (q > r + 0.22 || dx * vx + dy * vy <= 0) continue;
+          const sp = Math.hypot(vx, vy);
+          // along the way it was going, and a little out of the way
+          this.shove(d, (vx / sp) * 0.8 + (dx / (q || 1)) * 0.4, (vy / sp) * 0.8 + (dy / (q || 1)) * 0.4, Math.min(2.4, sp * 1.1), 0);
+          if (g.time - (d._snd || -9) > 0.3) { d._snd = g.time; g.sound.sfx(MAT[d.def.mat].hit, { pan: g.panAt(d.x, d.y), vol: 0.35, rate: 1.1 }); }
+          break;
+        }
+      }
     }
     // burst pipes, and a bottle venting fire
     for (let i = this.spouts.length - 1; i >= 0; i--) {

@@ -29,25 +29,53 @@ function srand(seed) {
   let s = seed >>> 0 || 1;
   return () => { s = (Math.imul(s ^ (s >>> 15), 2246822519) + 0x9e3779b9) >>> 0; return s / 4294967296; };
 }
+/** The lowest point of a part, in model space. */
+function lowY(p) {
+  const X = p.X, h = p.half;
+  if (p.type === 0) return X[10] - (Math.abs(X[3]) * h[0] + Math.abs(X[4]) * h[1] + Math.abs(X[5]) * h[2]);
+  if (p.type === 3) return X[10] - Math.hypot(X[3] * h[0], X[4] * h[1], X[5] * h[2]);
+  return X[10] - (Math.abs(X[4]) * h[1] + Math.hypot(X[3], X[5]) * h[0]);
+}
 /**
- * Lift anything a wreck has knocked through the floor back up onto it. Only
- * standing frames: a falling pose carries its own transform on the stack.
+ * Lift anything a wreck has knocked through the floor back up onto it, part
+ * by part. Only standing frames: a falling pose carries its own transform.
  */
 function settle(M, from = 0) {
   if (M.stack.length !== 1) return;
   for (let i = from; i < M.prims.length; i++) {
-    const p = M.prims[i], X = p.X, h = p.half;
-    let ext;
-    if (p.type === 0) ext = Math.abs(X[3]) * h[0] + Math.abs(X[4]) * h[1] + Math.abs(X[5]) * h[2];
-    else if (p.type === 3) ext = Math.hypot(X[3] * h[0], X[4] * h[1], X[5] * h[2]);
-    else ext = Math.abs(X[4]) * h[1] + Math.hypot(X[3], X[5]) * h[0];
-    const low = X[10] - ext;
-    if (low < 0) X[10] -= low;
+    const low = lowY(M.prims[i]);
+    if (low < 0) M.prims[i].X[10] -= low;
   }
+}
+/** Rest an assembly (parts from..end) on the floor, lifting it all together. */
+function rest(M, from) {
+  if (M.stack.length !== 1) return;
+  let low = 0;
+  for (let i = from; i < M.prims.length; i++) low = Math.min(low, lowY(M.prims[i]));
+  for (let i = from; i < M.prims.length; i++) M.prims[i].X[10] -= low;
 }
 /** Round a cylinder: 0 at its front (+z), positive toward its right (+x). */
 const around = (lx, lz) => Math.atan2(lx, lz);
 const shade = (c, k) => [Math.min(255, c[0] * k), Math.min(255, c[1] * k), Math.min(255, c[2] * k)];
+/**
+ * Big lettering with a proper five-wide W and M: the 3x5 W reads as an H at
+ * bucket size. Otherwise like inkAt.
+ */
+const WIDE = { W: [5, '1000110001101011010101010'], M: [5, '1000111011101011000110001'], E: [3, '111100110100111'], T: [3, '111010010010010'] };
+function inkWide(text, u, v) {
+  if (u < 0 || u >= 1 || v < 0 || v >= 1) return false;
+  let cols = -1;
+  for (const ch of text) cols += WIDE[ch][0] + 1;
+  let cx = Math.floor(u * cols);
+  const cy = Math.floor(v * 5);
+  for (const ch of text) {
+    const [w, g] = WIDE[ch];
+    if (cx < w) return g[cy * w + cx] === '1';
+    cx -= w + 1;
+    if (cx < 0) return false;
+  }
+  return false;
+}
 /** A crack running down a face, somewhere about u0. */
 const crackAt = (u, v, u0, s) => Math.abs(u - (u0 + 0.05 * Math.sin(v * 21 + s) + 0.02 * Math.sin(v * 63 + s * 3))) < 0.008;
 
@@ -96,7 +124,7 @@ const X = {
   pinYellow: mat('plastic', [236, 204, 40]),
   tag: mat('paper', [238, 222, 120]),
   powder: mat('foam', [238, 238, 230]),
-  cart: mat('paint', [54, 56, 62], { wear: 0.5 }),
+  cart: mat('paint', [58, 60, 66], { wear: 0.2 }),
   tvWood: mat('wood', [120, 76, 42], { grain: 1.1, gloss: 0.3 }),
   tvBack: mat('plastic', [70, 52, 40]),
   bezel: mat('plastic', [42, 40, 38]),
@@ -175,17 +203,17 @@ function toilet(M) {
   else M.slab(-0.126, 0.405, -0.2, 0.126, 0.43, -0.096, P, { bevel: 0.012, fixed: true });
   if (!lidUp && !hurt) M.slab(-0.1, 0.43, -0.185, 0.0, 0.436, -0.115, X.mag, { yaw: 0.25, paint: magCover });
   // the bowl: two cones make it oval
-  for (const z of [-0.034, 0.034]) {
-    M.cone([0, 0.16, z], 0.056, 0.092, 0.09, P, {
+  for (const z of [-0.03, 0.03]) {
+    M.cone([0, 0.16, z], 0.056, 0.088, 0.09, P, {
       fixed: true,
       paint: hurt && z > 0 ? (u, v, face, lx, ly, lz) => (Math.abs(around(lx, lz) - 0.4 - ly * 6) < 0.05 ? [70, 70, 70] : null) : null,
     });
   }
   // the seat: the bowl and the water show through its hole
-  M.sph([0, 0.212, 0.01], [0.094, 0.009, 0.114], X.seat, {
+  M.sph([0, 0.212, 0.004], [0.1, 0.009, 0.122], X.seat, {
     paint: (u, v, face, lx, ly, lz) => {
       if (face !== 2) return null;
-      const e = (lx / 0.062) ** 2 + ((lz - 0.006) / 0.078) ** 2;
+      const e = (lx / 0.064) ** 2 + ((lz - 0.006) / 0.084) ** 2;
       if (e > 1) return null;
       if (e > 0.5) return [226, 226, 220];
       return lidUp ? [176, 162, 80, 2.4] : [104, 134, 140, 2.4];
@@ -193,11 +221,11 @@ function toilet(M) {
   });
   for (const s of [-1, 1]) M.cyl([s * 0.045, 0.218, -0.094], 0.008, 0.022, C.chrome, { axis: 'x' });
   if (lidUp) {
-    M.push([0, 0.222, -0.088], 0, -1.62, 0);
-    M.sph([0, 0, 0.108], [0.09, 0.008, 0.108], X.seat);
+    M.push([0, 0.22, -0.088], 0, -1.62, 0);
+    M.sph([0, 0, 0.1], [0.096, 0.007, 0.1], X.seat);
     M.pop();
   } else {
-    M.sph([0, 0.225, 0.01], [0.092, 0.008, 0.112], X.seat);
+    M.sph([0, 0.228, 0.004], [0.099, 0.006, 0.121], X.seat);
   }
   if (hurt) M.cyl([0.16, 0.024, 0.08], 0.03, 0.046, C.paper, { axis: 'x', yaw: 0.7, paint: rollEnd });
 }
@@ -304,7 +332,9 @@ function sink(M) {
       M.box([x, 0.01, z], [0.06, 0.014, 0.04], P, { keep: true, yaw: a, roll: 0.2 });
     }
     M.box([0.14, 0.01, 0.34], [0.046, 0.018, 0.028], X.soap, { keep: true, bevel: 0.008, yaw: 1.0 });
+    const g = M.prims.length;
     tap(M, -0.2, 0.25, X.tapRed, { keep: true, roll: 1.4, yaw: 0.6 });
+    rest(M, g);
     M.sph([0.02, 0.004, 0.16], [0.28, 0.005, 0.19], X.water, { keep: true });
     settle(M);
     return;
@@ -350,7 +380,7 @@ function plant(M) {
   const R = srand(yucca ? 77 : 41);
   if (M.wreck) {
     // the pot on its side and broken, the plant pulled out across the floor
-    M.push([0.14, 0, -0.04], 0.9);
+    M.push([0.2, 0, -0.06], 0.9);
     M.cone([0, 0.1, 0], 0.074, 0.098, 0.158, pot, { keep: true, roll: 1.5, paint: potBand(yucca) });
     M.pop();
     for (const [x, z, a] of [[-0.02, -0.16, 0.5], [0.26, 0.12, 2.0], [0.02, 0.2, 1.1]]) {
@@ -359,10 +389,12 @@ function plant(M) {
     for (const [x, z, rx, rz] of [[0.02, 0.02, 0.14, 0.09], [-0.1, 0.1, 0.09, 0.07], [0.12, 0.1, 0.07, 0.05]]) {
       M.sph([x, 0.006, z], [rx, 0.012, rz], C.soil, { keep: true });
     }
-    M.push([-0.04, 0.05, 0.05], -0.5, 0, 1.35);
-    M.sph([0, -0.02, 0], [0.06, 0.05, 0.06], C.soil, { keep: true });
-    if (yucca) yuccaTop(M, R, -0.19, true); else rubberTop(M, R, -0.19, true);
+    const g = M.prims.length;
+    M.push([0.06, 0.05, -0.02], 0.6, 0, 1.35);
+    M.sph([0, 0.0, 0], [0.06, 0.05, 0.06], C.soil, { keep: true });
+    if (yucca) yuccaTop(M, R, 0.02, true); else rubberTop(M, R, 0.02, true, true);
     M.pop();
+    rest(M, g);
     settle(M);
     return;
   }
@@ -394,26 +426,33 @@ const leafVeins = (u, v, face, lx, ly, lz) => {
   return null;
 };
 
-/** A leaf on a stalk from `at`, pointing round by yaw and up by elev. */
-function leaf(M, at, yaw, elev, len, wid, m, o = {}) {
+/**
+ * A leaf on a stalk from `at`, pointing round by yaw and up by elev, turned
+ * about its own midrib by twist so its face shows from standing height.
+ */
+function leaf(M, at, yaw, elev, len, wid, m, twist, k = {}) {
   M.push(at, yaw, 0, elev);
-  M.rod([0, 0, 0], [0.02, 0, 0], 0.004, X.stem, o);
-  M.sph([0.018 + len, 0, 0], [len, 0.006, wid], m, { ...o, paint: leafVeins });
+  M.rod([0, 0, 0], [0.02, 0, 0], 0.004, X.stem, k);
+  M.sph([0.018 + len, 0, 0], [len, 0.006, wid], m, { ...k, pitch: twist, paint: leafVeins });
   M.pop();
 }
 
-function rubberTop(M, R, base, hurt) {
-  M.rod([0, base - 0.01, 0], [0.012, 0.56, 0.008], 0.009, X.stem);
-  M.rod([-0.03, base - 0.01, -0.028], [-0.034, 0.46, -0.032], 0.006, X.cane);
-  M.sph([-0.018, 0.4, -0.016], [0.016, 0.007, 0.016], mat('plastic', [60, 110, 60]));
-  const n = 12;
-  for (let i = 0; i < n; i++) {
-    const t = i / (n - 1);
-    const len = 0.062 - t * 0.014 + R() * 0.01, a = i * 2.4 + 0.3, elev = -0.4 + t * 0.95;
-    if (hurt && i % 4 === 1) continue;
-    leaf(M, [0.012 * t, base + 0.05 + t * 0.32, 0.008 * t], a, elev, len, len * 0.46, X.rubberLeaf);
-  }
-  M.cone([0.013, 0.585, 0.009], 0.009, 0.002, 0.05, X.sheath);
+function rubberTop(M, R, base, hurt, fallen) {
+  const top = base + 0.37, k = { keep: !!fallen };
+  M.rod([0, base - 0.01, 0], [0.012, top, 0.008], 0.009, X.stem, k);
+  M.rod([-0.004, base + 0.12, 0.002], [0.07, base + 0.27, 0.03], 0.007, X.stem, k);
+  M.rod([-0.03, base - 0.01, -0.028], [-0.034, base + 0.27, -0.032], 0.006, X.cane, k);
+  M.sph([-0.02, base + 0.21, -0.018], [0.017, 0.007, 0.017], mat('plastic', [60, 110, 60]));
+  // leaves up the stem, each turned 137 degrees round from the last, and a few on the branch
+  const L = [];
+  for (let i = 0; i < 10; i++) { const t = i / 9; L.push([0.012 * t, base + 0.05 + t * 0.31, 0.008 * t, i * 2.4 + 0.3, -0.45 + t, t]); }
+  for (let i = 0; i < 4; i++) { const t = (i + 1) / 4; L.push([-0.004 + 0.074 * t, base + 0.12 + 0.15 * t, 0.002 + 0.028 * t, i * 2.4 + 1.2, -0.3 + t * 0.7, 0.5]); }
+  L.forEach(([x, y, z, a, elev, t], i) => {
+    const len = 0.074 - t * 0.02 + R() * 0.012;
+    if (hurt && i % 4 === 1) return;
+    leaf(M, [x, y, z], a, elev, len, len * 0.48, X.rubberLeaf, i % 2 ? 0.55 : -0.55, k);
+  });
+  M.cone([0.013, top + 0.025, 0.009], 0.009, 0.002, 0.05, X.sheath);
 }
 
 function yuccaTop(M, R, base, hurt) {
@@ -429,7 +468,7 @@ function yuccaTop(M, R, base, hurt) {
       if (hurt && (i + c) % 3 === 0) continue;
       const a = i * 2.4 + c * 1.3, elev = 1.25 - (i % 4) * 0.5 + R() * 0.2, len = 0.068 + R() * 0.02;
       M.push([x, top, z], a, 0, elev);
-      M.sph([len + 0.006, 0, 0], [len, 0.005, 0.012], X.yuccaLeaf, { paint: leafVeins });
+      M.sph([len + 0.006, 0, 0], [len, 0.005, 0.014], X.yuccaLeaf, { pitch: i % 2 ? 0.5 : -0.5, paint: leafVeins });
       M.pop();
     }
   }
@@ -456,11 +495,13 @@ function trash(M) {
   const balls = [[0.02, 0.37, 0.03, 0.036], [-0.045, 0.366, -0.02, 0.034], [0.05, 0.362, -0.04, 0.03], [-0.015, 0.386, -0.05, 0.03], [-0.035, 0.362, 0.055, 0.028]];
   if (M.wreck) {
     // over on its side, dented, the paper across the floor
+    const g = M.prims.length;
     M.push([0.06, 0.105, -0.04], 0.5, 0, 1.52);
     M.cyl([0, -0.173, 0], 0.094, 0.014, C.darkMetal, { keep: true });
     M.cone([0, 0, 0], 0.09, 0.106, 0.34, B, { keep: true, paint: side });
     M.cyl([0, 0.174, 0], 0.112, 0.016, C.chrome, { keep: true, paint: mouth, roll: 0.12 });
     M.pop();
+    rest(M, g);
     const spill = [[-0.2, 0.12, 0.036], [-0.28, 0.05, 0.03], [-0.16, 0.26, 0.033], [-0.34, 0.2, 0.028], [-0.06, 0.3, 0.03]];
     spill.forEach(([x, z, r], i) => M.sph([x, r * 0.8, z], [r, r * 0.8, r], C.paper, { keep: true, paint: crumple(i) }));
     banana(M, [0.1, 0.02, 0.26], 0.5, true);
@@ -503,7 +544,7 @@ function caster(M, x, z, r, o = {}) {
 function mop(M) {
   const Y = X.yellow, wreck = M.wreck, hurt = M.hurt && !wreck;
   const wet = (u, v, face) => {
-    if (face === 4 || face === 5) return inkAt('WET', (u - 0.16) / 0.68, (v - 0.22) / 0.56) ? [30, 28, 26] : null;
+    if (face === 4 || face === 5) return inkWide('WET', (u - 0.14) / 0.72, (v - 0.2) / 0.6) ? [30, 28, 26] : null;
     if (face === 0 || face === 1) {
       // a warning triangle with its !
       const t = (v - 0.18) / 0.64, w = t * 0.36;
@@ -517,6 +558,7 @@ function mop(M) {
   const water = (u, v, face) => (face === 2 && u > 0.05 && u < 0.95 && v > 0.07 && v < 0.93 ? [104, 96, 66, 2.4] : null);
   if (wreck) {
     M.sph([0.0, 0.004, 0.1], [0.32, 0.005, 0.2], X.dirty, { keep: true });
+    const g = M.prims.length;
     M.push([0.02, 0.1, -0.06], 0.25, 0, -1.5);
     M.slab(-0.15, -0.08, -0.1, 0.13, 0.08, 0.1, Y, { bevel: 0.022, keep: true, paint: wet });
     M.slab(-0.156, 0.075, -0.106, 0.136, 0.097, 0.106, Y, { bevel: 0.008, keep: true });
@@ -524,12 +566,13 @@ function mop(M) {
       M.cyl([x, -0.1, z], 0.018, 0.013, C.rubber, { keep: true, axis: 'x' });
     }
     M.pop();
+    rest(M, g);
     M.push([-0.26, 0.04, 0.18], 1.1, 0.3, 0.6);
     M.slab(-0.06, -0.04, -0.09, 0.06, 0.045, 0.08, X.greyPlastic, { bevel: 0.012, keep: true });
     M.pop();
-    M.rod([-0.36, 0.012, 0.3], [0.3, 0.012, 0.3], 0.011, C.pine, { keep: true });
-    M.sph([0.34, 0.02, 0.28], [0.07, 0.02, 0.06], X.mopHead, { keep: true });
-    for (const a of [0.2, 0.9, -0.5]) M.box([0.34 + Math.cos(a) * 0.08, 0.008, 0.28 + Math.sin(a) * 0.08], [0.07, 0.008, 0.016], X.mopHead, { keep: true, yaw: -a });
+    M.rod([-0.38, 0.012, 0.28], [0.24, 0.012, 0.3], 0.011, C.pine, { keep: true });
+    M.sph([0.28, 0.02, 0.28], [0.07, 0.02, 0.06], X.mopHead, { keep: true });
+    for (const a of [0.2, 0.9, -0.5]) M.box([0.28 + Math.cos(a) * 0.08, 0.008, 0.28 + Math.sin(a) * 0.08], [0.07, 0.008, 0.016], X.mopHead, { keep: true, yaw: -a });
     settle(M);
     return;
   }
@@ -579,7 +622,7 @@ function cone(M) {
     M.cone([0, 0.045, 0], 0.034, 0.012, 0.09, O, { keep: true, paint: bands(0.265) });
     M.pop();
     M.pop();
-    settle(M);
+    rest(M, 0);
     return;
   }
   M.slab(-0.085, 0, -0.085, 0.085, 0.022, 0.085, O, { bevel: 0.01, fixed: true, paint: hurt ? (u, v, face) => (face === 2 && Math.abs(u - v * 0.6 - 0.2) < 0.08 && ((u * 40 | 0) % 2) ? [40, 36, 34] : null) : null });
@@ -646,7 +689,7 @@ function fillRow(M, R, x0, x1, y, hMax, zf, binders, lab, o = {}) {
       x += w + 0.008; n++;
       continue;
     }
-    const k = binders ? 2 + (R() * 2 | 0) : 1 + (R() * 4 | 0);
+    const k = binders ? 2 + (R() * 2 | 0) : 2 + (R() * 4 | 0);
     const sp = [];
     let w = 0;
     for (let i = 0; i < k; i++) {
@@ -676,9 +719,16 @@ function bookshelf(M) {
   const wreck = M.wreck, hurt = M.hurt && !wreck;
   const body = bind ? C.steelGrey : C.oak;
   const fx = { bevel: 0.005, fixed: true };
-  const slots = (u, v, face) => (face === 4 && Math.abs(u - 0.5) < 0.22 && (Math.floor(v * 70) % 3 === 0) ? [40, 42, 44] : null);
-  M.slab(-W, 0, -D, -W + 0.02, H, D, body, bind ? { ...fx, paint: slots } : fx);
-  M.slab(W - 0.02, 0, -D, W, H, D, body, bind ? { ...fx, paint: slots } : fx);
+  // slots up the steel uprights; an inventory tag on the outside of each side
+  const side = (u, v, face) => {
+    if (bind && face === 4 && Math.abs(u - 0.5) < 0.22 && Math.floor(v * 70) % 3 === 0) return [40, 42, 44];
+    if ((face === 0 || face === 1) && v > 0.08 && v < 0.12 && Math.abs(u - (face === 0 ? 0.25 : 0.75)) < 0.14) {
+      return v > 0.095 && v < 0.105 && Math.floor(u * 60) % 2 ? [60, 60, 64] : [196, 198, 200];
+    }
+    return null;
+  };
+  M.slab(-W, 0, -D, -W + 0.02, H, D, body, { ...fx, paint: side });
+  M.slab(W - 0.02, 0, -D, W, H, D, body, { ...fx, paint: side });
   M.slab(-W - 0.006, H - 0.022, -D - 0.004, W + 0.006, H, D + 0.006, body, fx);
   M.slab(-W + 0.02, 0.01, -D, W - 0.02, H - 0.022, -D + 0.01, bind ? C.darkMetal : C.darkwood, { fixed: true });
   M.slab(-W + 0.02, 0, D - 0.024, W - 0.02, 0.034, D - 0.01, body, { fixed: true });
@@ -701,7 +751,7 @@ function bookshelf(M) {
     for (let i = 0; i < 13; i++) {
       const c = (bind ? BINDERS : BOOKS)[(Q() * (bind ? 6 : 12)) | 0];
       const len = bind ? 0.13 : 0.09 + Q() * 0.04, th = bind ? 0.04 : 0.018 + Q() * 0.016, wd = bind ? 0.12 : 0.08 + Q() * 0.03;
-      const x = (Q() - 0.5) * 0.66, z = D + 0.06 + Q() * 0.26, open = !bind && i % 5 === 2;
+      const x = (Q() - 0.5) * 0.64, z = D + 0.05 + Q() * 0.22, open = !bind && i % 5 === 2;
       if (open) {
         // face down and open, like a tent
         M.push([x, 0.0, z], Q() * TAU);
@@ -746,7 +796,7 @@ function bookshelf(M) {
 function photocopier(M) {
   const wreck = M.wreck, hurt = M.hurt && !wreck;
   const B = X.copier;
-  const toner = (lx, ly, lz) => wreck && vn3(lx * 16 + 3, ly * 16, lz * 16, 9) > 0.62;
+  const toner = (lx, ly, lz) => wreck && ly > 0.02 && vn3(lx * 22 + 3, ly * 22, lz * 22, 9) > 0.72 - (ly - 0.02) * 0.7;
   for (const [x, z] of [[-0.18, -0.115], [0.18, -0.115], [-0.18, 0.115], [0.18, 0.115]]) caster(M, x, z, 0.012, { fixed: true });
   M.slab(-0.2, 0.03, -0.135, 0.2, 0.22, 0.135, X.copierBrown, { bevel: 0.008, fixed: true });
   for (let k = 0; k < 2; k++) {
@@ -769,7 +819,7 @@ function photocopier(M) {
       if (face === 0 || face === 1) return u > 0.25 && u < 0.75 && v > 0.2 && v < 0.5 && (Math.floor(v * 60) % 2) ? [70, 66, 58] : null;
       if (face !== 4) return null;
       if (inkAt('KOPY', (u - 0.06) / 0.44, (v - 0.1) / 0.18)) return [120, 70, 40];
-      if (v > 0.1 && v < 0.28 && u > 0.52 && u < 0.56) return [196, 120, 50];
+      if (v > 0.31 && v < 0.34 && u > 0.06 && u < 0.5) return [196, 120, 50];
       if (u > 0.74 && u < 0.92 && v > 0.1 && v < 0.2) return inkAt('0417', (u - 0.75) / 0.16, (v - 0.12) / 0.06) ? [230, 230, 220] : [24, 24, 26];
       if (v > 0.4 && v < 0.96 && u > 0.03 && u < 0.97 && (v < 0.415 || v > 0.945 || u < 0.045 || u > 0.955)) return [150, 142, 118];
       if (Math.hypot((u - 0.9) * 0.42, (v - 0.55) * 0.24) < 0.006) return [40, 40, 40];
@@ -838,9 +888,9 @@ function photocopier(M) {
   if (hurt) {
     // a paper jam out of its side, and a sign on it
     M.sph([-0.215, 0.4, 0.06], [0.02, 0.03, 0.035], C.paper, { paint: crumple(4) });
-    M.slab(0.0, 0.33, 0.14, 0.17, 0.4, 0.144, C.paper, {
-      roll: -0.06,
-      paint: (u, v, face) => (face === 4 && inkAt('KAPUT', (u - 0.08) / 0.84, (v - 0.2) / 0.6) ? [30, 30, 34] : null),
+    M.slab(-0.06, 0.3, 0.14, 0.2, 0.39, 0.144, C.paper, {
+      roll: -0.05,
+      paint: (u, v, face) => (face === 4 && inkAt('KAPUT', (u - 0.06) / 0.88, (v - 0.18) / 0.64) ? [30, 30, 34] : null),
     });
   }
   if (wreck) {
@@ -857,15 +907,18 @@ function photocopier(M) {
 function coatrack(M) {
   const wreck = M.wreck, hurt = M.hurt && !wreck;
   if (wreck) {
-    M.push([0.36, 0.03, -0.2], 2.5, 0, 1.5);
+    M.push([0.34, 0.03, -0.16], 0.55, 0, 1.5);
     stand(M, true);
     M.pop();
+    rest(M, 0);
     // the coat in a heap, the hat rolled off
     M.sph([-0.1, 0.03, 0.14], [0.14, 0.035, 0.1], X.khaki, { keep: true, yaw: 0.4 });
     M.sph([-0.2, 0.025, 0.24], [0.1, 0.03, 0.07], X.khaki, { keep: true, yaw: -0.5 });
     M.sph([0.02, 0.02, 0.26], [0.03, 0.02, 0.14], X.khaki, { keep: true, yaw: 0.9 });
     M.box([-0.12, 0.06, 0.14], [0.2, 0.02, 0.05], X.khakiDark, { keep: true, yaw: 0.3, roll: 0.1 });
-    hat(M, [0.22, 0.0, 0.26], 0.3, 0, 0);
+    const g = M.prims.length;
+    hat(M, [0.22, 0.0, 0.26], 0.3, 0.5, 0);
+    rest(M, g);
     settle(M);
     return;
   }
@@ -953,6 +1006,7 @@ function extinguisher(M) {
     M.push([0.02, 0.045, -0.04], 0.7, 0, -1.55);
     extBody(M, 'wreck');
     M.pop();
+    rest(M, 0);
     const hose = [[0.19, 0.008, 0.09], [0.24, 0.008, 0.16], [0.2, 0.008, 0.24], [0.26, 0.008, 0.3]];
     for (let i = 0; i < 3; i++) M.rod(hose[i], hose[i + 1], 0.008, C.rubber, { keep: true });
     M.cone([0.28, 0.012, 0.32], 0.012, 0.008, 0.03, C.black, { keep: true, axis: 'z' });
@@ -1035,7 +1089,6 @@ function tvcart(M) {
   // power strip on the right post, its cord coiled
   M.slab(W, 0.14, 0.02, W + 0.016, 0.24, 0.055, C.cream, { bevel: 0.004, paint: (u, v, face) => (face === 0 && Math.floor(v * 4) % 2 && u > 0.3 && u < 0.7 ? [30, 30, 30] : null) });
   M.cyl([W + 0.01, 0.1, -0.05], 0.03, 0.014, C.black, { axis: 'x' });
-  if (wreck) M.pop();
   // VCR on the lower shelf, two tapes on it
   const vy = 0.086;
   M.slab(-0.15, vy, -0.09, 0.15, vy + 0.055, 0.1, X.vcr, {
@@ -1057,10 +1110,14 @@ function tvcart(M) {
   // cable from the set down to the VCR
   if (!wreck) M.rod([0.12, 0.33, -0.12], [0.13, 0.12, -0.1], 0.005, C.black);
   if (wreck) {
-    // the set is on the floor on its face, the tape unspooled
-    M.push([0.0, 0.0, 0.3], 0.35, 1.25, 0.1);
+    M.pop();
+    rest(M, 0);
+    // the set is on the floor on its side, its screen stove in, the tape unspooled
+    const g = M.prims.length;
+    M.push([-0.04, 0.0, 0.26], 0.35, 0, 1.45);
     tv(M, 0, 'wreck');
     M.pop();
+    rest(M, g);
     for (let i = 0; i < 4; i++) M.box([-0.1 + i * 0.07, 0.004, 0.2 + (i % 2) * 0.05], [0.18, 0.004, 0.016], X.ribbon, { keep: true, yaw: 0.6 + i * 0.9 });
     M.slab(-0.34, 0.0, 0.14, -0.24, 0.02, 0.2, X.tape, { keep: true, yaw: 0.4 });
     settle(M);
@@ -1096,11 +1153,11 @@ function tv(M, ty, st) {
   M.slab(-0.06, ty + 0.018, 0.12, -0.0, ty + 0.028, 0.123, C.chrome, k);
   // rabbit ears
   M.sph([0.04, ty + 0.234, -0.02], [0.03, 0.012, 0.024], C.black, k);
-  const L = st === 'hurt' ? [0.2, ty + 0.2, 0.06] : [-0.06, 0.62, -0.06];
+  const L = st !== 'ok' ? [0.2, ty + 0.2, 0.06] : [-0.06, ty + 0.35, -0.06], Rt = st === 'wreck' ? [0.1, ty + 0.3, -0.12] : [0.14, ty + 0.34, -0.05];
   M.rod([0.035, ty + 0.238, -0.02], L, 0.0045, C.chrome, k);
-  M.rod([0.045, ty + 0.238, -0.02], [0.14, 0.61, -0.05], 0.0045, C.chrome, k);
+  M.rod([0.045, ty + 0.238, -0.02], Rt, 0.0045, C.chrome, k);
   M.sph(L, 0.006, C.chrome, k);
-  M.sph([0.14, 0.61, -0.05], 0.006, C.chrome, k);
+  M.sph(Rt, 0.006, C.chrome, k);
 }
 
 /** Tonight's programme: a mushroom cloud over the desert. */
@@ -1124,7 +1181,7 @@ const testCard = (u, v) => {
 function table(M) {
   const W = 0.4, D = 0.21, H = 0.362, v = M.variant;
   const wreck = M.wreck, hurt = M.hurt && !wreck;
-  const fleck = (u, vv, face, lx, ly, lz) => (face === 2 && h3(Math.floor(lx * 300), Math.floor(lz * 300), 0, 4) < 0.06 ? [120, 140, 128] : null);
+  const fleck = (u, vv, face, lx, ly, lz) => (face === 2 && h3(Math.floor(lx * 300), Math.floor(lz * 300), 0, 4) < 0.025 ? [150, 170, 156] : null);
   const legs = (sx) => {
     for (const sz of [-1, 1]) {
       M.cyl([sx * 0.36, 0.18, sz * 0.17], 0.012, 0.32, C.chrome, { fixed: true });
@@ -1181,8 +1238,8 @@ function table(M) {
     ashtray(M, -0.1, 0.12);
   } else {
     // coffee break: a flask, the mugs, a box of doughnuts
-    M.cyl([-0.3, H + 0.07, -0.1], 0.03, 0.14, X.flask);
-    M.cyl([-0.3, H + 0.15, -0.1], 0.032, 0.03, C.black);
+    M.cyl([-0.3, H + 0.05, -0.1], 0.028, 0.1, X.flask);
+    M.cyl([-0.3, H + 0.112, -0.1], 0.03, 0.026, C.black);
     mug(M, [-0.2, 0.1], false);
     mug(M, [0.02, -0.12], false);
     M.slab(0.06, H, -0.04, 0.26, H + 0.05, 0.12, X.pinkBox, { yaw: -0.15, bevel: 0.003, paint: (u, vv, face) => (face === 2 && u > 0.04 && u < 0.96 && vv > 0.04 && vv < 0.96 ? [240, 230, 214] : null) });
@@ -1250,11 +1307,10 @@ function ashtray(M, x, z) {
 /** The Evening Standard of the bunker. */
 const news = (u, v, face) => {
   if (face !== 2) return null;
-  if (v < 0.1) return [30, 30, 30];
-  if (v > 0.14 && v < 0.4) return inkAt('REDS!', (u - 0.08) / 0.84, (v - 0.14) / 0.26) ? [30, 30, 30] : null;
-  if (v > 0.46 && u > 0.55 && u < 0.92 && v < 0.8) return [120, 120, 116];
-  if (v > 0.46 && Math.floor(v * 40) % 2 === 0 && (Math.floor(u * 3) !== Math.floor((u + 0.03) * 3))) return null;
-  if (v > 0.46 && Math.floor(v * 40) % 2 === 0) return [150, 148, 140];
+  if (v < 0.12) return [40, 40, 40];
+  if (v > 0.18 && v < 0.34 && u > 0.08 && u < 0.92) return [70, 68, 66];
+  if (v > 0.42 && v < 0.88 && u > 0.55 && u < 0.92) return [140, 138, 132];
+  if (v > 0.42 && v < 0.9 && u > 0.08 && u < 0.48 && Math.floor(v * 24) % 2 === 0) return [186, 184, 176];
   return null;
 };
 
