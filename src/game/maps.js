@@ -730,10 +730,11 @@ export const DECOR = {
   vending: { h: 0.9, solid: true, wall: true, max: 2, apart: 8 },
   cooler: { h: 0.62, solid: true, wall: true, max: 2, apart: 8 },
   toilet: { h: 0.44, solid: true, wall: true, fixture: 'toilet' },
-  urinal: { h: 0.46, z: 0.14, solid: true, wall: true, fixture: 'urinal' },
+  urinal: { h: 0.62, solid: true, wall: true, fixture: 'urinal' },
+  sink: { h: 0.46, solid: true, wall: true },
   skeleton: { h: 0.4, wall: true },
   sandbags: { h: 0.4, solid: true },
-  crate: { h: 0.48, solid: true },
+  crate: { h: 0.48, solid: true, square: true },
   crates: { h: 0.82, solid: true, wall: true },
   console: { h: 0.62, solid: true, wall: true },
   plant: { h: 0.62, wall: true },
@@ -745,9 +746,52 @@ export const DECOR = {
   nosecone: { h: 0.92, solid: true, max: 3, apart: 8 },
   pinball: { h: 0.72, solid: true, wall: true, max: 1 },
   candles: { h: 0.28, emissive: true, max: 12 },
-  pew: { h: 0.44, solid: true },
+  pew: { h: 0.44, solid: true, square: true },
   trash: { h: 0.4, wall: true },
   cone: { h: 0.3 },
+  // the new stock
+  bookshelf: { h: 0.92, solid: true, wall: true },
+  photocopier: { h: 0.52, solid: true, wall: true, max: 2, apart: 6 },
+  coatrack: { h: 0.86, wall: true, max: 3 },
+  extinguisher: { h: 0.3, wall: true, max: 4, apart: 5 },
+  tvcart: { h: 0.62, max: 2, apart: 6 },
+  table: { h: 0.36, solid: true, square: true, max: 4 },
+  gascyl: { h: 0.64, solid: true, wall: true, max: 3, apart: 5 },
+  shelving: { h: 0.9, solid: true, wall: true },
+  workbench: { h: 0.6, solid: true, wall: true, max: 3 },
+  generator: { h: 0.46, solid: true, square: true, max: 2, apart: 8 },
+  spool: { h: 0.46, max: 3 },
+  lectern: { h: 0.56, max: 2, apart: 8 },
+  candelabra: { h: 0.82, max: 6, apart: 3 },
+  butcher: { h: 0.4, solid: true, square: true, max: 4 },
+  serverrack: { h: 0.92, solid: true, wall: true },
+  crtstack: { h: 0.56, wall: true, max: 3 },
+  pallet: { h: 0.46, solid: true, square: true },
+};
+
+/**
+ * What comes with what. Placing the first of these tries each companion, by
+ * its chance, in the next free cell along the same wall (or, for a canteen
+ * table, the cells round it), so a room reads as somebody's office and not as
+ * a scatter of furniture: a desk with its filing cabinet and bin, a row of
+ * lockers, racks of servers, a table with its chairs pulled up.
+ */
+const COMPANIONS = {
+  desk: [['filing', 0.35], ['plant', 0.25], ['trash', 0.3], ['coatrack', 0.12], ['bookshelf', 0.18]],
+  vending: [['cooler', 0.35], ['trash', 0.45]],
+  cooler: [['plant', 0.3]],
+  locker: [['locker', 0.7], ['locker', 0.4]],
+  toilet: [['toilet', 0.6]],
+  urinal: [['urinal', 0.6]],
+  sink: [['sink', 0.55]],
+  console: [['serverrack', 0.3], ['crtstack', 0.2]],
+  serverrack: [['serverrack', 0.75], ['serverrack', 0.4]],
+  shelving: [['shelving', 0.45], ['crate', 0.3]],
+  workbench: [['shelving', 0.3], ['gascyl', 0.25], ['extinguisher', 0.25]],
+  bookshelf: [['bookshelf', 0.5]],
+  photocopier: [['bookshelf', 0.3], ['trash', 0.35]],
+  gascyl: [['crate', 0.3]],
+  crates: [['crate', 0.4]],
 };
 
 /**
@@ -766,14 +810,17 @@ const LOOKS = [
       SCREENS: 'CEIL_CABLES', VENT: 'CEIL_PIPES' },
     density: 0.24,
     openDensity: 0.05,
-    decor: [['desk', 5], ['chair', 3], ['filing', 3], ['locker', 2], ['cooler', 1], ['vending', 1],
-      ['plant', 3], ['mop', 1], ['corpse', 2], ['trash', 2], ['cone', 1], ['console', 1], ['crate', 1]],
-    deck: [['crate', 2], ['sandbags', 2], ['corpse2', 1]],
+    decor: [['desk', 5], ['chair', 2], ['filing', 3], ['locker', 2], ['cooler', 1], ['vending', 1],
+      ['plant', 3], ['corpse', 2], ['trash', 2], ['console', 1], ['bookshelf', 2], ['photocopier', 1],
+      ['coatrack', 1], ['extinguisher', 2], ['table', 1], ['tvcart', 1]],
+    deck: [['crate', 2], ['sandbags', 2], ['corpse2', 1], ['pallet', 1]],
     decorBy: {
-      PIPES: [['crate', 2], ['crates', 1], ['corpse', 1], ['sandbags', 1], ['cone', 1]],
-      VENT: [['crate', 2], ['crates', 1], ['corpse', 1], ['cone', 1]],
-      RUST: [['crate', 2], ['crates', 2], ['sandbags', 1], ['skeleton', 1]],
-      STEEL_PLATE: [['locker', 2], ['cooler', 1], ['filing', 1], ['plant', 1], ['vending', 1], ['pinball', 1]],
+      PIPES: [['crate', 2], ['crates', 1], ['shelving', 2], ['gascyl', 1], ['workbench', 1], ['generator', 1],
+        ['pallet', 1], ['extinguisher', 1], ['corpse', 1], ['sandbags', 1], ['cone', 1]],
+      VENT: [['crate', 2], ['crates', 1], ['shelving', 1], ['spool', 1], ['corpse', 1], ['cone', 1]],
+      RUST: [['crate', 2], ['crates', 2], ['sandbags', 1], ['skeleton', 1], ['pallet', 1], ['gascyl', 1]],
+      STEEL_PLATE: [['locker', 3], ['cooler', 1], ['vending', 1], ['table', 1], ['plant', 1], ['pinball', 1],
+        ['extinguisher', 1], ['trash', 1]],
     },
     // the decon showers double as the gents
     props: [[37, 25, 'urinal'], [37, 27, 'urinal'], [37, 29, 'toilet'], [37, 31, 'toilet'], [32, 31, 'mop'],
@@ -790,12 +837,12 @@ const LOOKS = [
     ceilsBy: { CIRCUIT: 'CEIL_CABLES', SCREENS: 'CEIL_CABLES', RUST: 'CEIL_CONCRETE', VENT: 'CEIL_PIPES',
       STEEL_PLATE: 'CEIL_PIPES' },
     density: 0.1,
-    decor: [['candles', 3], ['chains', 3], ['skeleton', 2], ['crates', 2], ['crate', 2], ['pew', 2],
-      ['corpse', 2], ['console', 1], ['locker', 1], ['mop', 1], ['trash', 1]],
+    decor: [['candles', 3], ['candelabra', 2], ['chains', 3], ['skeleton', 2], ['crates', 2], ['crate', 2], ['pew', 2],
+      ['lectern', 1], ['corpse', 2], ['console', 1], ['locker', 1], ['bookshelf', 1], ['trash', 1]],
     deck: [['crate', 2], ['sandbags', 2], ['nosecone', 1]],
     // the priests' chapel in the great hall, and a console for the organ
-    props: [[21, 18, 'pew'], [24, 18, 'pew'], [21, 20, 'pew'], [24, 20, 'pew'], [28, 21, 'candles'],
-      [7, 7, 'console']],
+    props: [[21, 18, 'pew', 0], [24, 18, 'pew', 0], [21, 20, 'pew', 0], [24, 20, 'pew', 0], [28, 21, 'candles'],
+      [27, 19, 'candelabra'], [27, 22, 'candelabra'], [26, 21, 'lectern', 180], [7, 7, 'console']],
     features: [],
   },
   { // SALT CATHEDRAL: brine-cold, white, and full of pews nobody sits in
@@ -804,8 +851,9 @@ const LOOKS = [
     floorsBy: { TILE: 'FLOOR_TILE', TILE_BLOOD: 'FLOOR_TILE', SALT_WALL: 'FLOOR_SALT', SCREENS: 'FLOOR_RAISED' },
     ceilsBy: { SCREENS: 'CEIL_CABLES', TILE: 'CEIL_CONCRETE', TILE_BLOOD: 'CEIL_CONCRETE' },
     density: 0.08,
-    decor: [['pew', 4], ['candles', 3], ['skeleton', 3], ['chains', 1], ['crate', 1], ['plant', 1],
-      ['corpse', 1], ['nosecone', 1]],
+    decor: [['pew', 4], ['candles', 3], ['candelabra', 2], ['lectern', 1], ['skeleton', 3], ['chains', 1],
+      ['crate', 1], ['plant', 1], ['corpse', 1], ['nosecone', 1]],
+    pewFacing: -90,
     deck: [['crate', 2], ['sandbags', 2], ['nosecone', 1]],
     // even a cathedral has a gents
     props: [[49, 32, 'toilet'], [49, 34, 'urinal'], [49, 38, 'urinal']],
@@ -819,7 +867,8 @@ const LOOKS = [
     ceilsBy: { PIPES: 'CEIL_PIPES', VENT: 'CEIL_PIPES', STEEL_PLATE: 'CEIL_CONCRETE' },
     density: 0.1,
     decor: [['hook', 3], ['chains', 2], ['skeleton', 2], ['corpse2', 2], ['crates', 3], ['crate', 2],
-      ['sandbags', 2], ['nosecone', 1], ['trash', 1]],
+      ['sandbags', 2], ['nosecone', 1], ['trash', 1], ['butcher', 2], ['pallet', 2], ['gascyl', 1],
+      ['generator', 1], ['workbench', 1], ['shelving', 1]],
     deck: [['crate', 2], ['sandbags', 2], ['nosecone', 1]],
     props: [],
     features: [],
@@ -832,7 +881,7 @@ const LOOKS = [
     ceilsBy: {},
     density: 0.1,
     decor: [['console', 3], ['chair', 2], ['desk', 1], ['pinball', 1], ['cooler', 1], ['corpse', 2],
-      ['skeleton', 1], ['crate', 1]],
+      ['skeleton', 1], ['crate', 1], ['serverrack', 3], ['crtstack', 2], ['spool', 1], ['tvcart', 1]],
     deck: [['crate', 2], ['sandbags', 2], ['nosecone', 1]],
     // the operators' rooms, and what they did on the night shift
     props: [[4, 2, 'console'], [2, 4, 'chair'], [29, 2, 'console'], [18, 30, 'pinball']],
@@ -949,11 +998,11 @@ function dressLevel(def, idx, P) {
     }
   }
   const COMMON_ROOMS = {
-    TILE: [['mop', 2], ['trash', 2], ['corpse', 1], ['cone', 2]],
-    TILE_BLOOD: [['skeleton', 2], ['corpse', 1], ['candles', 1], ['mop', 1]],
-    SCREENS: [['console', 3], ['chair', 2], ['desk', 1], ['trash', 1]],
-    CIRCUIT: [['console', 2], ['chair', 1], ['crate', 1]],
-    SERVER: [['console', 2], ['chair', 1], ['crate', 1]],
+    TILE: [['mop', 2], ['trash', 2], ['sink', 2], ['toilet', 1], ['corpse', 1], ['cone', 1]],
+    TILE_BLOOD: [['skeleton', 2], ['corpse', 1], ['candles', 1], ['mop', 1], ['butcher', 1], ['sink', 1]],
+    SCREENS: [['console', 3], ['chair', 2], ['desk', 1], ['crtstack', 1], ['serverrack', 2], ['trash', 1]],
+    CIRCUIT: [['console', 2], ['serverrack', 2], ['chair', 1], ['crtstack', 1], ['spool', 1]],
+    SERVER: [['serverrack', 4], ['console', 1], ['spool', 1], ['crtstack', 1]],
   };
 
   // --- 2. strip lights on a lattice, in rooms, never over a lamp ------------
@@ -1112,7 +1161,17 @@ function dressLevel(def, idx, P) {
     if (inRun && runHasOrtho) runs++;
     return runs <= 1;
   };
-  const place = (x, y, kind, force) => {
+  const count = {};
+  const fits = (x, y, kind) => {
+    const spec = DECOR[kind];
+    if (spec.max && (count[kind] || 0) >= spec.max) return false;
+    if (spec.apart) {
+      for (const d of decor) if (d.kind === kind && Math.hypot(d.x - x - 0.5, d.y - y - 0.5) < spec.apart) return false;
+    }
+    return true;
+  };
+  const TAU_ = Math.PI * 2;
+  const place = (x, y, kind, force, yawDeg) => {
     const spec = DECOR[kind];
     if (!spec) return false;
     const i = y * w + x;
@@ -1128,39 +1187,83 @@ function dressLevel(def, idx, P) {
       if (!force && ((solidWall(x - 1, y) && solidWall(x + 1, y)) || (solidWall(x, y - 1) && solidWall(x, y + 1)))) return false;
     }
     let px = x + 0.5, py = y + 0.5;
+    // Which way it faces: its back to the wall it stands against, square to
+    // the room if it is furniture, any old way if it is a bin or a body.
+    let yaw;
+    let wallSide = null;
     if (spec.wall) {
-      const [dx, dy] = sides[(hash3(x, y, seed + 41) * sides.length) | 0];
+      // back to a wall that has room in front of it (not the far wall of a corridor)
+      const roomy = sides.filter(([dx, dy]) => !solidWall(x - dx, y - dy));
+      if (!roomy.length && !force) return false;
+      const pool = roomy.length ? roomy : sides;
+      wallSide = pool[(hash3(x, y, seed + 41) * pool.length) | 0];
+      const [dx, dy] = wallSide;
       px += dx * 0.2; py += dy * 0.2;
-    } else if (!spec.solid) {
-      px += (hash3(x, y, seed + 43) - 0.5) * 0.4; py += (hash3(x, y, seed + 47) - 0.5) * 0.4;
+      yaw = Math.atan2(-dy, -dx);
+    } else {
+      if (!spec.solid) { px += (hash3(x, y, seed + 43) - 0.5) * 0.4; py += (hash3(x, y, seed + 47) - 0.5) * 0.4; }
+      yaw = spec.square ? (((hash3(x, y, seed + 61) * 4) | 0) * Math.PI / 2 + (hash3(x, y, seed + 67) - 0.5) * 0.24)
+        : hash3(x, y, seed + 61) * TAU_;
     }
+    if (kind === 'pew' && look.pewFacing !== undefined) yaw = look.pewFacing * Math.PI / 180 + (hash3(x, y, seed + 71) - 0.5) * 0.08;
+    if (yawDeg !== undefined) yaw = yawDeg * Math.PI / 180;
     if (spec.solid) blockedByDecor[i] = 1;
     decor.push({
       kind, key: `prop_${kind}`, x: px, y: py, z: spec.z || 0, h: spec.h,
       solid: !!spec.solid, emissive: !!spec.emissive, fixture: spec.fixture || null,
+      yaw, variant: (hash3(x, y, seed + 73) * 97) | 0, wall: !!spec.wall,
     });
     if ((kind === 'desk' || kind === 'console') && spec.wall) {
-      // Somebody sat here. Pull the chair out on the room side, in the same cell.
+      // Somebody sat here. Pull the chair out on the room side, in the same
+      // cell, turned to the desk and left a little askew.
       const ox = px - (x + 0.5), oy = py - (y + 0.5);
       decor.push({
         kind: 'chair', key: 'prop_chair', x: x + 0.5 - ox * 1.6, y: y + 0.5 - oy * 1.6, z: 0,
         h: DECOR.chair.h, solid: false, emissive: false, fixture: null,
+        yaw: Math.atan2(oy, ox) + (hash3(x, y, seed + 79) - 0.5) * 1.1, variant: (hash3(x, y, seed + 83) * 97) | 0, wall: false,
       });
     }
     entAt[i] = 1;
-    return true;
-  };
-  for (const [px, py, kind] of look.props || []) place(px, py, kind, true);
-  const density = look.density || 0;
-  const count = {};
-  const fits = (x, y, kind) => {
-    const spec = DECOR[kind];
-    if (spec.max && (count[kind] || 0) >= spec.max) return false;
-    if (spec.apart) {
-      for (const d of decor) if (d.kind === kind && Math.hypot(d.x - x - 0.5, d.y - y - 0.5) < spec.apart) return false;
+    // What comes with it: along the same wall, or round a table.
+    if (!force || look.companions) {
+      const comp = COMPANIONS[kind];
+      if (comp && wallSide) {
+        const [dx, dy] = wallSide;
+        const along = [[-dy, dx], [dy, -dx]];
+        let k = 0;
+        for (const [cn, chance] of comp) {
+          const [ax, ay] = along[(k++ + ((hash3(x, y, seed + 89) * 2) | 0)) % 2];
+          if (hash3(x + k, y, seed + 97 + k) > chance) continue;
+          for (let step = 1; step <= 2; step++) {
+            const cx = x + ax * step, cy = y + ay * step;
+            if (!inb(cx, cy) || !solidWall(cx + dx, cy + dy)) break;
+            if (DECOR[cn] && fits(cx, cy, cn) && placeSimple(cx, cy, cn)) break;
+          }
+        }
+      }
+      if (kind === 'table') {
+        // chairs pulled up to it, facing in
+        for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+          if (hash3(x + dx, y + dy, seed + 101) > 0.6) continue;
+          const cx = x + dx, cy = y + dy, ci = cy * w + cx;
+          if (!walkable(cx, cy) || blockedByDecor[ci] || guard[ci] || entAt[ci]) continue;
+          decor.push({
+            kind: 'chair', key: 'prop_chair', x: cx + 0.5 - dx * 0.2, y: cy + 0.5 - dy * 0.2, z: 0,
+            h: DECOR.chair.h, solid: false, emissive: false, fixture: null,
+            yaw: Math.atan2(-dy, -dx) + (hash3(cx, cy, seed + 103) - 0.5) * 0.7, variant: (hash3(cx, cy, seed + 107) * 97) | 0, wall: false,
+          });
+        }
+      }
     }
     return true;
   };
+  const placeSimple = (x, y, kind) => {
+    if (!place(x, y, kind, false)) return false;
+    count[kind] = (count[kind] || 0) + 1;
+    return true;
+  };
+  for (const [px, py, kind, yd] of look.props || []) place(px, py, kind, true, yd);
+  const density = look.density || 0;
   if (density > 0 && look.decor) {
     for (let y = 1; y < h - 1; y++) {
       for (let x = 1; x < w - 1; x++) {
@@ -1210,6 +1313,7 @@ function dressLevel(def, idx, P) {
   }
   for (const d of decor) {
     if (d.kind === 'candles') fixtureLights.push({ x: d.x, y: d.y, r: 1, g: 0.66, b: 0.3, intensity: 0.4, radius: 3.2 });
+    if (d.kind === 'candelabra') fixtureLights.push({ x: d.x, y: d.y, r: 1, g: 0.7, b: 0.34, intensity: 0.45, radius: 3.6, prop: d });
   }
 
   return { decor, fixtureLights, lightTint: look.tint || null, pillarKey: look.pillar || null };

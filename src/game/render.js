@@ -130,6 +130,11 @@ export function renderWorld(game, W, H) {
       : it.kind === 'flare' ? `flare${Math.floor(game.time * 9) % 3}`
       : it.kind === 'ammo' ? 'ammo_flak'
       : it.kind;
+    // A barrel is modelled like the furniture it stands among.
+    if (it.kind === 'barrel' && art.props && art.props.has('barrel')) {
+      const bf = art.props.want('barrel', 0, 'ok', 0, 0);
+      if (bf) { S.push({ x: it.x, y: it.y, z: -bf.below, frame: bf, h: bf.h / bf.ppu }); continue; }
+    }
     const f = art.sprites[key];
     if (!f) continue;
     const bob = it.prop ? 0 : Math.sin((it.bob || 0)) * 0.035;
@@ -141,24 +146,9 @@ export function renderWorld(game, W, H) {
     });
   }
 
-  // Set dressing from the level parser: desks, lockers, the odd colleague. It
-  // never moves, so each piece keeps one billboard for the life of the level.
-  const decor = lv.decor;
-  if (decor) {
-    for (let i = 0; i < decor.length; i++) {
-      const d = decor[i];
-      let spr = d._spr;
-      if (spr === undefined) {
-        // A broken piece shows what is left of it; a locker somebody opened has its door ajar.
-        const f = d.altFrame || art.sprites[d.key];
-        spr = d._spr = f ? {
-          x: d.x, y: d.y, z: (d.z || 0) + (d.lift || 0), frame: f, h: d.altH || d.h,
-          emissive: !!d.emissive && !d.broken,
-        } : null;
-      }
-      if (spr) S.push(spr);
-    }
-  }
+  // Set dressing: desks, lockers, the odd colleague, each drawn from the side
+  // the camera is on, plus whatever has been broken off them.
+  game.props.collectDecor(S, cam, art);
   // The thin man, when he is there to be seen.
   if (game.scribe) { const sr = game.scribe.sprite(art); if (sr) S.push(sr); }
   // Papers in the air, cans, coins: the litter of a room that has been visited.
@@ -265,7 +255,7 @@ export function renderWorld(game, W, H) {
 
 export function drawViewmodel(game, buf, W, H) {
   const p = game.player;
-  if (p.dead) return;
+  if (p.dead || game.noViewmodel) return;     // noViewmodel: for the photograph tools
   const art = game.art;
   const spec = p.spec;
   const s = H / 450;

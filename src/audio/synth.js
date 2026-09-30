@@ -2107,6 +2107,7 @@ const MIX = Object.assign(Object.create(null), {
   radio_open: 2, radio_close: 2.5, radio_static: 1.8,
   wood_hit: 1.5, wood_break: 1.2, metal_hit: 1.2, glass_break: 1.7, coin_clink: 0.9, soda_pop: 0.9,
   pinball_play: 0.6, buzz_deny: 0.6, console_blip: 0.65, water_burst: 0.75, paper_flurry: 0.9,
+  gas_hiss: 0.9, zap_arc: 1.1, creak_topple: 1.2, crash_heavy: 1.4, wall_crumble: 1.5, steam_hiss: 0.8, tube_pop: 1.2, foam_spray: 0.8,
   scribe_giggle: 1.3, scribe_scratch: 1.2, saw_rumble: 1.7, saw_run: 1.6, saw_cut: 1.5, saw_bind: 1.4, saw_catch: 1.3, saw_wall: 1.3, saw_start: 1.3,
 });
 
@@ -4861,6 +4862,83 @@ bake('can_rattle', 0.75, 2, (d, sr, R) => {
   kThump(d, sr, 0, 110, 55, 0.02, 0.06, 0.7, 2);
 });
 
+/* ------------------------------------------------ round six: the room fights back */
+// Props that hiss, arc, topple and take the walls with them.
+
+// A gas bottle with a hole in it: a hard, rising shriek of escaping gas.
+bake('gas_hiss', 1.6, 2, (d, sr, R) => {
+  kClick(d, sr, 0, 0.8, 3);
+  kNoise(d, sr, R, 0, 1.6, { type: 'bp', f0: 2400, f1: 5200, sw: 1.4, q: 1.6, atk: 0.01, hold: 1.1, tau: 0.2, amp: 2.6, am: [23, 0.25] });
+  kNoise(d, sr, R, 0, 1.6, { type: 'hp', f0: 6500, f1: 8000, q: 0.7, atk: 0.02, hold: 1.1, tau: 0.2, amp: 1.2 });
+  kTone(d, sr, 0.05, 1.4, 1400, 2600, 0.12, 0.05, 0.4, 1);
+});
+
+// Mains voltage finding a way to the floor: a buzz, a crack, crackle after.
+bake('zap_arc', 0.8, 3, (d, sr, R) => {
+  const f = 100 + R() * 20;
+  kTone(d, sr, 0, 0.5, f, f, 0.5, 0.002, 0.18, 2);
+  kTone(d, sr, 0, 0.5, f * 3, f * 3, 0.25, 0.002, 0.14, 2);
+  kClick(d, sr, 0, 1, 2);
+  kNoise(d, sr, R, 0, 0.3, { type: 'hp', f0: 3000, f1: 1200, q: 0.9, atk: 0.001, tau: 0.05, amp: 2.4 });
+  kCrackle(d, sr, R, 0.02, 0.7, 260, 0.9, 1.6);
+  kSat(d, 3);
+});
+
+// Something tall deciding whether to stay up: a groan of sheet steel.
+bake('creak_topple', 0.9, 2, (d, sr, R) => {
+  const f = 70 + R() * 30;
+  kTone(d, sr, 0, 0.8, f, f * 0.75, 0.6, 0.05, 0.35, 2, [9, 0.08]);
+  kNoise(d, sr, R, 0, 0.8, { type: 'bp', f0: 900, f1: 500, q: 3, atk: 0.1, hold: 0.3, tau: 0.25, amp: 1.2, am: [31, 0.6] });
+  kMode(d, sr, 0.05, 410, 0.3, 0.25, -0.2);
+  kSat(d, 2);
+});
+
+// A cabinet the height of a man landing flat: the floor takes it.
+bake('crash_heavy', 1.3, 2, (d, sr, R) => {
+  const j = 1 + (R() - 0.5) * 0.08;
+  kThump(d, sr, 0, 80 * j, 32 * j, 0.04, 0.2, 1.5, 3);
+  kClick(d, sr, 0, 1, 7);
+  kNoise(d, sr, R, 0, 0.6, { type: 'lp', f0: 2400, f1: 150, q: 1, atk: 0.001, tau: 0.12, amp: 4, col: 2 });
+  for (let m = 0; m < METAL.length; m++) kMode(d, sr, 0.003, 150 * j * METAL[m], 0.5 / (1 + m * 0.3), 0.26 / (1 + m * 0.5));
+  kDebris(d, sr, R, 0.05, 0.9, 40, 400, 4200, 0.2, 0.01);
+  kSlap(d, sr, [[0.022, 0.35], [0.041, 0.24], [0.07, 0.14]], 0.22);
+  kSat(d, 1.8);
+});
+
+// A wall giving up: the crack through it, the fall, the rubble for a while.
+bake('wall_crumble', 2.2, 2, (d, sr, R) => {
+  kClick(d, sr, 0, 1, 8);
+  kThump(d, sr, 0, 70, 28, 0.05, 0.35, 1.6, 3.5);
+  kNoise(d, sr, R, 0, 1.4, { type: 'lp', f0: 1800, f1: 120, sw: 1.2, q: 0.9, atk: 0.005, hold: 0.2, tau: 0.4, amp: 4.4, col: 2 });
+  kDebris(d, sr, R, 0.1, 1.9, 90, 150, 2600, 0.35, 0.02);
+  kDebris(d, sr, R, 0.3, 1.8, 50, 2000, 6000, 0.12, 0.01);
+  kSlap(d, sr, [[0.03, 0.4], [0.06, 0.28], [0.1, 0.16]], 0.2);
+  kSat(d, 2);
+});
+
+// A pipe on the wall with a new hole: steam, flat out, for as long as it lasts.
+bake('steam_hiss', 2.4, 1, (d, sr, R) => {
+  kClick(d, sr, 0, 0.6, 3);
+  kNoise(d, sr, R, 0, 2.4, { type: 'hp', f0: 2600, f1: 3400, q: 0.6, atk: 0.03, hold: 1.9, tau: 0.15, amp: 2.2, col: 1, am: [7, 0.12] });
+  kNoise(d, sr, R, 0, 2.4, { type: 'bp', f0: 900, f1: 700, q: 0.8, atk: 0.05, hold: 1.9, tau: 0.15, amp: 0.8 });
+});
+
+// A fluorescent tube: the pop of the glass, the tinkle, the buzz stopping.
+bake('tube_pop', 0.9, 2, (d, sr, R) => {
+  kClick(d, sr, 0, 1, 2);
+  kThump(d, sr, 0, 260, 120, 0.01, 0.04, 0.8, 2);
+  kNoise(d, sr, R, 0, 0.2, { type: 'hp', f0: 4200, f1: 7000, q: 0.8, atk: 0.001, tau: 0.05, amp: 2.4 });
+  kDebris(d, sr, R, 0.03, 0.8, 50, 2600, 9000, 0.22, 0.015);
+  kTone(d, sr, 0, 0.1, 120, 110, 0.3, 0.002, 0.03, 2);
+});
+
+// An extinguisher emptying itself in whatever direction it happens to face.
+bake('foam_spray', 1.8, 1, (d, sr, R) => {
+  kNoise(d, sr, R, 0, 1.8, { type: 'bp', f0: 1800, f1: 1300, q: 0.7, atk: 0.02, hold: 1.3, tau: 0.2, amp: 2.4, col: 1, am: [13, 0.2] });
+  kNoise(d, sr, R, 0, 1.8, { type: 'hp', f0: 5000, f1: 5000, q: 0.7, atk: 0.02, hold: 1.3, tau: 0.2, amp: 0.9 });
+  kSquish(d, sr, R, 0.05, 1.5, 60, 400, 1600, 0.08, 1);
+});
+
 // THE SEVERANCE: a diamond-chain concrete saw. The engine is one cycle of a
 // two-stroke, built to loop: twenty periods of 100 Hz in 0.2 s, so back to back
 // it is a steady chug, and played faster it revs.
@@ -5013,6 +5091,38 @@ Object.assign(SFX, {
   saw_start(S, t, o) {
     const v = V(S, o, 4, 0.2, 0); if (!v) return;
     smp(S, v, t, 'saw_start', { g: 0.85, rate: jr(S, o, 0.03) });
+  },
+  gas_hiss(S, t, o) {
+    const v = V(S, o, 4, 0.2, 0); if (!v) return;
+    smp(S, v, t, 'gas_hiss', { g: 0.8, rate: jr(S, o, 0.06) });
+  },
+  zap_arc(S, t, o) {
+    const v = V(S, o, 4, 0.2, 0.05); if (!v) return;
+    smp(S, v, t, 'zap_arc', { g: 0.75, rate: jr(S, o, 0.1) });
+  },
+  creak_topple(S, t, o) {
+    const v = V(S, o, 4, 0.3, 0.05); if (!v) return;
+    smp(S, v, t, 'creak_topple', { g: 0.9, rate: jr(S, o, 0.08) });
+  },
+  crash_heavy(S, t, o) {
+    const v = V(S, o, 5, 0.4, 0.15); if (!v) return;
+    smp(S, v, t, 'crash_heavy', { g: 1, rate: jr(S, o, 0.06) });
+  },
+  wall_crumble(S, t, o) {
+    const v = V(S, o, 5, 0.45, 0.2); if (!v) return;
+    smp(S, v, t, 'wall_crumble', { g: 1, rate: jr(S, o, 0.05) });
+  },
+  steam_hiss(S, t, o) {
+    const v = V(S, o, 3, 0.2, 0); if (!v) return;
+    smp(S, v, t, 'steam_hiss', { g: 0.7, rate: jr(S, o, 0.05) });
+  },
+  tube_pop(S, t, o) {
+    const v = V(S, o, 3, 0.3, 0); if (!v) return;
+    smp(S, v, t, 'tube_pop', { g: 0.85, rate: jr(S, o, 0.1) });
+  },
+  foam_spray(S, t, o) {
+    const v = V(S, o, 3, 0.2, 0); if (!v) return;
+    smp(S, v, t, 'foam_spray', { g: 0.7, rate: jr(S, o, 0.05) });
   },
   wood_hit(S, t, o) {
     const v = V(S, o, 3, 0.25, 0); if (!v) return;

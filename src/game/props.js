@@ -1,20 +1,35 @@
 // props.js - the bunker's furniture, and what it does when Brick gets to it.
 //
-// Set dressing used to be scenery: you could not shoot a desk, kick a chair,
-// buy a soda, or find out what is in the locker. Now everything with a body
-// has hit points and a material, takes a round or a boot or a blast, and comes
-// apart in a way that suits what it was made of. Some of it can be used, and
-// pays out. Some of it flies when kicked. A few things hold what a place like
-// this would: a drawer of paperwork, a machine full of cans, a locker with
-// somebody's gym socks in it.
+// Everything with a body has hit points and a material, takes a round or a
+// boot or a blast, and comes apart in a way that suits what it was made of.
+// Some of it can be used and pays out. And it moves:
 //
-// The level's decor list (maps.js) stays the source of truth for where things
-// are. This module adds the state (hit points, uses left, is it flying), the
-// litter (papers, cans, coins: little sprites that live on the floor after),
-// and every rule. game.js only forwards: a bullet, a boot, a blast, the use key.
+//   * light things (chairs, bins, cones, plants, a coat stand) are shoved by
+//     rounds, thrown by blasts and hoofed across the room by the boot; they
+//     tumble, bounce off the walls and hurt whatever they land on;
+//   * tall things (lockers, filing cabinets, the vending machine, shelving,
+//     the server racks) rock when kicked and go over: forward, onto whoever
+//     is standing in front of them. A blast knocks them over too. What is
+//     under one when it lands is flattened;
+//   * broken things throw their parts (planks, drawers, a monitor, sheet
+//     steel, books, cans) which bounce, spin and stay on the floor;
+//   * gas bottles vent and then go up, and sometimes one takes off first;
+//     an extinguisher shot or kicked flies round the room on its own foam;
+//     a server rack or a generator that breaks arcs into whoever is near.
+//
+// The level's decor list (maps.js) says where things are and which way they
+// face. This module adds the state (hit points, uses left, motion), the
+// litter and the debris, and every rule. game.js only forwards: a bullet, a
+// boot, a blast, the use key. The pictures come from the prop studio
+// (engine/propstudio.js), one for each side of a thing, whole, battered,
+// wrecked or on its way over; anything the studio does not model keeps its
+// painted sprite.
 
 import { rgba, makeFrame } from '../core/pixels.js';
 import { clamp, dist, makeRng, randRange, TAU } from '../core/math.js';
+import { viewDir } from '../engine/propstudio.js';
+import { rotFrame } from './gore.js';
+import { DECOR } from './maps.js';
 
 /**
  * What a thing is made of decides how it sounds, what flies off it and how it
@@ -33,6 +48,8 @@ const MAT = {
   bone: { hit: 'bone_crack', hitVol: 0.6, brk: 'bone_crack', cols: [[226, 220, 200], [190, 182, 160]] },
   plastic: { hit: 'wood_hit', hitRate: 1.7, hitVol: 0.6, brk: 'wood_break', brkRate: 1.55,
     cols: [[240, 120, 40], [240, 236, 226]] },
+  fabric: { hit: 'wood_hit', hitRate: 0.8, hitVol: 0.5, brk: 'wood_break', brkRate: 1.2, cols: [[58, 76, 124], [40, 40, 44]] },
+  meat: { hit: 'hit_flesh', hitVol: 0.8, brk: 'splat', cols: [[150, 30, 30], [200, 150, 130], [110, 20, 24]] },
   sand: { hit: 'hit_wall', hitVol: 0.35, cols: [[190, 170, 120]], dust: 1 },
 };
 
@@ -40,26 +57,75 @@ const MAT = {
  * hp: how much it takes (Infinity: it never breaks). kick: boot damage, or
  * 'fly' to send it across the room. use: what the use key does. cash: the
  * damages, in dollars, that go on the invoice when it breaks.
+ *   mass   'light' moves when shot, flies when kicked or blasted
+ *          'heavy' (the default) stays where it is put, unless it is tall
+ *   tall   goes over: forward for anything backed against a wall, away from
+ *          the boot or the blast for anything standing on its own
+ *   crush  what it does to what it lands on
+ *   debris [piece, count, finish] thrown when it breaks (propmodels.js PIECES)
+ *   boom   { r, dmg } it explodes when it breaks
+ *   vent   'gas' | 'foam': a round through it lets out what is inside
+ *   arc    it shorts to anything within this radius when it breaks
  */
 const DEFS = {
-  desk: { name: 'DESK', mat: 'wood', hp: 46, kick: 22, use: 'desk', papers: 26, hitPapers: 3, chunks: 12, coins: 2, cash: 340 },
-  chair: { name: 'CHAIR', mat: 'wood', hp: 18, kick: 'fly', chunks: 7, cash: 60, thud: 9 },
-  filing: { name: 'FILING CABINET', mat: 'metal', hp: 70, kick: 20, use: 'filing', papers: 34, hitPapers: 2, chunks: 6, cash: 280, wreck: 0.28 },
-  locker: { name: 'LOCKER', mat: 'metal', hp: 80, kick: 18, use: 'locker', chunks: 8, cash: 190, wreck: 0.26 },
-  vending: { name: 'VENDING MACHINE', mat: 'metal', hp: 130, kick: 14, use: 'vending', cans: 5, foam: 26, glass: true, chunks: 8, coins: 6, cash: 900, wreck: 0.3 },
-  cooler: { name: 'WATER COOLER', mat: 'glass', hp: 46, kick: 20, use: 'cooler', water: 18, cash: 120, wreck: 0.4 },
-  toilet: { name: 'TOILET', mat: 'porcelain', hp: 36, kick: 18, geyser: 5, cash: 250, wreck: 0.4 },
-  urinal: { name: 'URINAL', mat: 'porcelain', hp: 30, kick: 18, geyser: 4, cash: 180, wreck: 0.4 },
-  console: { name: 'CONSOLE', mat: 'tech', hp: 60, kick: 18, use: 'console', zap: 1, chunks: 6, cash: 1200 },
-  pinball: { name: 'PINBALL MACHINE', mat: 'tech', hp: 55, kick: 16, use: 'pinball', zap: 1, chunks: 6, coins: 8, cash: 700 },
-  plant: { name: 'PLANT', mat: 'plant', hp: 8, kick: 12, chunks: 12, cash: 40, wreck: 0.28 },
-  trash: { name: 'TRASH CAN', mat: 'metal', hp: 14, kick: 'fly', papers: 12, cans: 2, cash: 20, wreck: 0.45, thud: 6 },
-  crate: { name: 'CRATE', mat: 'wood', hp: 34, kick: 20, chunks: 14, loot: 0.4, cash: 150, wreck: 0.3 },
-  crates: { name: 'CRATES', mat: 'wood', hp: 70, kick: 20, chunks: 20, loot: 0.75, cash: 300, wreck: 0.26 },
-  pew: { name: 'PEW', mat: 'wood', hp: 40, kick: 18, chunks: 12, cash: 90, wreck: 0.3 },
+  desk: { name: 'DESK', mat: 'wood', hp: 46, kick: 22, use: 'desk', papers: 26, hitPapers: 3, chunks: 12, coins: 2, cash: 340, wreck: 0.32,
+    debris: [['plank', 3, 3], ['drawer', 2, 0], ['monitor', 1], ['keyboard', 1]] },
+  chair: { name: 'CHAIR', mat: 'fabric', hp: 18, kick: 'fly', chunks: 7, cash: 60, thud: 9, mass: 'light',
+    debris: [['cushion', 1, 0], ['leg', 2, 0]] },
+  filing: { name: 'FILING CABINET', mat: 'metal', hp: 70, kick: 20, use: 'filing', papers: 34, hitPapers: 2, chunks: 6, cash: 280, wreck: 0.28,
+    tall: true, crush: 70, debris: [['drawer', 3, 0], ['panel', 2, 0]] },
+  locker: { name: 'LOCKER', mat: 'metal', hp: 80, kick: 18, use: 'locker', chunks: 8, cash: 190, wreck: 0.26,
+    tall: true, crush: 90, debris: [['panel', 3, 1]] },
+  vending: { name: 'VENDING MACHINE', mat: 'metal', hp: 130, kick: 14, use: 'vending', cans: 5, foam: 26, glass: true, chunks: 8, coins: 6, cash: 900, wreck: 0.3,
+    tall: true, crush: 160, debris: [['panel', 3, 2], ['glass', 3, 0], ['can', 4, 0]] },
+  cooler: { name: 'WATER COOLER', mat: 'glass', hp: 46, kick: 20, use: 'cooler', water: 18, cash: 120, wreck: 0.4,
+    debris: [['panel', 1, 4], ['glass', 2, 0]] },
+  toilet: { name: 'TOILET', mat: 'porcelain', hp: 36, kick: 18, geyser: 5, cash: 250, wreck: 0.4, debris: [['tile', 5, 0]] },
+  urinal: { name: 'URINAL', mat: 'porcelain', hp: 30, kick: 18, geyser: 4, cash: 180, wreck: 0.4, debris: [['tile', 4, 0]] },
+  sink: { name: 'SINK', mat: 'porcelain', hp: 30, kick: 18, use: 'sink', geyser: 4, cash: 150, wreck: 0.4, debris: [['tile', 4, 0]] },
+  console: { name: 'CONSOLE', mat: 'tech', hp: 60, kick: 18, use: 'console', zap: 1, chunks: 6, cash: 1200, arc: 1.8,
+    debris: [['board', 2, 0], ['panel', 2, 7], ['glass', 2, 0]] },
+  pinball: { name: 'PINBALL MACHINE', mat: 'tech', hp: 55, kick: 16, use: 'pinball', zap: 1, chunks: 6, coins: 8, cash: 700,
+    debris: [['glass', 3, 0], ['board', 1, 0], ['panel', 2, 7]] },
+  plant: { name: 'PLANT', mat: 'plant', hp: 8, kick: 'fly', chunks: 12, cash: 40, wreck: 0.28, mass: 'light', thud: 6 },
+  trash: { name: 'TRASH CAN', mat: 'metal', hp: 14, kick: 'fly', papers: 12, cans: 2, cash: 20, wreck: 0.45, thud: 6, mass: 'light' },
+  crate: { name: 'CRATE', mat: 'wood', hp: 34, kick: 20, chunks: 14, loot: 0.4, cash: 150, wreck: 0.3, debris: [['plank', 5, 4]] },
+  crates: { name: 'CRATES', mat: 'wood', hp: 70, kick: 20, chunks: 20, loot: 0.75, cash: 300, wreck: 0.26, debris: [['plank', 8, 4]] },
+  pew: { name: 'PEW', mat: 'wood', hp: 40, kick: 18, chunks: 12, cash: 90, wreck: 0.3, debris: [['plank', 5, 2]] },
   skeleton: { name: 'SKELETON', mat: 'bone', hp: 8, kick: 12, chunks: 12, cash: 0, wreck: 0.3 },
-  mop: { name: 'MOP', mat: 'wood', hp: 8, kick: 12, chunks: 3, cash: 10, wreck: 0.4 },
-  cone: { name: 'CONE', mat: 'plastic', hp: 6, kick: 'fly', chunks: 5, cash: 15, thud: 4 },
+  mop: { name: 'MOP BUCKET', mat: 'plastic', hp: 8, kick: 'fly', chunks: 3, cash: 10, wreck: 0.4, mass: 'light', water: 8, thud: 5 },
+  cone: { name: 'CONE', mat: 'plastic', hp: 6, kick: 'fly', chunks: 5, cash: 15, thud: 4, mass: 'light' },
+  // the new stock
+  bookshelf: { name: 'BOOKSHELF', mat: 'wood', hp: 60, kick: 16, papers: 18, chunks: 10, cash: 260, tall: true, crush: 90,
+    debris: [['book', 10, 0], ['plank', 3, 1]] },
+  photocopier: { name: 'PHOTOCOPIER', mat: 'tech', hp: 70, kick: 16, use: 'copier', papers: 40, zap: 1, toner: 1, cash: 2400,
+    debris: [['panel', 3, 6], ['glass', 2, 0], ['board', 1, 0]] },
+  coatrack: { name: 'COAT STAND', mat: 'wood', hp: 14, kick: 'fly', chunks: 6, cash: 45, mass: 'light', thud: 8, debris: [['plank', 2, 1]] },
+  extinguisher: { name: 'EXTINGUISHER', mat: 'metal', hp: 10, kick: 'jet', vent: 'foam', cash: 90, mass: 'light' },
+  tvcart: { name: 'TV CART', mat: 'tech', hp: 30, kick: 'fly', zap: 1, glass: true, cash: 400, mass: 'light', thud: 14,
+    debris: [['glass', 3, 0], ['board', 1, 0], ['panel', 1, 7]] },
+  table: { name: 'TABLE', mat: 'wood', hp: 40, kick: 18, chunks: 10, cash: 120, tall: 'flip', crush: 20,
+    debris: [['plank', 3, 3], ['leg', 2, 1]] },
+  gascyl: { name: 'GAS BOTTLES', mat: 'metal', hp: 34, kick: 14, vent: 'gas', cash: 300, boom: { r: 3.3, dmg: 90 },
+    debris: [['bottle', 1, 1], ['panel', 1, 7]] },
+  shelving: { name: 'SHELVING', mat: 'metal', hp: 70, kick: 16, chunks: 8, cash: 350, tall: true, crush: 110, loot: 0.5,
+    debris: [['panel', 2, 0], ['can', 4, 0], ['plank', 3, 4]] },
+  workbench: { name: 'WORKBENCH', mat: 'wood', hp: 60, kick: 18, chunks: 10, cash: 400, loot: 0.5,
+    debris: [['plank', 4, 1], ['leg', 2, 1], ['panel', 1, 0]] },
+  generator: { name: 'GENERATOR', mat: 'tech', hp: 90, kick: 14, zap: 1, cash: 5000, arc: 2.2, boom: { r: 2.8, dmg: 70 },
+    debris: [['panel', 4, 3], ['board', 1, 0]] },
+  spool: { name: 'CABLE REEL', mat: 'wood', hp: 50, kick: 'fly', chunks: 10, cash: 80, mass: 'light', thud: 24, roll: true,
+    debris: [['plank', 4, 0]] },
+  lectern: { name: 'LECTERN', mat: 'wood', hp: 24, kick: 14, papers: 14, chunks: 8, cash: 200, tall: true, crush: 25,
+    debris: [['plank', 3, 2], ['book', 1, 5]] },
+  candelabra: { name: 'CANDELABRA', mat: 'metal', hp: 30, kick: 12, cash: 150, tall: true, crush: 30, embers: 1 },
+  butcher: { name: 'BUTCHER BLOCK', mat: 'meat', hp: 60, kick: 18, chunks: 10, cash: 180, bloody: 1,
+    debris: [['meat', 4, 0], ['plank', 3, 2]] },
+  serverrack: { name: 'SERVER RACK', mat: 'tech', hp: 90, kick: 14, zap: 1, cash: 8000, arc: 2.4, tall: true, crush: 150,
+    debris: [['panel', 3, 7], ['board', 4, 0], ['glass', 2, 0]] },
+  crtstack: { name: 'MONITORS', mat: 'tech', hp: 40, kick: 16, zap: 1, glass: true, cash: 600,
+    debris: [['monitor', 3, 0], ['glass', 3, 0], ['keyboard', 1, 0]] },
+  pallet: { name: 'PALLET', mat: 'wood', hp: 50, kick: 18, chunks: 12, loot: 0.35, cash: 120, debris: [['plank', 5, 0]] },
   // These take a hit and shrug. They still answer it, so shooting them is not silent.
   sandbags: { mat: 'sand', hp: Infinity },
   nosecone: { mat: 'metal', hp: Infinity, ring: 1 },
@@ -69,6 +135,9 @@ const DEFS = {
   corpse2: { mat: 'bone', hp: Infinity, gore: 1 },
 };
 
+/** A crushed body goes mostly to pieces, flat. */
+const CRUSH_GORE = { sever: 0.8, head: 0.7, parts: 3, knock: 3, gib: 55, lift: 0.4 };
+
 const PAPER_TINTS = [
   rgba(255, 255, 255, 0), rgba(244, 236, 200, 90), rgba(196, 220, 244, 110),
   rgba(255, 246, 168, 120), rgba(255, 255, 255, 0), rgba(226, 226, 232, 80),
@@ -76,7 +145,9 @@ const PAPER_TINTS = [
 const CAN_TINTS = [rgba(214, 56, 44, 140), rgba(60, 110, 210, 140), rgba(60, 170, 90, 140), rgba(230, 170, 50, 140)];
 
 const REACH = 1.5;                 // how far the use key reaches
-const CAP_PAPER = 150, CAP_LITTER = 220;
+const CAP_LITTER = 220;
+const CAP_DEBRIS = 130;
+const HALF_PI = Math.PI / 2;
 
 const pack = (r, g, b, a) => ((a << 24) | (b << 16) | (g << 8) | r) >>> 0;
 const rgbOf = (c) => [c & 255, (c >>> 8) & 255, (c >>> 16) & 255];
@@ -132,10 +203,8 @@ function coinFrame() {
 }
 
 /**
- * What is left of a thing: the bottom of its own picture, torn across the top,
- * scorched and dented, with bits of what it was made of lying about. It is the
- * original sprite cut down, so a desk wrecks into a desk and a vending machine
- * into a vending machine, and nothing new has to be drawn.
+ * What is left of a painted prop: the bottom of its own picture, torn across
+ * the top, scorched and dented. Only for kinds the studio does not model.
  */
 function wreckFrame(src, keep, mat, seed) {
   const w = src.w, h0 = src.h;
@@ -153,13 +222,10 @@ function wreckFrame(src, keep, mat, seed) {
       f.data[y * w + x] = pack(r * k | 0, g * k | 0, b * k | 0, 255);
     }
   }
-  // splinters, shards and scorch marks
   for (let i = 0; i < Math.max(8, (w * h) >> 4); i++) {
     const x = (rng() * w) | 0, y = (rng() * h) | 0;
     const [r, g, b] = pickOf(rng, cols);
-    if (f.data[y * w + x] >>> 24 || y > h * 0.55) {
-      f.data[y * w + x] = pack(r, g, b, 255);
-    }
+    if (f.data[y * w + x] >>> 24 || y > h * 0.55) f.data[y * w + x] = pack(r, g, b, 255);
   }
   for (let i = 0; i < (w * h) >> 6; i++) {
     const x = (rng() * w) | 0, y = (h * 0.5 + rng() * h * 0.5) | 0;
@@ -168,7 +234,7 @@ function wreckFrame(src, keep, mat, seed) {
   return f;
 }
 
-/** A locker with its door ajar: the middle of the picture gone to shadow. */
+/** A painted locker with its door ajar: the middle of the picture gone to shadow. */
 function openedFrame(src) {
   const f = makeFrame(src.w, src.h);
   f.data.set(src.data);
@@ -192,20 +258,28 @@ export class Props {
     this.frames = { paper: paperFrame(), flat: paperFlat(), can: canFrame(), coin: coinFrame() };
     this.litter = [];
     this.flying = [];
+    this.debris = [];
     this.spouts = [];
+    this.jets = [];
     this.grid = new Map();
     this._recs = [];
+    this._drecs = [];
     this.hintText = null;
     this._snd = 0;
   }
+
+  get studio() { return (this.g.art && this.g.art.props) || null; }
 
   /** A new level: forget the last one's rubble and register this one's furniture. */
   load(lv) {
     this.litter.length = 0;
     this.flying.length = 0;
+    this.debris.length = 0;
     this.spouts.length = 0;
+    this.jets.length = 0;
     this.grid.clear();
     this.hintText = null;
+    const kinds = new Set();
     for (const d of lv.decor || []) {
       d.def = DEFS[d.kind] || null;
       d.hp = d.def && d.def.hp !== undefined ? d.def.hp : 0;
@@ -213,20 +287,70 @@ export class Props {
       d.stock = d.kind === 'vending' ? 4 : 0;
       d.uses = 0;
       d.gal = d.kind === 'cooler' ? 6 : 0;
-      d.altFrame = null; d.altH = 0; d._spr = undefined;
+      d.altFrame = null; d.altH = 0; d._spr = undefined; d._fk = null;
+      d.yaw = d.yaw || 0; d.variant = d.variant || 0;
+      d.hx = d.x; d.hy = d.y; d.hr = 0.26;
+      d.roll = 0; d.spin = 0; d.pose = 0; d.fall = null; d.rock = 0; d.vented = false; d.gone = false;
+      d.h0 = d.h;
+      // Stand it with its back to the wall, not a hand's width off it: the map
+      // only knows which wall, the model knows how deep it is.
+      const st0 = this.studio;
+      if (d.wall && st0 && st0.has(d.kind)) {
+        const b = st0.bounds(d.kind, d.variant);
+        if (b) {
+          const ux = Math.cos(d.yaw), uy = Math.sin(d.yaw);
+          // how far the wall behind is from where it stands now
+          let gap = 0;
+          for (let r = 0.05; r <= 0.6; r += 0.01) { if (lv.blocked(d.x - ux * r, d.y - uy * r)) { gap = r; break; } }
+          const shift = gap - (-b.minZ) - 0.012;
+          if (gap && shift > 0 && shift < 0.3) { d.x -= ux * shift; d.y -= uy * shift; }
+        }
+      }
+      d.hx = d.x; d.hy = d.y;
       if (d.def) this._gridAdd(d, lv);
+      kinds.add(d.kind);
+    }
+    // Draw what this floor holds now, while the briefing card is up; the rest
+    // (other sides, the wrecks) is made in the gaps between frames. The last
+    // floor's wrecks and falls are let go; they are made again if wanted.
+    const st = this.studio;
+    if (st) {
+      try { st.trim(); } catch (e) { /* keep them */ }
+      try { st.prewarm([...kinds].filter((k) => st.has(k)), ['ok'], 250); } catch (e) { /* the painted set stands in */ }
     }
   }
 
-  _cell(d) { return this.g.level.idx(d.x, d.y); }
+  /**
+   * Put a prop down at (x, y) facing `yaw`, as if the level had it: for the
+   * tools, and for anything that wants to furnish a room after the fact.
+   */
+  spawn(kind, x, y, yaw = 0, variant = 0) {
+    const g = this.g, lv = g.level, spec = DECOR[kind];
+    if (!lv || !spec) return null;
+    const d = {
+      kind, key: `prop_${kind}`, x, y, z: spec.z || 0, h: spec.h, solid: !!spec.solid, emissive: !!spec.emissive,
+      fixture: spec.fixture || null, yaw, variant, wall: !!spec.wall,
+    };
+    d.def = DEFS[kind] || null;
+    d.hp = d.def && d.def.hp !== undefined ? d.def.hp : 0;
+    d.broken = false; d.flying = false; d.shake = 0; d.lift = 0; d.stock = kind === 'vending' ? 4 : 0; d.uses = 0;
+    d.gal = kind === 'cooler' ? 6 : 0; d.altFrame = null; d.altH = 0; d._spr = undefined; d._fk = null;
+    d.hx = x; d.hy = y; d.hr = 0.26; d.roll = 0; d.spin = 0; d.pose = 0; d.fall = null; d.rock = 0; d.vented = false; d.gone = false; d.h0 = d.h;
+    lv.decor.push(d);
+    if (d.def) this._gridAdd(d, lv);
+    if (d.solid) { const i = lv.idx(x, y); lv.propBlock[i] = 1; lv.propH[i] = Math.max(lv.propH[i], d.z + d.h); }
+    return d;
+  }
+
   _gridAdd(d, lv) {
-    const i = (lv || this.g.level).idx(d.x, d.y);
+    const i = (lv || this.g.level).idx(d.hx, d.hy);
     let l = this.grid.get(i);
     if (!l) { l = []; this.grid.set(i, l); }
-    l.push(d);
+    if (!l.includes(d)) l.push(d);
+    d._cell = i;
   }
   _gridDel(d) {
-    const i = this._cell(d);
+    const i = d._cell;
     const l = this.grid.get(i);
     if (!l) return;
     const k = l.indexOf(d);
@@ -240,12 +364,12 @@ export class Props {
     if (!l) return null;
     for (let k = 0; k < l.length; k++) {
       const d = l[k];
-      if (d.broken || d.flying) continue;
+      if (d.broken || d.flying || d.gone) continue;
       // Bodies on the floor and chains from the ceiling are scenery to a bullet.
       if (!d.solid && d.def.hp === Infinity) continue;
       if (z < d.z || z > d.z + d.h) continue;
       // Something you can walk through is only hit if the shot passes through it.
-      if (!d.solid && Math.hypot(x - d.x, y - d.y) > 0.26) continue;
+      if (!d.solid && Math.hypot(x - d.hx, y - d.hy) > d.hr) continue;
       return d;
     }
     return null;
@@ -278,16 +402,39 @@ export class Props {
 
   // ------------------------------------------------------------------ damage
 
-  /** A round, a boot or a blast landed on it. False if it does not care. */
-  hit(d, dmg, x, y, z, how) {
+  /**
+   * A round, a boot or a blast landed on it. False if it does not care.
+   * dx, dy: which way the hit was travelling, for what it shoves.
+   */
+  hit(d, dmg, x, y, z, how, dx = 0, dy = 0) {
     const def = d.def;
-    if (!def || d.broken || d.flying) return false;
-    const g = this.g;
+    if (!def || d.broken || d.flying || d.gone) return false;
     if (def.hp === Infinity) { this._shrug(d, x, y, z); return true; }
     d.hp -= dmg;
     d.shake = 0.3;
     this._hitFx(d, x, y, z, how);
-    if (d.hp <= 0) this.breakProp(d, how, x, y);
+    // the first hit: have its battered and wrecked pictures made now, from where
+    // the player is looking, so they are ready when it needs them
+    const st = this.studio;
+    if (!d._warm && st && st.has(d.kind)) {
+      d._warm = true;
+      const p = this.g.player;
+      const dir = viewDir(d.x, d.y, d.yaw, p.x, p.y, st.dirsOf(d.kind));
+      st.want(d.kind, dir, 'wreck', d.variant, 0);
+      st.want(d.kind, dir, 'hurt', d.variant, 0);
+    }
+    // A round through a bottle lets out what is in it.
+    if (def.vent && !d.vented && how !== 'blast' && d.hp > 0) this._vent(d, dx, dy);
+    if (d.hp <= 0) { this.breakProp(d, how, x, y); return true; }
+    // Light things take the round with them.
+    if (def.mass === 'light' && !d.solid && how === 'shot' && (dx || dy)) {
+      const L = Math.hypot(dx, dy) || 1;
+      this.shove(d, dx / L, dy / L, Math.min(3.2, dmg * 0.09), dmg > 20 ? 1.4 : 0);
+    }
+    // Something tall with most of its insides shot out can go on its own.
+    if (def.tall && !d.fall && how === 'shot' && d.hp < def.hp * 0.35 && this.rng() < 0.18) {
+      this.topple(d, dx, dy, 0.1);
+    }
     return true;
   }
 
@@ -313,6 +460,7 @@ export class Props {
     }
     this._chips(x, y, z, how === 'kick' ? 6 : 4, m, 2.4);
     if (m.sparks) g.particles.sparks(x, y, z, 5, 1.6, [255, 220, 150], 5);
+    if (def.bloody) g.particles.blood(x, y, z, 5, 0, 0);
     if (def.hitPapers) this.papers(d.x, d.y, d.z + d.h * 0.8, def.hitPapers, 0.6);
   }
 
@@ -329,7 +477,7 @@ export class Props {
     }
   }
 
-  /** Everything within reach of a blast takes it, less with distance. */
+  /** Everything within reach of a blast takes it, less with distance; light things fly, tall things go over. */
   blast(x, y, z, radius, damage) {
     const lv = this.g.level;
     if (!lv || !lv.decor) return;
@@ -337,10 +485,31 @@ export class Props {
       if (it.kind === 'lamp' && !it.taken && dist(x, y, it.x, it.y) < radius * 0.8) this.shootLamp(it);
     }
     for (const d of lv.decor) {
-      if (!d.def || d.broken || d.flying || d.def.hp === Infinity) continue;
-      const r = dist(x, y, d.x, d.y);
+      if (!d.def || d.broken || d.gone || d.def.hp === Infinity) continue;
+      const r = dist(x, y, d.hx, d.hy);
       if (r >= radius) continue;
-      this.hit(d, 8 + damage * 1.3 * (1 - r / radius), d.x, d.y, d.z + d.h * 0.5, 'blast');
+      const k = 1 - r / radius;
+      const L = r || 1, ux = r > 0.05 ? (d.hx - x) / L : this.rng() - 0.5, uy = r > 0.05 ? (d.hy - y) / L : this.rng() - 0.5;
+      const force = damage * k;
+      if (!d.flying) this.hit(d, 8 + damage * 1.3 * k, d.hx, d.hy, d.z + d.h * 0.5, 'blast', ux, uy);
+      if (d.broken || d.gone) continue;
+      if (d.def.vent === 'foam' && !d.vented) { d.vented = true; this._jetFrom(d, 'foam', ux, uy); continue; }
+      if (d.def.mass === 'light' && !d.solid) {
+        this._launch(d, ux, uy, 4 + force * 0.14, 2.2 + force * 0.05, true);
+      } else if (d.def.tall && !d.fall && force > 22) {
+        this.topple(d, ux, uy, 0.05);
+      }
+    }
+    // Debris on the floor is thrown again.
+    for (const b of this.debris) {
+      const r = dist(x, y, b.x, b.y);
+      if (r >= radius || b.jet) continue;
+      const k = 1 - r / radius, L = r || 1;
+      b.vx += ((b.x - x) / L) * (3 + damage * 0.12 * k);
+      b.vy += ((b.y - y) / L) * (3 + damage * 0.12 * k);
+      b.vz = Math.max(b.vz, 2 + damage * 0.05 * k);
+      b.rollRate = (this.rng() - 0.5) * 30;
+      b.rest = false;
     }
   }
 
@@ -348,18 +517,13 @@ export class Props {
 
   breakProp(d, how, fx, fy) {
     const def = d.def, g = this.g, lv = g.level, m = MAT[def.mat];
+    if (d.broken) return;
     d.broken = true; d.hp = 0; d.shake = 0;
-    const wasSolid = d.solid;
-    d.solid = false;
-    const i = this._cell(d);
-    if (wasSolid) {
-      let h = 0, any = false;
-      for (const o of this.grid.get(i) || []) if (o !== d && o.solid && !o.broken) { any = true; h = Math.max(h, o.z + o.h); }
-      if (!any) { lv.propBlock[i] = 0; lv.propH[i] = 0; } else lv.propH[i] = h;
-    }
-    if (d.fixture) { lv.fixture[i] = 0; lv.fixtureUsed[i] = 1; }
+    this._clearBlock(d);
+    if (d.fixture) { const i = lv.idx(d.x, d.y); lv.fixture[i] = 0; lv.fixtureUsed[i] = 1; }
+    if (d.flying) this._unfly(d, false);
 
-    const x = d.x, y = d.y, zc = d.z + d.h * 0.55;
+    const x = d.hx, y = d.hy, zc = d.z + d.h * 0.55;
     const pan = g.panAt(x, y);
     g.sound.sfx(m.brk || 'wood_break', { pan, rate: m.brkRate || 1 });
     if (def.glass) g.sound.sfx('glass_break', { pan, vol: 0.9 });
@@ -369,6 +533,7 @@ export class Props {
       g.particles.smoke(x, y, zc, 6, 0.6);
       g.particles.sparks(x, y, zc + 0.1, 16, 2.4, [150, 220, 255], 7);
     }
+    if (def.toner) g.particles.smoke(x, y, zc, 14, 0.9, [24, 22, 26]);
     if (def.papers) this.papers(x, y, d.z + d.h * 0.7, def.papers, 1);
     if (def.coins) for (let k = 0; k < def.coins; k++) this._coin(x, y, zc, 25);
     if (def.foam) this._foam(x, y, zc, def.foam);
@@ -382,23 +547,492 @@ export class Props {
       this.spouts.push({ x, y, z: d.z + 0.15, t: def.geyser, T: def.geyser });
       g.sound.sfx('water_burst', { pan });
     }
+    if (def.bloody) {
+      g.particles.blood(x, y, zc, 26, 0, 0);
+      g.addDecal(x, y, 'gore');
+      g.sound.sfx('splat', { pan });
+    }
+    if (def.embers) g.particles.embers(x, y, zc, 12, 0.6);
     if (m.dust) g.particles.dust(x, y, zc, 6);
     if (def.loot && g.rng() < def.loot) this._loot(x, y);
     if (how === 'blast' || how === 'crash') g.shake = Math.max(g.shake, 0.9);
-
-    // What is left. The original picture, cut down.
-    const src = g.art.sprites[d.key];
-    if (src) {
-      d.altFrame = wreckFrame(src, def.wreck || 0.32, def.mat, (Math.imul(i, 2654435761) ^ 0x9e37) >>> 0);
-      d.altH = d.h * (d.altFrame.h / src.h);
-      if (d.kind === 'urinal') d.z = 0;
-      d._spr = undefined;
+    if (def.debris) this._throwDebris(d, def.debris, how, fx, fy);
+    if (def.arc) this._arc(d, def.arc);
+    if (def.boom) {
+      // fuel, or a bottle of it: it goes up a beat after it breaks
+      g.after(0.08, () => {
+        g.sound.sfx('barrel_explode', { pan: g.panAt(x, y) });
+        g.explodeAt(x, y, 0.45, def.boom.r, def.boom.dmg);
+        g.particles.embers(x, y, 0.5, 24, 1.2);
+      });
     }
+
+    // What is left. The studio has a wreck of everything it models; the rest
+    // is the old picture cut down.
+    const st = this.studio;
+    if (!(st && st.has(d.kind))) {
+      const src = g.art.sprites[d.key];
+      if (src) {
+        d.altFrame = wreckFrame(src, def.wreck || 0.32, def.mat, (Math.imul(d._cell | 0, 2654435761) ^ 0x9e37) >>> 0);
+        d.altH = d.h * (d.altFrame.h / src.h);
+        if (d.kind === 'urinal') d.z = 0;
+      }
+    }
+    d._spr = undefined; d._fk = null;
+    // A wreck is low enough to shoot over.
+    d.h = Math.min(d.h, d.h0 * 0.45);
     if (def.cash) {
       g.levelDamage = (g.levelDamage || 0) + def.cash;
       g.hud.popup(`DAMAGES  $${def.cash}`, { size: 9, life: 1.2, y: -58, dy: -10, color: rgba(255, 196, 90, 255) });
     }
     g.onPropBroken(d, how);
+  }
+
+  /** The cell stops blocking bodies when what blocked it is gone or lying down. */
+  _clearBlock(d) {
+    if (!d.solid) return;
+    const lv = this.g.level;
+    d.solid = false;
+    const i = lv.idx(d.x, d.y);
+    let h = 0, any = false;
+    for (const o of this.grid.get(i) || []) if (o !== d && o.solid && !o.broken) { any = true; h = Math.max(h, o.z + o.h); }
+    if (!any) { lv.propBlock[i] = 0; lv.propH[i] = 0; } else lv.propH[i] = h;
+  }
+
+  /** Parts of it across the floor, thrown away from whatever did it. */
+  _throwDebris(d, list, how, fx, fy) {
+    const rng = this.rng;
+    const hard = how === 'blast' || how === 'crash' || how === 'crush';
+    let ax = d.hx - (fx === undefined ? d.hx : fx), ay = d.hy - (fy === undefined ? d.hy : fy);
+    const L = Math.hypot(ax, ay);
+    if (L > 0.01) { ax /= L; ay /= L; } else { ax = 0; ay = 0; }
+    for (const [piece, n, fin] of list) {
+      for (let k = 0; k < n; k++) {
+        const a = rng() * TAU, s = randRange(rng, 0.8, hard ? 4.5 : 2.4);
+        this.spawnDebris(piece, fin || 0, d.hx + (rng() - 0.5) * 0.3, d.hy + (rng() - 0.5) * 0.3, d.z + d.h * randRange(rng, 0.3, 0.8),
+          Math.cos(a) * s + ax * 1.6, Math.sin(a) * s + ay * 1.6, randRange(rng, 1.5, hard ? 5.5 : 3.5));
+      }
+    }
+  }
+
+  /** A loose part: a plank, a drawer, a can. It falls, bounces, spins and stays. */
+  spawnDebris(piece, variant, x, y, z, vx, vy, vz, o = {}) {
+    if (this.debris.length >= CAP_DEBRIS) {
+      let k = this.debris.findIndex((b) => b.rest);
+      if (k < 0) k = 0;
+      this.debris.splice(k, 1);
+    }
+    const rng = this.rng;
+    const b = {
+      piece, v: variant, x, y, z, vx, vy, vz, yaw: rng() * TAU, spin: (rng() - 0.5) * 16,
+      roll: rng() * TAU, rollRate: (rng() - 0.5) * 26, rest: false, age: 0, bounced: 0, ...o,
+    };
+    this.debris.push(b);
+    return b;
+  }
+
+  /** Mains voltage looking for the floor through whoever is nearest. */
+  _arc(d, radius) {
+    const g = this.g, rng = this.rng;
+    const x = d.hx, y = d.hy, z = d.z + d.h * 0.6;
+    g.sound.sfx('zap_arc', { pan: g.panAt(x, y) });
+    let hits = 0;
+    for (const e of g.enemies) {
+      if (!e.alive || hits >= 4) continue;
+      const r = dist(x, y, e.x, e.y);
+      if (r > radius) continue;
+      hits++;
+      // the bolt: a ragged line of sparks
+      const n = Math.ceil(r * 8);
+      for (let k = 0; k <= n; k++) {
+        const t = k / Math.max(1, n);
+        g.particles.spawn({
+          x: x + (e.x - x) * t + (rng() - 0.5) * 0.12, y: y + (e.y - y) * t + (rng() - 0.5) * 0.12,
+          z: z + (e.z + e.height * 0.5 - z) * t + (rng() - 0.5) * 0.12,
+          life: randRange(rng, 0.12, 0.3), size: 0.06, r: 170, g: 220, b: 255, drag: 0, grav: 0, additive: true,
+        });
+      }
+      const killed = e.hurt(45, g, x, y);
+      g.hud.hitMark(killed);
+      g.particles.sparks(e.x, e.y, e.z + e.height * 0.5, 12, 2, [170, 220, 255], 5);
+      if (killed) g.hud.popup('ELECTROCUTED', { size: 12, life: 1.2, color: rgba(150, 220, 255, 255) });
+    }
+    const p = g.player;
+    if (!p.dead && dist(x, y, p.x, p.y) < radius * 0.6) p.hurt(8, g, 'arc');
+    g.particles.smoke(x, y, z, 8, 0.6, [40, 40, 46]);
+  }
+
+  // ---------------------------------------------------------- motion
+
+  /** Push a light prop along the floor (and a little into the air). */
+  shove(d, ux, uy, speed, hop = 0) {
+    if (d.flying) {
+      d.mv.vx += ux * speed; d.mv.vy += uy * speed;
+      return;
+    }
+    this._launch(d, ux, uy, speed, hop, false);
+  }
+
+  /**
+   * Set a prop moving: kicked, blasted or shot. `tumble` sends it end over end;
+   * without it, it slides and spins where it stands.
+   */
+  _launch(d, ux, uy, speed, vz, tumble) {
+    const g = this.g;
+    if (d.broken || d.gone) return;
+    if (!d.flying) {
+      this._gridDel(d);
+      d.flying = true;
+      d.mv = { vx: 0, vy: 0, vz: 0, hit: new Set(), tumble: false };
+      this.flying.push(d);
+    }
+    const rng = this.rng;
+    d.mv.vx += ux * speed + (rng() - 0.5) * speed * 0.15;
+    d.mv.vy += uy * speed + (rng() - 0.5) * speed * 0.15;
+    d.mv.vz = Math.max(d.mv.vz, vz);
+    d.mv.tumble = d.mv.tumble || !!tumble;
+    d.spin += (rng() - 0.5) * (4 + speed * 1.6);
+    if (tumble) d.rollRate = (rng() < 0.5 ? -1 : 1) * (6 + speed * 1.4);
+    d.lift = Math.max(d.lift, 0.01);
+    if (speed > 6 && g.time - (this._launchSnd || -9) > 0.1) {
+      this._launchSnd = g.time;
+      g.sound.sfx(MAT[d.def.mat].hit, { pan: g.panAt(d.x, d.y), rate: 1.2 });
+    }
+  }
+
+  /** Kicked: a chair, a cone, a bin, hoofed across the room, hurting what it meets. */
+  _kickFly(d, ca, sa) {
+    const g = this.g;
+    this._launch(d, ca, sa, d.def.roll ? 7 : 11, d.def.roll ? 0.6 : 3.6, !d.def.roll);
+    if (d.def.roll) d.yaw = Math.atan2(sa, ca);
+    g.sound.sfx('kick_hit', { pan: g.panAt(d.x, d.y) });
+    g.particles.effect({
+      x: d.x, y: d.y, z: d.z + 0.3, keys: ['kick_impact0', 'kick_impact1', 'kick_impact2'], fps: 18, size: 0.9, alpha: 0.8,
+    });
+    const word = { cone: 'CONED', chair: 'CHAIR TOSS', coatrack: 'COAT CHECK', spool: 'ROLL OUT', tvcart: 'TV DINNER', plant: 'REPOTTED', mop: 'MOPPED' }[d.kind] || 'HEADS UP';
+    g.hud.popup(word, { size: 11, life: 0.9, y: -30, color: rgba(255, 208, 72, 255) });
+    g.chat('brick', 'brick_smash', { chance: 0.25, cooldown: 12 });
+  }
+
+  _fly(d, dt) {
+    const g = this.g, lv = g.level, mv = d.mv, def = d.def;
+    mv.vz -= 9.8 * dt;
+    d.lift += mv.vz * dt;
+    let landed = false;
+    const rolling = def.roll;
+    if (d.lift <= 0) {
+      d.lift = 0;
+      if (mv.vz < -1.8) {
+        mv.vz = -mv.vz * 0.32;
+        g.sound.sfx(MAT[def.mat].hit, { pan: g.panAt(d.x, d.y), vol: 0.6, rate: 0.9 });
+        if (mv.tumble) d.rollRate *= 0.6;
+      } else { mv.vz = 0; landed = true; }
+      const f = Math.exp(-(rolling ? 0.7 : 2.6) * dt);
+      mv.vx *= f; mv.vy *= f;
+      d.spin *= Math.exp(-3 * dt);
+    }
+    // tumbling: settle upright once it is on the floor and slow
+    if (mv.tumble) {
+      d.roll += d.rollRate * dt;
+      if (d.lift <= 0.001) {
+        const target = Math.round(d.roll / TAU) * TAU;
+        d.roll += (target - d.roll) * (1 - Math.exp(-10 * dt));
+        d.rollRate *= Math.exp(-6 * dt);
+      }
+    }
+    d.yaw += d.spin * dt;
+    const nx = d.x + mv.vx * dt, ny = d.y + mv.vy * dt;
+    const speed = Math.hypot(mv.vx, mv.vy);
+    if (lv.blocked(nx, ny)) {
+      // A hard stop at speed finishes it; a soft one just turns it round.
+      if (speed > 6.5 && def.hp !== Infinity && d.kind !== 'cone' && d.kind !== 'spool') {
+        this._unfly(d, false);
+        this.hit(d, 999, d.x, d.y, d.z + 0.3, 'crash');
+        return;
+      }
+      if (lv.blocked(nx, d.y)) mv.vx *= -0.4;
+      if (lv.blocked(d.x, ny)) mv.vy *= -0.4;
+      if (speed > 2) g.sound.sfx(MAT[def.mat].hit, { pan: g.panAt(d.x, d.y), vol: 0.5 });
+      d.spin += (this.rng() - 0.5) * 8;
+    } else { d.x = nx; d.y = ny; }
+    d.hx = d.x; d.hy = d.y;
+
+    if (speed > 2.5) {
+      for (const e of g.enemies) {
+        if (!e.alive || mv.hit.has(e)) continue;
+        if (dist(d.x, d.y, e.x, e.y) > e.radius + 0.35) continue;
+        if (d.lift > e.height) continue;
+        mv.hit.add(e);
+        const died = e.hurt((def.thud || 8) * clamp(speed / 7, 0.6, 1.8), g, d.x - mv.vx, d.y - mv.vy);
+        e.shove(mv.vx / (speed || 1), mv.vy / (speed || 1), rolling ? 6 : 3, rolling ? 1 : 0.5);
+        g.sound.sfx('kick_hit', { pan: g.panAt(e.x, e.y), rate: 1.2 });
+        g.particles.blood(e.x, e.y, e.z + e.height * 0.5, 5, mv.vx, mv.vy);
+        g.hud.hitMark(died);
+        if (died && rolling) g.hud.popup('BOWLED OVER', { size: 12, life: 1, color: rgba(255, 208, 72, 255) });
+        if (!rolling) { mv.vx *= 0.35; mv.vy *= 0.35; }
+      }
+      // the player can be clipped by his own furniture, a little
+      const p = g.player;
+      if (!p.dead && !mv.hitP && d.lift < 0.6 && dist(d.x, d.y, p.x, p.y) < 0.4 && speed > 5 && !mv.fromPlayer) {
+        mv.hitP = true;
+        p.hurt(4, g, 'furniture');
+      }
+    }
+    if (landed && speed < 0.35 && Math.abs(d.rollRate) < 1 && d.lift <= 0) this._unfly(d, true);
+  }
+
+  _unfly(d, settle) {
+    const k = this.flying.indexOf(d);
+    if (k >= 0) this.flying.splice(k, 1);
+    d.flying = false; d.lift = 0; d.mv = null; d.roll = 0; d.rollRate = 0; d.spin = 0;
+    d.hx = d.x; d.hy = d.y;
+    if (settle && !d.broken) this._gridAdd(d);
+  }
+
+  /**
+   * Tip it over. Backed against a wall it comes forward, into the room;
+   * standing on its own it goes the way it was pushed. `delay` is how long
+   * it rocks first (a kick gives whoever did it a moment to step back).
+   */
+  topple(d, ux, uy, delay = 0) {
+    const g = this.g, def = d.def;
+    if (d.fall || d.broken || d.gone || !def.tall) return;
+    const backed = d.wall || def.tall === true && d.solid && this._backed(d);
+    if (!backed && (ux || uy)) d.yaw = Math.atan2(uy, ux);
+    d.fall = { t: -delay, ang: 0, vel: 0, dir: d.yaw, landed: false };
+    d.shake = Math.max(d.shake, delay + 0.2);
+    g.sound.sfx('creak_topple', { pan: g.panAt(d.x, d.y) });
+    if (delay > 0.2) g.hud.popup('TIMBER', { size: 12, life: 0.9, y: -40, color: rgba(255, 208, 72, 255) });
+  }
+
+  _backed(d) {
+    const lv = this.g.level;
+    const bx = d.x - Math.cos(d.yaw) * 0.6, by = d.y - Math.sin(d.yaw) * 0.6;
+    return lv.blocked(bx, by);
+  }
+
+  _fall(d, dt) {
+    const g = this.g, f = d.fall, def = d.def;
+    f.t += dt;
+    if (f.t < 0) return;
+    // it goes slowly, then all at once
+    f.vel += (4 + 10 * Math.sin(f.ang + 0.2)) * dt;
+    f.ang += f.vel * dt;
+    if (f.ang >= HALF_PI) {
+      f.ang = HALF_PI;
+      if (!f.landed) this._land(d);
+    }
+    d.pose = Math.min(4, Math.round(f.ang / HALF_PI * 4));
+    if (f.t === 0 || d.pose === 1) this._clearBlock(d);
+  }
+
+  /** It lands: the floor shakes, and whatever it landed on is under it. */
+  _land(d) {
+    const g = this.g, f = d.fall, def = d.def, lv = g.level;
+    f.landed = true;
+    this._clearBlock(d);
+    const ux = Math.cos(f.dir), uy = Math.sin(f.dir);
+    const front = (g.art.props && g.art.props.models[d.kind] && g.art.props.models[d.kind].front) || 0.2;
+    const len = d.h0;
+    // the footprint lying down: from its front edge out to where its top came down
+    const px = d.x + ux * front, py = d.y + uy * front;
+    const cx = px + ux * len * 0.5, cy = py + uy * len * 0.5;
+    this._gridDel(d);
+    d.hx = cx; d.hy = cy; d.hr = len * 0.5;
+    d.h = Math.min(d.h0, front * 2 + 0.05);
+    this._gridAdd(d);
+    const heavy = (def.crush || 40) >= 80;
+    g.sound.sfx(heavy ? 'crash_heavy' : MAT[def.mat].brk || 'wood_break', { pan: g.panAt(cx, cy) });
+    g.shake = Math.max(g.shake, heavy ? 1.6 : 0.8);
+    g.particles.dust(cx, cy, 0.1, heavy ? 10 : 5);
+    this._chips(cx, cy, 0.1, 8, MAT[def.mat], 2.8);
+    const within = (x, y, r = 0) => {
+      const ax = x - px, ay = y - py;
+      const along = ax * ux + ay * uy, perp = Math.abs(-ax * uy + ay * ux);
+      return along > -0.15 && along < len + 0.2 && perp < 0.32 + r;
+    };
+    let flat = 0;
+    for (const e of g.enemies) {
+      if (!e.alive || !within(e.x, e.y, e.radius)) continue;
+      const killed = e.hurt(def.crush || 40, g, px, py);
+      g.hud.hitMark(killed);
+      g.particles.blood(e.x, e.y, 0.2, 18, ux, uy);
+      if (killed) {
+        flat++;
+        if (!e.def.boss) g.gore.blast(e, e.x - ux * 0.3, e.y - uy * 0.3, e.z + e.height, 60, CRUSH_GORE, true);
+        g.addDecal(e.x, e.y, e.def.mutant ? 'gore' : 'blood');
+      }
+    }
+    if (flat) {
+      g.hud.popup(flat > 1 ? `FLATTENED x${flat}` : 'FLATTENED', { size: 15, life: 1.6, color: rgba(255, 110, 70, 255) });
+      g.sound.sfx('splat', { pan: g.panAt(cx, cy) });
+      g.chat('brick', 'brick_smash', { cooldown: 5 });
+      if (g.bumpStreak) g.bumpStreak(flat);
+    }
+    const p = g.player;
+    if (!p.dead && within(p.x, p.y, 0.1)) {
+      p.hurt(Math.min(30, (def.crush || 40) * 0.25), g, 'furniture');
+      g.hud.popup(`CRUSHED BY ${def.name}`, { size: 12, life: 1.6, color: rgba(255, 74, 62, 255) });
+    }
+    // it lands on the rest of the furniture too
+    for (const o of lv.decor) {
+      if (o === d || !o.def || o.broken || o.gone || o.def.hp === Infinity) continue;
+      if (within(o.hx, o.hy)) this.hit(o, def.crush || 40, o.hx, o.hy, 0.2, 'crush', ux, uy);
+    }
+    // what was in it comes out
+    if (def.papers) this.papers(cx, cy, 0.2, Math.ceil(def.papers * 0.5), 1);
+    if (d.kind === 'vending' && d.stock > 0) {
+      for (let k = 0; k < d.stock + 2; k++) this._spawnCan(cx, cy, 0.3, true);
+      d.stock = 0;
+    }
+    if (d.kind === 'bookshelf' || d.kind === 'shelving') this._throwDebris(d, d.kind === 'bookshelf' ? [['book', 8, 0]] : [['can', 3, 0], ['plank', 2, 4]], 'crash', d.x, d.y);
+    if (d.kind === 'candelabra') g.particles.embers(cx, cy, 0.2, 14, 0.7);
+    d.hp = Math.min(d.hp, def.hp * 0.45);
+    d._fk = null;
+  }
+
+  // ------------------------------------------------------------ vents and jets
+
+  /** A hole in something under pressure. */
+  _vent(d, dx, dy) {
+    const g = this.g, def = d.def;
+    d.vented = true;
+    if (def.vent === 'foam') {
+      // The extinguisher takes off on its own foam.
+      this._jetFrom(d, 'foam', dx, dy);
+      return;
+    }
+    if (def.vent === 'gas') {
+      // One bottle goes: either it screams off across the room, or it stands
+      // there hissing fire until it gives the rest of them a reason.
+      g.sound.sfx('gas_hiss', { pan: g.panAt(d.x, d.y) });
+      d.state = 'hurt';
+      d._fk = null;
+      if (this.rng() < 0.55) {
+        this._jet('gas', d.hx, d.hy, 0.35, d.yaw + (this.rng() - 0.5) * 1.6, 0);
+        g.hud.popup('BOTTLE ROCKET', { size: 12, life: 1.1, color: rgba(255, 180, 60, 255) });
+      } else {
+        this.spouts.push({ x: d.hx + Math.cos(d.yaw) * 0.2, y: d.hy + Math.sin(d.yaw) * 0.2, z: 0.5, t: 1.6, T: 1.6, fire: true, d });
+      }
+    }
+  }
+
+  /** A prop becomes a rocket: it is gone from where it stood and in the air as a piece. */
+  _jetFrom(d, kind, dx, dy) {
+    const g = this.g;
+    d.gone = true; d.broken = true;
+    this._gridDel(d);
+    this._clearBlock(d);
+    d._fk = null; d._spr = undefined;
+    const a = (dx || dy) ? Math.atan2(dy, dx) + (this.rng() - 0.5) * 1.2 : this.rng() * TAU;
+    this._jet(kind, d.hx, d.hy, 0.15, a, kind === 'foam' ? 3 : 1);
+    g.hud.popup(kind === 'foam' ? 'FOAM ROCKET' : 'BOTTLE ROCKET', { size: 12, life: 1.1, color: rgba(255, 208, 72, 255) });
+  }
+
+  _jet(kind, x, y, z, ang, variant) {
+    const g = this.g;
+    const b = this.spawnDebris('bottle', variant, x, y, z, Math.cos(ang) * 3, Math.sin(ang) * 3, 2.5, {
+      jet: { kind, t: kind === 'gas' ? 1.5 : 2.2, ang, snd: 0 },
+    });
+    b.yaw = ang;
+    b.rollRate = (this.rng() - 0.5) * 20;
+    g.sound.sfx(kind === 'gas' ? 'gas_hiss' : 'foam_spray', { pan: g.panAt(x, y) });
+    this.jets.push(b);
+    return b;
+  }
+
+  _updateJet(b, dt) {
+    const g = this.g, j = b.jet, rng = this.rng;
+    j.t -= dt;
+    // thrust along where the nozzle points, which wanders
+    j.ang += (rng() - 0.5) * 9 * dt;
+    const thrust = j.kind === 'gas' ? 26 : 16;
+    b.vx += Math.cos(j.ang) * thrust * dt;
+    b.vy += Math.sin(j.ang) * thrust * dt;
+    b.vz += (j.kind === 'gas' ? 7 : 5) * dt;
+    const sp = Math.hypot(b.vx, b.vy), cap = j.kind === 'gas' ? 9 : 7;
+    if (sp > cap) { b.vx *= cap / sp; b.vy *= cap / sp; }
+    b.yaw = j.ang;
+    // the plume
+    const bx = b.x - Math.cos(j.ang) * 0.2, by = b.y - Math.sin(j.ang) * 0.2;
+    if (j.kind === 'gas') {
+      g.particles.spawn({ x: bx, y: by, z: b.z + 0.05, vx: -Math.cos(j.ang) * 3, vy: -Math.sin(j.ang) * 3, vz: 0.4,
+        life: 0.35, size: 0.14, r: 255, g: 160 + (rng() * 60) | 0, b: 50, drag: 2, grav: -1, additive: true, grow: 0.4 });
+      if (rng() < 0.5) g.particles.smoke(bx, by, b.z, 1, 0.4);
+    } else {
+      for (let q = 0; q < 2; q++) {
+        g.particles.spawn({ x: bx, y: by, z: b.z + 0.05, vx: -Math.cos(j.ang) * 2.5 + (rng() - 0.5), vy: -Math.sin(j.ang) * 2.5 + (rng() - 0.5), vz: 0.2,
+          life: 1.2, size: 0.18, r: 246, g: 246, b: 240, drag: 1.4, grav: 1.2, additive: false, grow: 0.5, fadePow: 1.2 });
+      }
+    }
+    j.snd -= dt;
+    if (j.snd <= 0) { j.snd = 0.7; g.sound.sfx(j.kind === 'gas' ? 'gas_hiss' : 'foam_spray', { pan: g.panAt(b.x, b.y), vol: 0.7 }); }
+    // it hits people
+    for (const e of g.enemies) {
+      if (!e.alive || (b._hitE && b._hitE.has(e))) continue;
+      if (dist(b.x, b.y, e.x, e.y) > e.radius + 0.25 || b.z > e.height + 0.2) continue;
+      (b._hitE || (b._hitE = new Set())).add(e);
+      const killed = e.hurt(j.kind === 'gas' ? 30 : 22, g, b.x, b.y);
+      e.shove(b.vx, b.vy, 5, 1);
+      g.sound.sfx('kick_hit', { pan: g.panAt(e.x, e.y), rate: 1.3 });
+      g.hud.hitMark(killed);
+      if (j.kind === 'gas') { j.t = 0; break; }
+    }
+    if (j.t <= 0) {
+      b.jet = null;
+      const k = this.jets.indexOf(b);
+      if (k >= 0) this.jets.splice(k, 1);
+      if (j.kind === 'gas') {
+        g.sound.sfx('barrel_explode', { pan: g.panAt(b.x, b.y) });
+        g.explodeAt(b.x, b.y, Math.max(0.3, b.z), 2.8, 75);
+        const i = this.debris.indexOf(b);
+        if (i >= 0) this.debris.splice(i, 1);
+      } else {
+        this._foam(b.x, b.y, b.z + 0.1, 30);
+        g.particles.smoke(b.x, b.y, b.z, 6, 0.8, [230, 230, 226]);
+        b.rollRate = 0;
+      }
+    }
+  }
+
+  _updateDebris(dt) {
+    const g = this.g, lv = g.level, D = this.debris;
+    for (let i = D.length - 1; i >= 0; i--) {
+      const b = D[i];
+      if (b.jet) this._updateJet(b, dt);
+      if (b.rest) { b.age += dt; continue; }
+      b.vz -= 9.8 * dt;
+      b.z += b.vz * dt;
+      const nx = b.x + b.vx * dt, ny = b.y + b.vy * dt;
+      if (lv.blocked(nx, ny)) {
+        if (lv.blocked(nx, b.y)) b.vx *= -0.45;
+        if (lv.blocked(b.x, ny)) b.vy *= -0.45;
+        if (b.jet) b.jet.ang = Math.atan2(b.vy, b.vx) + (this.rng() - 0.5) * 0.8;
+      } else { b.x = nx; b.y = ny; }
+      if (b.z > 1.25) { b.z = 1.25; b.vz = -Math.abs(b.vz) * 0.4; }
+      b.yaw += b.spin * dt;
+      b.roll += b.rollRate * dt;
+      if (b.z <= 0) {
+        b.z = 0;
+        if (b.vz < -1.4) {
+          b.vz = -b.vz * 0.3;
+          b.rollRate *= 0.5;
+          if (b.bounced++ < 2 && g.time - this._snd > 0.04) {
+            this._snd = g.time;
+            const sfx = b.piece === 'can' ? 'can_clunk' : b.piece === 'glass' || b.piece === 'tile' ? 'coin_clink' : b.piece === 'meat' ? 'meat_thud'
+              : b.piece === 'plank' || b.piece === 'book' ? 'wood_hit' : 'metal_hit';
+            g.sound.sfx(sfx, { pan: g.panAt(b.x, b.y), vol: 0.35, rate: 1.2 });
+          }
+        } else b.vz = 0;
+        const f = Math.exp(-4 * dt);
+        b.vx *= f; b.vy *= f; b.spin *= f;
+        // come to rest lying flat
+        const target = Math.round(b.roll / Math.PI) * Math.PI;
+        b.roll += (target - b.roll) * (1 - Math.exp(-12 * dt));
+        b.rollRate *= Math.exp(-8 * dt);
+        if (!b.jet && Math.hypot(b.vx, b.vy) < 0.15 && Math.abs(b.vz) < 0.1) { b.rest = true; b.roll = target; }
+      }
+    }
   }
 
   _foam(x, y, z, n) {
@@ -422,6 +1056,30 @@ export class Props {
         life: randRange(rng, 0.6, 1.3), size: randRange(rng, 0.03, 0.08),
         r: 150, g: 196, b: 238, drag: 0.5, grav: 9, additive: false, hard: true, fadePow: 0.5,
       });
+    }
+  }
+
+  _flame(s, dt) {
+    const g = this.g, P = g.particles, rng = this.rng;
+    const n = Math.ceil(dt * 70);
+    const a = s.d ? s.d.yaw : 0;
+    for (let i = 0; i < n; i++) {
+      const sp = randRange(rng, 1.5, 3.2);
+      P.spawn({
+        x: s.x, y: s.y, z: s.z, vx: Math.cos(a) * sp + (rng() - 0.5), vy: Math.sin(a) * sp + (rng() - 0.5), vz: randRange(rng, 0.2, 1.2),
+        life: randRange(rng, 0.25, 0.5), size: randRange(rng, 0.08, 0.16),
+        r: 255, g: 150 + (rng() * 80) | 0, b: 40, drag: 1.6, grav: -1.5, additive: true, grow: 0.5,
+      });
+    }
+    // anything standing in the jet cooks
+    for (const e of g.enemies) {
+      if (!e.alive) continue;
+      const ax = e.x - s.x, ay = e.y - s.y;
+      const along = ax * Math.cos(a) + ay * Math.sin(a), perp = Math.abs(-ax * Math.sin(a) + ay * Math.cos(a));
+      if (along > 0 && along < 1.6 && perp < 0.4) {
+        const killed = e.hurt(40 * dt, g, s.x, s.y);
+        if (killed) g.hud.hitMark(true);
+      }
     }
   }
 
@@ -550,9 +1208,9 @@ export class Props {
     const ca = Math.cos(p.ang), sa = Math.sin(p.ang);
     let best = null, bs = Infinity;
     for (const d of lv.decor || []) {
-      if (!d.def || d.broken || d.flying || !want(d)) continue;
-      const dx = d.x - p.x, dy = d.y - p.y, r = Math.hypot(dx, dy);
-      if (r > range) continue;
+      if (!d.def || d.broken || d.flying || d.gone || !want(d)) continue;
+      const dx = d.hx - p.x, dy = d.hy - p.y, r = Math.hypot(dx, dy);
+      if (r > range + (d.hr > 0.3 ? d.hr - 0.26 : 0)) continue;
       const c = (dx * ca + dy * sa) / (r || 1);
       if (c < cosArc && r > 0.55) continue;
       const s = r - c;
@@ -576,9 +1234,26 @@ export class Props {
     g.input.rumble(0.5, 0.35, 110);
     if (def.hp === Infinity) { this._shrug(d, d.x, d.y, d.z + d.h * 0.5); return true; }
 
-    if (def.kick === 'fly') { this._launch(d, ca, sa); return true; }
+    if (def.kick === 'jet') {
+      g.sound.sfx('kick_hit', { pan: g.panAt(d.x, d.y) });
+      this._jetFrom(d, 'foam', ca, sa);
+      return true;
+    }
+    if (def.kick === 'fly' && !d.solid) { this._kickFly(d, ca, sa); if (d.mv) d.mv.fromPlayer = true; return true; }
     g.sound.sfx('kick_hit', { pan: g.panAt(d.x, d.y), vol: 0.8 });
-    this.hit(d, def.kick, d.x - ca * 0.2, d.y - sa * 0.2, d.z + d.h * 0.5, 'kick');
+    // Tall things rock, and the second boot (or a weak one) sends them over.
+    if (def.tall && !d.fall) {
+      d.rock++;
+      if (def.tall === 'flip' || d.rock >= 2 || d.hp < def.hp * 0.5 || !d.solid) {
+        this.topple(d, ca, sa, def.tall === 'flip' ? 0 : 0.35);
+        this.hit(d, def.kick * 0.5, d.hx - ca * 0.2, d.hy - sa * 0.2, d.z + d.h * 0.5, 'kick', ca, sa);
+        if (def.tall === 'flip') g.hud.popup('TABLE FLIP', { size: 12, life: 1, color: rgba(255, 208, 72, 255) });
+        return true;
+      }
+      d.shake = 0.6;
+      g.sound.sfx('creak_topple', { pan: g.panAt(d.x, d.y), vol: 0.6, rate: 1.2 });
+    }
+    this.hit(d, def.kick, d.hx - ca * 0.2, d.hy - sa * 0.2, d.z + d.h * 0.5, 'kick', ca, sa);
     if (d.broken) return true;
 
     // The rest is what kicking each one does that shooting it does not.
@@ -593,100 +1268,23 @@ export class Props {
       } else if (d.stock <= 0) g.hud.popup('EMPTY', { size: 10, life: 0.9, y: -30, color: rgba(255, 74, 62, 255) });
     } else if (d.kind === 'locker' && !d.opened && g.rng() < 0.3) {
       this._openLocker(d);
-    } else if (d.kind === 'filing' || d.kind === 'desk') {
+    } else if (d.kind === 'filing' || d.kind === 'desk' || d.kind === 'bookshelf') {
       this.papers(d.x, d.y, d.z + d.h * 0.8, 6, 0.8);
       g.sound.sfx('paper_flurry', { pan: g.panAt(d.x, d.y), vol: 0.6 });
     } else if (d.kind === 'cooler') {
       this._spray(d.x, d.y, d.z + 0.4, 8, 0.8);
       g.sound.sfx('water_burst', { pan: g.panAt(d.x, d.y), vol: 0.4 });
-    } else if (d.kind === 'plant') {
-      d.shake = 0.5;
+    } else if (d.kind === 'gascyl' && !d.vented && g.rng() < 0.35) {
+      this._vent(d, ca, sa);
     }
     return true;
-  }
-
-  /** A chair, a cone, a bin: hoofed across the room, hurting what it meets. */
-  _launch(d, ca, sa) {
-    const g = this.g;
-    this._gridDel(d);
-    d.flying = true;
-    const speed = 11;
-    d.mv = { vx: ca * speed + (this.rng() - 0.5) * 1.6, vy: sa * speed + (this.rng() - 0.5) * 1.6, vz: 3.6, hit: new Set(), ground: d.z };
-    d.lift = 0.02;
-    this.flying.push(d);
-    g.sound.sfx('kick_hit', { pan: g.panAt(d.x, d.y) });
-    g.sound.sfx(MAT[d.def.mat].hit, { pan: g.panAt(d.x, d.y), rate: 1.2 });
-    g.particles.effect({
-      x: d.x, y: d.y, z: d.z + 0.3, keys: ['kick_impact0', 'kick_impact1', 'kick_impact2'], fps: 18, size: 0.9, alpha: 0.8,
-    });
-    g.hud.popup(d.kind === 'cone' ? 'CONED' : d.kind === 'chair' ? 'CHAIR TOSS' : 'HEADS UP', { size: 11, life: 0.9, y: -30, color: rgba(255, 208, 72, 255) });
-    g.chat('brick', 'brick_smash', { chance: 0.25, cooldown: 12 });
-  }
-
-  _fly(d, dt) {
-    const g = this.g, lv = g.level, mv = d.mv, def = d.def;
-    mv.vz -= 9.8 * dt;
-    d.lift += mv.vz * dt;
-    let landed = false;
-    if (d.lift <= 0) {
-      d.lift = 0;
-      if (mv.vz < -1.8) {
-        mv.vz = -mv.vz * 0.32;
-        g.sound.sfx(MAT[def.mat].hit, { pan: g.panAt(d.x, d.y), vol: 0.6, rate: 0.9 });
-      } else { mv.vz = 0; landed = true; }
-      const f = Math.exp(-2.6 * dt);
-      mv.vx *= f; mv.vy *= f;
-    }
-    const nx = d.x + mv.vx * dt, ny = d.y + mv.vy * dt;
-    const speed = Math.hypot(mv.vx, mv.vy);
-    if (lv.blocked(nx, ny)) {
-      // A hard stop at speed finishes it; a soft one just turns it round.
-      if (speed > 5 && def.hp !== Infinity && d.kind !== 'cone') {
-        d.flying = false;
-        d.broken = false;
-        this._unfly(d, false);
-        this.hit(d, 999, d.x, d.y, d.z + 0.3, 'crash');
-        return;
-      }
-      if (lv.blocked(nx, d.y)) mv.vx *= -0.35;
-      if (lv.blocked(d.x, ny)) mv.vy *= -0.35;
-    } else { d.x = nx; d.y = ny; }
-
-    if (speed > 2.5) {
-      for (const e of g.enemies) {
-        if (!e.alive || mv.hit.has(e)) continue;
-        if (dist(d.x, d.y, e.x, e.y) > e.radius + 0.35) continue;
-        if (d.lift > e.height) continue;
-        mv.hit.add(e);
-        const died = e.hurt(def.thud || 8, g, d.x - mv.vx, d.y - mv.vy);
-        e.shove(mv.vx / (speed || 1), mv.vy / (speed || 1), 3, 0.5);
-        g.sound.sfx('kick_hit', { pan: g.panAt(e.x, e.y), rate: 1.2 });
-        g.particles.blood(e.x, e.y, e.z + e.height * 0.5, 5, mv.vx, mv.vy);
-        g.hud.hitMark(died);
-        mv.vx *= 0.35; mv.vy *= 0.35;
-      }
-    }
-    if (landed && speed < 0.45) this._unfly(d, true);
-    this._place(d);
-  }
-
-  _unfly(d, settle) {
-    const k = this.flying.indexOf(d);
-    if (k >= 0) this.flying.splice(k, 1);
-    d.flying = false; d.lift = 0; d.mv = null;
-    if (settle) { this._gridAdd(d); this._place(d); }
-  }
-
-  _place(d) {
-    const s = d._spr;
-    if (s) { s.x = d.x; s.y = d.y; s.z = d.z + d.lift; }
   }
 
   // ---------------------------------------------------------------- the use key
 
   /** The prop the use key would act on, with a short label for the HUD. */
   _useTarget(p) {
-    return this._front(p, REACH, 0.74, (d) => d.def.use && this._usable(d));
+    return this._front(p, REACH, 0.74, (d) => d.def.use && !d.fall && this._usable(d));
   }
 
   _usable(d) {
@@ -698,6 +1296,8 @@ export class Props {
       case 'desk': return d.uses < 2;
       case 'console': return !d.hacked;
       case 'pinball': return d.uses < 3 && !d.busy;
+      case 'copier': return d.uses < 2 && !d.busy;
+      case 'sink': return d.uses < 2;
       default: return false;
     }
   }
@@ -723,6 +1323,8 @@ export class Props {
       case 'desk': return 'SEARCH DESK';
       case 'console': return 'HACK IT';
       case 'pinball': return 'PLAY';
+      case 'copier': return 'MAKE A COPY';
+      case 'sink': return 'WASH UP';
       default: return null;
     }
   }
@@ -741,6 +1343,8 @@ export class Props {
       case 'desk': this._useDrawer(d, 'JUST PAPERWORK', 0.3); break;
       case 'console': this._useConsole(d, p); break;
       case 'pinball': this._usePinball(d, p); break;
+      case 'copier': this._useCopier(d, p); break;
+      case 'sink': this._useSink(d, p); break;
       default: return false;
     }
     g.input.rumble(0.2, 0.15, 60);
@@ -809,11 +1413,41 @@ export class Props {
     g.chat('brick', 'brick_cooler', { chance: 0.6, cooldown: 8 });
   }
 
+  _useSink(d, p) {
+    const g = this.g;
+    d.uses++;
+    this._spray(d.x, d.y, d.z + d.h * 0.8, 6, 0.4);
+    g.sound.sfx('water_burst', { vol: 0.35, pan: g.panAt(d.x, d.y) });
+    if (p.health < p.maxHealth) {
+      p.heal(3);
+      g.hud.popup('+3 VITALS  CLEAN HANDS', { size: 11, life: 1.3, color: rgba(126, 232, 128, 255) });
+    } else {
+      g.hud.popup('SQUEAKY CLEAN', { size: 11, life: 1.1, color: rgba(200, 220, 240, 255) });
+    }
+  }
+
+  _useCopier(d, p) {
+    const g = this.g;
+    d.uses++;
+    d.busy = 1.4;
+    g.sound.sfx('console_blip', { pan: g.panAt(d.x, d.y) });
+    g.after(0.5, () => { if (!d.broken) { this.papers(d.x, d.y, d.z + d.h, 6, 0.9); g.sound.sfx('paper_flurry', { pan: g.panAt(d.x, d.y), vol: 0.6 }); } });
+    const lines = d.uses === 1 ? ['COPIES OF YOUR FACE: 6', 'NOT A GOOD ANGLE'] : ['COPIES OF YOUR ASS: 6', 'FILED UNDER EVIDENCE'];
+    g.hud.popup(lines[0], { size: 12, life: 1.5, color: rgba(255, 236, 190, 255) });
+    g.after(0.9, () => g.hud.popup(lines[1], { size: 10, life: 1.3, y: -20, color: rgba(200, 194, 180, 255) }));
+    p.score += 50;
+    g.chat('mutter', 'mutter_prop', { chance: 0.5, cooldown: 12, delay: 1.2 });
+  }
+
   _openLocker(d) {
     const g = this.g;
     d.opened = true;
-    const src = g.art.sprites[d.key];
-    if (src) { d.altFrame = openedFrame(src); d.altH = d.h; d._spr = undefined; }
+    d._fk = null;
+    const st = this.studio;
+    if (!(st && st.has(d.kind))) {
+      const src = g.art.sprites[d.key];
+      if (src) { d.altFrame = openedFrame(src); d.altH = d.h; d._spr = undefined; }
+    }
     g.sound.sfx('metal_hit', { pan: g.panAt(d.x, d.y), rate: 0.8 });
     g.after(0.1, () => g.sound.sfx('door_open', { vol: 0.35, pan: g.panAt(d.x, d.y) }));
     const roll = g.rng();
@@ -899,24 +1533,70 @@ export class Props {
     if (!lv || !lv.decor) return;
     this._updateLitter(dt);
     for (let i = this.flying.length - 1; i >= 0; i--) this._fly(this.flying[i], dt);
-
-    // shivers: whatever was just hit or kicked rocks a little, across the view
-    const px = -Math.sin(p.ang), py = Math.cos(p.ang);
+    this._updateDebris(dt);
+    // Walk into a chair and it goes where you are going. Enemies too.
+    const movers = this._movers || (this._movers = []);
+    movers.length = 0;
+    if (!p.dead && Math.hypot(p.vx, p.vy) > 0.6) movers.push([p.x, p.y, p.vx, p.vy, 0.3]);
+    // and a body thrown across the room takes the furniture with it
+    const bodies = this._bodies || (this._bodies = []);
+    bodies.length = 0;
+    for (const e of g.enemies) {
+      const kv = Math.hypot(e.kvx || 0, e.kvy || 0);
+      if (kv > 5) bodies.push([e.x, e.y, e.kvx, e.kvy, e.radius, kv, e]);
+    }
+    for (const e of g.enemies) {
+      if (e.alive && e._px !== undefined && dt > 0) {
+        const vx = (e.x - e._px) / dt, vy = (e.y - e._py) / dt;
+        if (vx * vx + vy * vy > 0.36 && vx * vx + vy * vy < 400) movers.push([e.x, e.y, vx, vy, e.radius]);
+      }
+      e._px = e.x; e._py = e.y;
+    }
     for (const d of lv.decor) {
       if (d.busy > 0) d.busy = Math.max(0, d.busy - dt);
-      if (d.shake > 0) {
-        d.shake = Math.max(0, d.shake - dt);
-        const s = d._spr;
-        if (s && !d.flying) {
-          const off = d.shake > 0 ? Math.sin(g.time * 55) * d.shake * 0.16 : 0;
-          s.x = d.x + px * off; s.y = d.y + py * off;
+      if (d.shake > 0) d.shake = Math.max(0, d.shake - dt);
+      if (d.fall && !d.fall.landed) this._fall(d, dt);
+      if (bodies.length && d.def && d.def.hp !== Infinity && !d.flying && !d.broken && !d.gone) {
+        for (const [bx, by, vx, vy, r, kv, e] of bodies) {
+          if (Math.hypot(d.hx - bx, d.hy - by) > r + (d.solid ? 0.55 : 0.3)) continue;
+          if ((d._hitBy || null) === e) continue;
+          d._hitBy = e;
+          const ux = vx / kv, uy = vy / kv;
+          this.hit(d, kv * 2.5, d.hx, d.hy, d.z + d.h * 0.4, 'crash', ux, uy);
+          if (d.broken || d.gone) break;
+          if (d.def.mass === 'light' && !d.solid) this._launch(d, ux, uy, kv * 0.8, 2 + kv * 0.1, true);
+          else if (d.def.tall && !d.fall && kv > 8) this.topple(d, ux, uy, 0);
+          break;
+        }
+      }
+      if (movers.length && d.def && d.def.mass === 'light' && !d.solid && !d.flying && !d.broken && !d.gone) {
+        for (const [mx, my, vx, vy, r] of movers) {
+          const dx = d.x - mx, dy = d.y - my, q = Math.hypot(dx, dy);
+          if (q > r + 0.22 || dx * vx + dy * vy <= 0) continue;
+          const sp = Math.hypot(vx, vy);
+          // along the way it was going, and a little out of the way
+          this.shove(d, (vx / sp) * 0.8 + (dx / (q || 1)) * 0.4, (vy / sp) * 0.8 + (dy / (q || 1)) * 0.4, Math.min(2.4, sp * 1.1), 0);
+          if (g.time - (d._snd || -9) > 0.3) { d._snd = g.time; g.sound.sfx(MAT[d.def.mat].hit, { pan: g.panAt(d.x, d.y), vol: 0.35, rate: 1.1 }); }
+          break;
         }
       }
     }
-    // burst pipes
+    // burst pipes, and a bottle venting fire
     for (let i = this.spouts.length - 1; i >= 0; i--) {
       const s = this.spouts[i];
       s.t -= dt;
+      if (s.fire) {
+        if (s.t <= 0 || !s.d || s.d.broken) {
+          this.spouts.splice(i, 1);
+          // the rest of the bottles go with it
+          if (s.d && !s.d.broken) this.breakProp(s.d, 'blast', s.x, s.y);
+          continue;
+        }
+        this._flame(s, dt);
+        s._n = (s._n || 0) - dt;
+        if (s._n <= 0) { s._n = 0.8; g.sound.sfx('gas_hiss', { pan: g.panAt(s.x, s.y), vol: 0.6 }); }
+        continue;
+      }
       if (s.t <= 0) { this.spouts.splice(i, 1); continue; }
       const k = s.t / s.T;
       this._spray(s.x, s.y, s.z, Math.ceil(dt * 90 * (0.4 + k)), 0.9 + k * 0.5);
@@ -924,6 +1604,80 @@ export class Props {
       if (s._n <= 0) { s._n = 1.3; g.sound.sfx('water_burst', { pan: g.panAt(s.x, s.y), vol: 0.35 + 0.4 * k }); }
     }
     this.hintText = p.dead ? null : this.hint(p);
+    // frames for the studio, a little each frame
+    const st = this.studio;
+    if (st) st.pump(2.5);
+  }
+
+  /** The billboards for every piece of furniture, turned to the camera. */
+  collectDecor(out, cam, art) {
+    const lv = this.g.level;
+    if (!lv || !lv.decor) return;
+    const st = this.studio;
+    const sx = -Math.sin(cam.ang), sy = Math.cos(cam.ang);
+    for (let i = 0; i < lv.decor.length; i++) {
+      const d = lv.decor[i];
+      if (d.gone) continue;
+      let spr = d._spr;
+      if (!spr) spr = d._spr = { x: d.x, y: d.y, z: 0, frame: null, h: 0, emissive: false };
+      let f = null, h = 0, z = d.z || 0;
+      if (st && st.has(d.kind)) {
+        const state = d.broken ? 'wreck' : d.opened ? 'open' : d.state === 'hurt' || (d.def && d.def.hp !== Infinity && d.hp < d.def.hp * 0.5) ? 'hurt' : 'ok';
+        const dir = viewDir(d.x, d.y, d.yaw, cam.x, cam.y, st.dirsOf(d.kind));
+        const pose = d.fall ? d.pose : 0;
+        const fk = `${dir}|${state}|${pose}`;
+        if (fk === d._fk && d._f) f = d._f;
+        else {
+          f = st.want(d.kind, dir, state, d.variant, pose);
+          const exact = st.exact && !!f;
+          // not drawn yet: the same thing less damaged, or standing, meanwhile
+          if (!f && state !== 'ok') f = st.want(d.kind, dir, 'hurt', d.variant, pose) || st.want(d.kind, dir, 'ok', d.variant, pose);
+          if (!f && pose) f = st.want(d.kind, dir, state, d.variant, 0) || st.want(d.kind, dir, 'ok', d.variant, 0);
+          if (exact) { d._fk = fk; d._f = f; } else d._fk = null;
+        }
+        if (f) {
+          h = f.h / f.ppu;
+          z -= f.below;
+          if (d.flying && d.roll) {
+            const rf = rotFrame(f, d.roll);
+            const k = rf.h / f.h;
+            z += h * 0.5 * (1 - k);
+            h *= k; f = rf;
+          }
+        }
+      }
+      if (!f) {
+        f = d.altFrame || art.sprites[d.key];
+        h = d.altH || d.h0 || d.h;
+      }
+      if (!f) continue;
+      let x = d.x, y = d.y;
+      if (d.shake > 0 && !d.flying) {
+        const off = Math.sin(this.g.time * 55) * d.shake * 0.16;
+        x += sx * off; y += sy * off;
+      }
+      spr.x = x; spr.y = y; spr.z = z + (d.lift || 0); spr.frame = f; spr.h = h;
+      spr.emissive = !!d.emissive && !d.broken && !d.fall;
+      out.push(spr);
+    }
+    // debris
+    const recs = this._drecs, D = this.debris;
+    for (let i = 0; i < D.length; i++) {
+      const b = D[i];
+      let s = recs[i];
+      if (!s) { s = {}; recs[i] = s; }
+      let f = st ? st.want(b.piece, viewDir(b.x, b.y, b.yaw, cam.x, cam.y, st.dirsOf(b.piece)), 'ok', b.v, 0, true) : null;
+      if (!f) continue;
+      let h = f.h / f.ppu, z = b.z - f.below;
+      if (!b.rest && b.roll) {
+        const rf = rotFrame(f, b.roll);
+        const k = rf.h / f.h;
+        z += h * 0.5 * (1 - k);
+        h *= k; f = rf;
+      }
+      s.x = b.x; s.y = b.y; s.z = z; s.frame = f; s.h = h; s.emissive = false; s.alpha = 1;
+      out.push(s);
+    }
   }
 
   /** Push the litter as sprites. */

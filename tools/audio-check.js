@@ -260,6 +260,8 @@ const SFX_NAMES = [
   'saw_run', 'saw_cut', 'saw_bind', 'saw_catch', 'saw_wall', 'saw_start',
   // --- round five ---
   'saw_rumble', 'scribe_giggle', 'scribe_scratch',
+  // --- round seven: props that topple, arc and vent, and walls that give ---
+  'gas_hiss', 'zap_arc', 'creak_topple', 'crash_heavy', 'wall_crumble', 'steam_hiss', 'tube_pop', 'foam_spray',
 ];
 
 /** Names that shipped in the first version. None of them may ever disappear. */

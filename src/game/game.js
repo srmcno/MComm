@@ -8,6 +8,7 @@ import { Player, EYE_HEIGHT, FUSE_MAX } from './player.js';
 import { Enemy, Bolt, PipeBomb, Acid, ENEMY_TYPES, ST } from './entities.js';
 import { Particles } from './particles.js';
 import { Props } from './props.js';
+import { WallDamage } from './walldamage.js';
 import { Scrawl, Scribe } from './scrawl.js';
 import { Gore, HEAD, ARM_R, ARM_L, EXPLOSION_GORE, SLAM_GORE } from './gore.js';
 import { SkyWar, City, WARHEAD_TYPES, CITY_MAX_HP } from './sky.js';
@@ -153,6 +154,7 @@ export class Game {
     this.player = new Player();
     this.particles = new Particles();
     this.props = new Props(this);
+    this.walls = new WallDamage(this);
     this.saw = this.freshSaw();
     this.gore = new Gore(this);
     this.sky = new SkyWar(this);
@@ -246,6 +248,7 @@ export class Game {
     this.enemies.length = 0;
     this.items.length = 0;
     this.props.load(this.level);
+    this.walls.load(this.level);
     // Writing on the walls, and the thin man who does it.
     this.scrawl = new Scrawl(this);
     this.scribe = new Scribe(this);
@@ -728,6 +731,8 @@ export class Game {
 
   updateBrief(dt, input) {
     this.briefT += dt;
+    // The card is still: a good moment to draw the furniture for the floor.
+    if (this.art.props) { try { this.art.props.pump(14); } catch (e) { /* the painted set stands in */ } }
     if (this.briefT > 0.6 && (input.anyPressed() || this.briefT > 6.5)) {
       this.setState(STATE.PLAY);
       if (this.levelIndex === 0) {
@@ -949,6 +954,7 @@ export class Game {
     this.updateVitals(dt);
     this.updateItems(dt);
     this.props.update(dt);
+    this.walls.update(dt);
     this.scrawl.update(dt);
     this.scribe.update(dt);
     this.updateTriggers(dt);
@@ -1868,8 +1874,14 @@ export class Game {
     const wx = p.x + ca * 0.85, wy = p.y + sa * 0.85;
     if (this.level.blocked(wx, wy) && S.tickT <= 0) {
       S.tickT = 0.1;
-      this.particles.sparks(p.x + ca * 0.7, p.y + sa * 0.7, p.z - 0.05, 7, 1.4, [255, 200, 120], 5);
-      this.sound.sfx('saw_wall', { vol: 0.6 });
+      // An office partition gives; anything else throws sparks.
+      if (this.walls.saw(p.x, p.y, p.z - 0.1, ca, sa, spec.dps * 0.1 * 0.8)) {
+        this.particles.dust(p.x + ca * 0.7, p.y + sa * 0.7, p.z - 0.2, 3);
+        this.sound.sfx('saw_cut', { vol: 0.5 });
+      } else {
+        this.particles.sparks(p.x + ca * 0.7, p.y + sa * 0.7, p.z - 0.05, 7, 1.4, [255, 200, 120], 5);
+        this.sound.sfx('saw_wall', { vol: 0.6 });
+      }
       this.shake = Math.max(this.shake, 0.9);
     }
     this.sawPose(true, false);
@@ -2194,10 +2206,13 @@ export class Game {
     } else if (hit.lamp) {
       this.props.shootLamp(hit.lamp);
     } else if (hit.prop) {
-      this.props.hit(hit.prop, spec.damage, hit.x, hit.y, hit.z, 'shot');
+      this.props.hit(hit.prop, spec.damage, hit.x, hit.y, hit.z, 'shot', dx / L, dy / L);
     } else if (hit.wall) {
       this.particles.sparks(hit.x, hit.y, hit.z, 5, 1.6, [255, 220, 170], 5);
       this.sound.sfx('hit_wall', { pan: this.panAt(hit.x, hit.y), vol: 0.5 });
+      // the room keeps the round: a hole in the wall, or a strip light out
+      if (hit.z >= CEIL_H - 0.04) this.walls.ceilingHit(hit.x, hit.y);
+      else this.walls.bulletHole(hit.x, hit.y, hit.z, dx / L, dy / L, spec.damage > 24);
     }
   }
 
@@ -2241,7 +2256,7 @@ export class Game {
         // A chair, a plant, a bin: the round goes through it, and it goes to pieces.
         if (pierce && !(through && through.has(prop))) {
           (through || (through = new Set())).add(prop);
-          this.props.hit(prop, pierce, px, py, pz, 'shot');
+          this.props.hit(prop, pierce, px, py, pz, 'shot', dx, dy);
         }
       }
       if (pz < 0.02 || pz > CEIL_H || this.level.blockedShot(px, py, pz)) {
@@ -2283,6 +2298,7 @@ export class Game {
     this.shake = Math.max(this.shake, 2.4);
     this.gore.impulse(x, y, z, radius, (gore.knock || 12) * 0.8);
     this.props.blast(x, y, z, radius, damage);
+    this.walls.blast(x, y, z, radius, damage);
     for (const e of this.enemies) {
       const d = dist(x, y, e.x, e.y);
       if (d >= radius) continue;

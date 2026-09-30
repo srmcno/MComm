@@ -10,6 +10,8 @@ import { TEX, rgba, mix, shade, makeFrame, fillRect, fillCircle, outline, makeRn
 // procedural stand-ins in this file, so one bad module cannot black the screen.
 import { buildTextures } from './textures.js';
 import { buildSprites } from './sprites.js';
+import { PropStudio } from './propstudio.js';
+import { MODELS as PROP_MODELS, PIECES as PROP_PIECES } from './propmodels.js';
 import { buildViewmodels } from './viewmodels.js';
 import * as MAPS_MODULE from '../game/maps.js';
 
@@ -533,6 +535,11 @@ export async function loadAssets(onProgress = () => {}) {
   // Anything the level data asks for that art didn't provide falls back to concrete.
   for (const n of TEXTURE_ORDER) if (!texIndex.has(n)) texIndex.set(n, 0);
 
+  // The furniture is modelled, not painted; its pictures are made as a floor needs them.
+  let props = null;
+  try { props = new PropStudio(PROP_MODELS, PROP_PIECES); }
+  catch (e) { warn('props.studio', e); }
+
   onProgress(0.9, 'TUNING THE PUBLIC ADDRESS');
   await yieldFrame();
   return {
@@ -541,6 +548,7 @@ export async function loadAssets(onProgress = () => {}) {
     texNames: textures.names || TEXTURE_ORDER,
     texIndex,
     sprites: sprites.frames,
+    props,
     maim, rig,
     vm: viewmodels.frames,
     decalAtlas, decalNames, decalIndex, decalCount: decalNames.length,
