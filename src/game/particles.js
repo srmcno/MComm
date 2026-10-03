@@ -252,6 +252,7 @@ export class Particles {
       p.vx *= d; p.vy *= d; p.vz *= d;
       p.vz -= p.grav * dt;
       const nx = p.x + p.vx * dt, ny = p.y + p.vy * dt;
+      const x0 = p.x, y0 = p.y;
       if (level && p.z < 1.4 && level.blockedShot(nx, ny, p.z)) {
         if (p.hard && !p.additive && p.grav > 1) {
           // Blood that reaches a wall stays on it for a while and runs.
@@ -268,7 +269,7 @@ export class Particles {
       p.z += p.vz * dt;
       // Indoors the ceiling stops them too, or sparks and chips fly up into
       // the slab and show through it.
-      if (level && p.vz > 0 && level.hitsCeiling(p.x, p.y, z0, p.z)) {
+      if (level && p.vz > 0 && level.hitsCeiling(x0, y0, z0, p.x, p.y, p.z)) {
         p.z = CEIL_H - 0.03;
         p.vz = -p.vz * 0.2;
         if (p.hard && !p.additive && p.grav > 1) { p.vx *= 0.5; p.vy *= 0.5; }

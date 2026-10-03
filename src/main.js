@@ -121,7 +121,7 @@ export async function boot() {
   // Brick comes in two casts (BRICK VOICE in the options); only the chosen one
   // is fetched, and the other only if he is switched to it.
   const castBank = new ClipBank(null);
-  const castSets = {}, castAsked = {};
+  const castSets = {};
   let castSpeech = null;
   const saved = loadBrickVoice();
   game.brickVoice = brickVoiceOk(saved) ? saved : BRICK_VOICES[0].id;
@@ -131,9 +131,17 @@ export async function boot() {
     castBank.add(clips);
     if (castSpeech) castSpeech.attachClips(castBank);
   };
+  // Each file is fetched once, and a Brick's only while he is the one chosen:
+  // switching away mid-download stops his remaining files, switching back
+  // fetches whatever of his never came.
+  const fetched = new Set();
+  const wanted = (f) => {
+    if (fetched.has(f.src) || (f.set !== 'cast' && f.set !== game.brickVoice)) return false;
+    fetched.add(f.src);
+    return true;
+  };
   if (!safe) {
-    castAsked.cast = castAsked[game.brickVoice] = true;
-    loadVoices(castArrived, { brick: game.brickVoice })
+    loadVoices(castArrived, { brick: game.brickVoice, want: wanted })
       .then((n) => { game.castLoaded = n; }).catch(() => { /* the cast stays subtitles */ });
   }
   game.castBank = castBank;
@@ -146,10 +154,7 @@ export async function boot() {
     castBank.dropRole('brick');
     if (castSets[id]) castBank.add(castSets[id]);
     if (castSpeech) castSpeech.attachClips(castBank);
-    if (!castAsked[id] && !safe) {
-      castAsked[id] = true;
-      loadVoices(castArrived, { sets: [id] }).catch(() => { /* he stays subtitles */ });
-    }
+    if (!safe) loadVoices(castArrived, { sets: [id], want: wanted }).catch(() => { /* he stays subtitles */ });
     return true;
   };
   // Whether the chosen Brick has any takes here yet (the option says LOADING until he does).

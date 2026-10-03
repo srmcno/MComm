@@ -324,6 +324,104 @@ function barrel(M) {
   M.cyl([-0.08, H + 0.008, -0.04], 0.012, 0.01, C.darkMetal);
 }
 
+// ------------------------------------------------------------------ the columns
+
+// What holds the roof up, floor to ceiling. They were painted cards that
+// turned to face you; now they are solid, and each floor has its own.
+const COL_H = 1.31;
+const heightOf = (ly, h) => ly + h / 2;            // a cylinder's local y, as height off its foot
+
+/** The bunker standard: poured concrete, a hazard band at knee height, plinth and capital. */
+function pillar(M) {
+  const crete = mat('paint', [140, 136, 128], { gloss: 0.05, wear: 0.06 });
+  const sh = COL_H - 0.18;
+  M.box([0, 0.05, 0], [0.5, 0.1, 0.5], crete, { bevel: 0.012 });
+  M.box([0, COL_H - 0.045, 0], [0.5, 0.09, 0.5], crete, { bevel: 0.012 });
+  M.cyl([0, 0.1 + sh / 2, 0], 0.22, sh, crete, {
+    paint: (u, v, f, lx, ly, lz) => {
+      const y = heightOf(ly, sh) + 0.1, a = Math.atan2(lz, lx);
+      if (y > 0.24 && y < 0.36) return (Math.floor(a * 3.2 + y * 9) % 2 + 2) % 2 ? [226, 180, 40] : [36, 32, 28];
+      if (y < 0.17) return [104, 100, 94];                                   // where the mop never reaches
+      if (Math.sin(a * 9.0) > 0.93 && y < 1.0 - Math.sin(a * 5) * 0.2) return [122, 118, 110];   // a run of damp
+      return null;
+    },
+  });
+}
+
+/** THE ORGAN LOFT: a squared timber post, iron-banded, on a plinth of the same. */
+function pillarWood(M) {
+  const timber = mat('wood', [112, 72, 42], { grain: 1.1 });
+  M.box([0, COL_H / 2, 0], [0.32, COL_H - 0.16, 0.32], timber, { bevel: 0.012 });
+  M.box([0, 0.05, 0], [0.42, 0.1, 0.42], timber, { bevel: 0.016 });
+  M.box([0, COL_H - 0.04, 0], [0.42, 0.08, 0.42], timber, { bevel: 0.016 });
+  for (const y of [0.27, 0.67, 1.07]) {
+    M.box([0, y, 0], [0.336, 0.05, 0.336], C.darkMetal, { bevel: 0.004 });
+    for (const [x, z] of [[0.17, 0.09], [0.17, -0.09], [-0.17, 0.09], [-0.17, -0.09]]) M.cyl([x, y, z], 0.012, 0.012, C.darkMetal, { axis: 'x' });
+    for (const [x, z] of [[0.09, 0.17], [-0.09, 0.17], [0.09, -0.17], [-0.09, -0.17]]) M.cyl([x, y, z], 0.012, 0.012, C.darkMetal, { axis: 'z' });
+  }
+}
+
+/** SALT CATHEDRAL: the concrete is still in there somewhere, under a crust that grows. */
+function pillarSalt(M) {
+  const salt = mat('porcelain', [228, 232, 236], { gloss: 0.22 });
+  M.cyl([0, COL_H / 2, 0], 0.22, COL_H - 0.02, salt, {
+    paint: (u, v, f, lx, ly, lz) => {
+      const y = heightOf(ly, COL_H - 0.02), a = Math.atan2(lz, lx);
+      const n = Math.sin(a * 5 + y * 7) * 0.5 + Math.sin(a * 11 - y * 13) * 0.3 + Math.sin(y * 23 + a * 3) * 0.2;
+      if (n > 0.5 - y * 0.22) return [146, 142, 134];                       // concrete showing through
+      if (n > 0.38 - y * 0.22) return [196, 198, 196];
+      return null;
+    },
+  });
+  M.cone([0, 0.07, 0], 0.36, 0.2, 0.14, salt);                               // the drift at its foot
+  for (let k = 0; k < 7; k++) {                                              // crystals on the shoulders
+    const a = k * 0.9 + 0.3, r = 0.2;
+    M.cone([Math.cos(a) * r, COL_H - 0.16 - (k % 3) * 0.06, Math.sin(a) * r], 0.045, 0.004, 0.13 + (k % 2) * 0.05, salt,
+      { roll: Math.cos(a) * -0.35, pitch: Math.sin(a) * 0.35 });
+  }
+  for (let k = 0; k < 6; k++) {                                              // lumps of crust on the shaft
+    const a = k * 1.7, y = 0.3 + k * 0.15;
+    M.sph([Math.cos(a) * 0.2, y, Math.sin(a) * 0.2], [0.06, 0.08, 0.06], salt);
+  }
+}
+
+/** THE FURNACE: an I-beam gone orange, sweating at the rivets. */
+function pillarRust(M) {
+  const steel = mat('metal', [150, 70, 36], { rust: 0.85, gloss: 0.3 });
+  const hh = COL_H - 0.12;
+  M.box([0, COL_H / 2, 0.15], [0.36, hh, 0.035], steel);
+  M.box([0, COL_H / 2, -0.15], [0.36, hh, 0.035], steel);
+  M.box([0, COL_H / 2, 0], [0.04, hh, 0.27], steel);
+  M.box([0, 0.03, 0], [0.48, 0.06, 0.46], steel, { bevel: 0.006 });
+  M.box([0, COL_H - 0.03, 0], [0.48, 0.06, 0.46], steel, { bevel: 0.006 });
+  for (let y = 0.16; y < COL_H - 0.1; y += 0.15) {
+    for (const z of [0.17, -0.17]) for (const x of [-0.13, 0.13]) M.cyl([x, y, z], 0.011, 0.012, C.darkMetal, { axis: 'z' });
+  }
+  // heat-blued near the floor, where the furnace breathes on it
+  M.box([0, 0.14, 0.152], [0.362, 0.12, 0.034], mat('metal', [74, 70, 108], { gloss: 0.5 }));
+  M.box([0, 0.14, -0.152], [0.362, 0.12, 0.034], mat('metal', [74, 70, 108], { gloss: 0.5 }));
+}
+
+/** MUTTER: a conduit column wrapped in cable, blinking to itself. */
+function pillarTech(M) {
+  const cab = mat('paint', [52, 58, 66], { wear: 0.25 });
+  M.box([0, COL_H / 2, 0], [0.36, COL_H - 0.02, 0.36], cab, {
+    bevel: 0.01,
+    paint: (u, v, f, lx, ly) => ((ly * 20 + 40) % 1 < 0.06 ? [30, 34, 40] : null),
+  });
+  const cols = [[170, 40, 36], [60, 150, 70], [210, 170, 40]];
+  for (let k = 0; k < 3; k++) {
+    const x = -0.1 + k * 0.1;
+    for (let y = 0.02; y < COL_H - 0.12; y += 0.12) {
+      const w0 = Math.sin(y * 9 + k) * 0.015, w1 = Math.sin((y + 0.12) * 9 + k) * 0.015;
+      M.rod([x + w0, y, 0.19], [x + w1, y + 0.125, 0.19], 0.016, mat('rubber', cols[k]));
+    }
+  }
+  for (const [x, y, z] of [[0.12, 0.42, 0.181], [-0.12, 0.86, 0.181], [0.181, 0.64, 0.1], [-0.181, 0.3, -0.08], [0.05, 1.12, -0.181]]) {
+    M.box([x, y, z], [Math.abs(x) > 0.17 ? 0.01 : 0.03, 0.02, Math.abs(z) > 0.17 ? 0.01 : 0.03], mat('light', y > 0.8 ? [255, 80, 60] : [80, 230, 120]));
+  }
+}
+
 // ------------------------------------------------------------------ the table
 
 const MODELS_CORE = {
@@ -336,6 +434,11 @@ const MODELS_CORE = {
   crate: { build: crate, front: 0.23, variants: 4 },
   crates: { build: crates, front: 0.23 },
   barrel: { build: barrel, front: 0.15, dirs: 1, noDamage: true },
+  pillar: { build: pillar, front: 0.25, dirs: 1, noDamage: true },
+  pillar_wood: { build: pillarWood, front: 0.21, dirs: 1, noDamage: true },
+  pillar_salt: { build: pillarSalt, front: 0.36, dirs: 1, noDamage: true },
+  pillar_rust: { build: pillarRust, front: 0.24, dirs: 1, noDamage: true },
+  pillar_tech: { build: pillarTech, front: 0.2, dirs: 1, noDamage: true },
 };
 
 /** Everything the studio can draw, by kind. */

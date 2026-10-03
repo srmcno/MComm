@@ -54,10 +54,10 @@ const wallAt = (lv, x, y, z) => {
       let inside = 0;
       for (let k = 1; k <= m; k++) {
         const t = k / m, px = x + (f.x - x) * t, py = y + (f.y - y) * t, pz = z + (f.z - z) * t;
-        const pz0 = z + (f.z - z) * ((k - 1) / m);
+        const t0 = (k - 1) / m, px0 = x + (f.x - x) * t0, py0 = y + (f.y - y) * t0, pz0 = z + (f.z - z) * t0;
         if (pz > 1.6) break;
         if (wallAt(lv, px, py, pz)) inside += L / m;
-        if (lv.hitsCeiling(px, py, pz0, pz) && !lv.wall[lv.idx(px, py)]) inside += 1;
+        if (lv.hitsCeiling(px0, py0, pz0, px, py, pz)) inside += 1;
       }
       if (inside > 0.12) leaks.push(`L${li} from ${x.toFixed(1)},${y.toFixed(1)} to ${f.x.toFixed(1)},${f.y.toFixed(1)},${f.z.toFixed(1)}`);
     }
@@ -115,6 +115,27 @@ const wallAt = (lv, x, y, z) => {
   const roofed = (() => { for (let i = 0; i < lv.W * lv.H; i++) if (!lv.wall[i] && !lv.sky[i]) return i; return -1; })();
   const rx = (roofed % lv.W) + 0.5, ry = Math.floor(roofed / lv.W) + 0.5;
   check('a burst up over the building does not reach down through a roof', !g.blastReaches(rx, ry, rx, ry, CEIL_H + 2));
+
+  // two walls that meet only at a corner seal it: no blast through the gap
+  let corners = 0, leaks = [];
+  for (let li = 0; li < MAPS.length; li++) {
+    const L = new Level(parseLevel(li), art);
+    const gl = Object.create(Game.prototype); gl.level = L;
+    const op = (x, y) => L.opaque(x + 0.5, y + 0.5);
+    for (let y = 1; y < L.H - 2; y++) for (let x = 1; x < L.W - 2; x++) {
+      // opaque at (x, y) and (x+1, y+1), open at (x+1, y) and (x, y+1), or the mirror
+      for (const [a, b, c, d] of [[[x, y], [x + 1, y + 1], [x + 1, y], [x, y + 1]], [[x + 1, y], [x, y + 1], [x, y], [x + 1, y + 1]]]) {
+        if (!op(...a) || !op(...b) || op(...c) || op(...d)) continue;
+        corners++;
+        // from deep in one open cell, through the shared corner, to deep in the other
+        const cx = Math.max(c[0], d[0]), cy = Math.max(c[1], d[1]);
+        const sx = c[0] + 0.5 + (c[0] + 0.5 - cx) * 0.6, sy = c[1] + 0.5 + (c[1] + 0.5 - cy) * 0.6;
+        const tx = d[0] + 0.5 + (d[0] + 0.5 - cx) * 0.6, ty = d[1] + 0.5 + (d[1] + 0.5 - cy) * 0.6;
+        if (gl.blastReaches(sx, sy, tx, ty)) leaks.push(`L${li} ${x},${y}`);
+      }
+    }
+  }
+  check(`a blast does not get through where two walls meet at a corner (${corners} such corners)`, corners > 0 && leaks.length === 0, leaks.slice(0, 4).join(', '));
 }
 
 console.log(`\nwalls-check - flak, rounds and blasts against walls, doors and ceilings\n`);

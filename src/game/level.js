@@ -10,6 +10,8 @@ export const CELL_EMPTY = 0;
 export const CELL_SOLID = 1;
 export const CELL_DOOR = 2;
 export const CELL_SECRET = 3;
+/** How far a column (a pillar) reaches from the middle of its cell, as rounds see it. */
+export const COLUMN_R = 0.27;
 
 const DOOR_SPEED = 1.7;       // fraction of a cell per second
 const DOOR_HOLD = 4.5;        // seconds a door stays open before closing itself
@@ -261,6 +263,7 @@ export class Level {
   blockedAt(x, y, z) {
     if (x < 0 || y < 0 || x >= this.W || y >= this.H) return false;
     const i = this.idx(x, y);
+    if (this.propBlock[i] && !this.propH[i]) return z < CEIL_H - 0.05 && this.inColumn(x, y);
     if (this.propBlock[i] && z < (this.propH[i] || CEIL_H - 0.05)) return true;
     const c = this.wall[i];
     if (c === CELL_SOLID) return z < this.wallHeight(i);
@@ -277,11 +280,23 @@ export class Level {
   blockedShot(x, y, z) {
     if (x < 0 || y < 0 || x >= this.W || y >= this.H) return true;
     const i = this.idx(x, y);
-    if (this.propBlock[i] && (this.propH[i] === 0 || z < this.propH[i])) return true;
+    if (this.propBlock[i] && this.propH[i] === 0) { if (this.inColumn(x, y)) return true; }
+    else if (this.propBlock[i] && z < this.propH[i]) return true;
     const c = this.wall[i];
     if (c === CELL_SOLID) { const h = this.wallHeight(i); return h >= CEIL_H - 0.01 || z < h; }
     if (c === CELL_DOOR) return this.blocked(x, y);
     return false;
+  }
+
+  /**
+   * Inside the column standing in this cell (a cell blocked full height by a
+   * prop is a column, stood in the middle of it). Bodies are kept out of the
+   * whole cell; rounds and anything thrown hit the column itself, not the air
+   * round it.
+   */
+  inColumn(x, y) {
+    const dx = x - ((x | 0) + 0.5), dy = y - ((y | 0) + 0.5);
+    return dx * dx + dy * dy < COLUMN_R * COLUMN_R;
   }
 
   /**
@@ -321,15 +336,49 @@ export class Level {
   }
 
   /**
-   * Did something rising from z0 to z1 at (x, y) just go up into the ceiling
-   * slab? Only under a roof: not under open sky or off the map, and not if it
-   * was above the roof already (a burst high over the building).
+   * Did something moving from (x0, y0, z0) to (x1, y1, z1) just go up into
+   * the ceiling slab? Decided by the cell it crossed the ceiling's height in,
+   * which on a fast step need not be the one it ended in: only under a roof,
+   * not under open sky or off the map, and not if it was above the roof
+   * already (a burst high over the building).
    */
-  hitsCeiling(x, y, z0, z1) {
+  hitsCeiling(x0, y0, z0, x1, y1, z1) {
     const c = CEIL_H - 0.02;
-    if (z1 < c || z0 >= c || x < 0 || y < 0 || x >= this.W || y >= this.H) return false;
-    return !this.sky[this.idx(x, y)];
+    if (z1 < c || z0 >= c) return false;
+    const q = (c - z0) / (z1 - z0);
+    const x = x0 + (x1 - x0) * q, y = y0 + (y1 - y0) * q;
+    if (x < 0 || y < 0 || x >= this.W || y >= this.H) return false;
+    const i = this.idx(x, y);
+    return !this.sky[i] && this.wall[i] !== CELL_SOLID;
   }
+
+  /**
+   * Is the straight line from a to b clear of anything opaque, every cell it
+   * passes through checked (a walk of the grid, not samples along it)? Two
+   * walls that meet only at a corner seal it. For blasts, which must not
+   * reach through a corner the way a sampled line of sight can.
+   */
+  clearLine(ax, ay, bx, by) {
+    let cx = Math.floor(ax), cy = Math.floor(ay);
+    const ex = Math.floor(bx), ey = Math.floor(by);
+    const dx = bx - ax, dy = by - ay;
+    const sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1;
+    const tdx = dx !== 0 ? Math.abs(1 / dx) : Infinity, tdy = dy !== 0 ? Math.abs(1 / dy) : Infinity;
+    let tx = dx !== 0 ? (dx > 0 ? cx + 1 - ax : ax - cx) * tdx : Infinity;
+    let ty = dy !== 0 ? (dy > 0 ? cy + 1 - ay : ay - cy) * tdy : Infinity;
+    let left = Math.abs(ex - cx) + Math.abs(ey - cy);
+    while (left > 0) {
+      if (Math.abs(tx - ty) < 1e-9) {
+        // exactly through a corner: sealed if either cell beside it is
+        if (this.opaque(cx + sx + 0.5, cy + 0.5) || this.opaque(cx + 0.5, cy + sy + 0.5)) return false;
+        tx += tdx; ty += tdy; cx += sx; cy += sy; left -= 2;
+      } else if (tx < ty) { tx += tdx; cx += sx; left--; }
+      else { ty += tdy; cy += sy; left--; }
+      if (this.opaque(cx + 0.5, cy + 0.5)) return false;
+    }
+    return true;
+  }
+
 
   /** True if the cell blocks line of sight (doors count until nearly open). */
   opaque(x, y) {

@@ -1294,7 +1294,8 @@ export class Gore {
         const k = (1 - d / r) * str * (pass === 2 ? 0.6 : 1);
         if (k < 0.4) continue;
         // a wall between keeps what is lying in the next room where it lies
-        if (lv && !lv.lineOfSight(x, y, c.x, c.y)) continue;
+        const g = this.game;
+        if (lv && !(g.blastReaches ? g.blastReaches(x, y, c.x, c.y, z) : lv.clearLine(x, y, c.x, c.y))) continue;
         const L = d || 1;
         c.vx += (d > 0.05 ? dx / L : rng() - 0.5) * k;
         c.vy += (d > 0.05 ? dy / L : rng() - 0.5) * k;

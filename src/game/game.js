@@ -2301,7 +2301,8 @@ export class Game {
         }
       }
       for (const it of this.items) {
-        if (!it.solid || it.taken) continue;
+        // a column is architecture: the geometry test above has it, sparks and all
+        if (!it.solid || it.taken || it.kind === 'pillar') continue;
         if (Math.hypot(px - it.x, py - it.y) < 0.34 && pz < 0.9) {
           return { wall: false, enemy: null, item: it, x: px, y: py, z: pz };
         }
@@ -2331,7 +2332,7 @@ export class Game {
     for (const e of this.enemies) {
       const d = dist(x, y, e.x, e.y);
       if (d >= radius) continue;
-      if (!this.blastReaches(x, y, e.x, e.y)) continue;
+      if (!this.blastReaches(x, y, e.x, e.y, z)) continue;
       const force = damage * (1 - d / radius);
       if (e.alive) {
         const killed = e.hurt(force, this, x, y);
@@ -2348,7 +2349,7 @@ export class Game {
       }
     }
     for (const it of this.items) {
-      if (it.solid && !it.taken && it.kind === 'barrel' && dist(x, y, it.x, it.y) < radius && this.blastReaches(x, y, it.x, it.y)) {
+      if (it.solid && !it.taken && it.kind === 'barrel' && dist(x, y, it.x, it.y) < radius && this.blastReaches(x, y, it.x, it.y, z)) {
         // Chained barrels: give the next one a beat so it reads as a chain.
         // Game time, so a pause does not let the chain finish behind the menu.
         this.after(0.09, () => { if (!it.taken) this.damageProp(it, 999); });
@@ -2356,7 +2357,7 @@ export class Game {
     }
     const p = this.player;
     const dp = dist(x, y, p.x, p.y);
-    if (dp < radius && this.blastReaches(x, y, p.x, p.y)) {
+    if (dp < radius && this.blastReaches(x, y, p.x, p.y, z)) {
       // Same dial as the airburst above: a barrel you set off is still the
       // world hurting you, and the world is gentler on CLERICAL.
       p.hurt(damage * 0.5 * (1 - dp / radius) * (this.diff.enemyDamage || 1), this, 'own-explosion');
@@ -2509,7 +2510,7 @@ export class Game {
     const lv = this.level;
     if (!lv) return true;
     if (z > CEIL_H + 0.05) return !lv.inBounds(tx, ty) || !!lv.sky[lv.idx(tx, ty)];
-    return lv.lineOfSight(x, y, tx, ty);
+    return lv.clearLine(x, y, tx, ty);
   }
 
   /**
@@ -2531,7 +2532,7 @@ export class Game {
       if (!stop && inside) {
         // a wall below its top; the ceiling from below, or the roof from above
         const roofed = !lv.sky[lv.idx(x, y)] && !lv.wall[lv.idx(x, y)];
-        stop = lv.blockedAt(x, y, z) || lv.hitsCeiling(x, y, lz, z) || (roofed && lz >= CEIL_H && z < CEIL_H);
+        stop = lv.blockedAt(x, y, z) || lv.hitsCeiling(lx, ly, lz, x, y, z) || (roofed && lz >= CEIL_H && z < CEIL_H);
       }
       if (stop) {
         const zc = lz < CEIL_H ? Math.max(0.05, Math.min(lz, CEIL_H - 0.05)) : Math.max(lz, CEIL_H + 0.05);

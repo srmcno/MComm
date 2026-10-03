@@ -58,16 +58,21 @@ function drain(onClips) {
 /**
  * Fetch voice files, one at a time, in order: by default the whole cast with
  * Brick as `opts.brick`; `opts.sets` narrows it to some sets (switching Brick
- * fetches only his). `onClips(clips, set)` is called as each file arrives.
- * Resolves with how many clips came. A file that cannot be had (the game
- * opened from disk without its voices folder, say) is skipped: the lines in
- * it stay subtitles. `opts.base` is put in front of each file's path.
+ * fetches only his). `opts.want(file)`, asked just before each file is
+ * fetched, can turn it down: a Brick the player has switched away from since
+ * the list was made is not worth the download. `onClips(clips, set)` is
+ * called as each file arrives. Resolves with how many clips came. A file that
+ * cannot be had (the game opened from disk without its voices folder, say)
+ * is skipped: the lines in it stay subtitles. `opts.base` goes in front of
+ * each file's path.
  */
 export function loadVoices(onClips, opts = {}) {
   const base = typeof opts.base === 'string' ? opts.base : '';
+  const want = typeof opts.want === 'function' ? opts.want : () => true;
   let n = drain(onClips);
   if (typeof document === 'undefined' || !document.createElement) return Promise.resolve(n);
   const one = (f) => new Promise((resolve) => {
+    if (!want(f)) { resolve(); return; }
     try {
       const s = document.createElement('script');
       s.src = base + f.src;

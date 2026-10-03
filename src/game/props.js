@@ -411,6 +411,8 @@ export class Props {
       try {
         mb.trim();
         const mk = [...kinds].filter((k) => mb.has(k));
+        // the floor's columns and drums are modelled as well
+        for (const k of [lv.pillarKey && mb.has(lv.pillarKey) ? lv.pillarKey : 'pillar', 'barrel']) if (mb.has(k) && !mk.includes(k)) mk.push(k);
         mb.prewarm(mk, ['ok'], Infinity);
         const pieces = new Set();
         for (const k of mk) for (const [pc] of (DEFS[k] && DEFS[k].debris) || []) pieces.add(pc);
@@ -594,8 +596,10 @@ export class Props {
     const lv = this.g.level;
     if (!lv || !lv.decor) return;
     // Only what the blast can reach: a wall between keeps the next room's
-    // furniture, lights and litter where they are.
-    const sees = (tx, ty) => lv.lineOfSight(x, y, tx, ty);
+    // furniture, lights and litter where they are, and a burst up over the
+    // roof does not reach down through it.
+    const g = this.g;
+    const sees = (tx, ty) => (g.blastReaches ? g.blastReaches(x, y, tx, ty, z) : lv.clearLine(x, y, tx, ty));
     for (const it of this.g.items) {
       if (it.kind === 'lamp' && !it.taken && dist(x, y, it.x, it.y) < radius * 0.8 && sees(it.x, it.y)) this.shootLamp(it);
     }

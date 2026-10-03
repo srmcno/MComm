@@ -220,7 +220,7 @@ export class WallDamage {
           if (d > radius) continue;
           // only a face the blast can see: not one in the next room, behind another wall
           const ox = f === 0 ? -0.05 : f === 1 ? 0.05 : 0, oy = f === 2 ? -0.05 : f === 3 ? 0.05 : 0;
-          if (!lv.lineOfSight(x, y, px + ox, py + oy)) continue;
+          if (!this._reaches(x, y, px + ox, py + oy, z)) continue;
           const k = 1 - d / radius;
           // where on the face the blast centre falls
           let u = f < 2 ? py - cy : px - cx;
@@ -243,10 +243,16 @@ export class WallDamage {
     }
   }
 
+  /** Can a blast at (x, y, z) reach (tx, ty)? The game's rule: walls stop it, and the roof. */
+  _reaches(x, y, tx, ty, z) {
+    const g = this.g;
+    return g.blastReaches ? g.blastReaches(x, y, tx, ty, z) : g.level.clearLine(x, y, tx, ty);
+  }
+
   /** A blast: soot, cracks, and the thin walls it is close enough to. Returns cells brought down. */
   blast(x, y, z, radius, damage) {
     this.scorch(x, y, z, radius * 0.9);
-    this._tubesNear(x, y, radius * 0.7);
+    this._tubesNear(x, y, radius * 0.7, z);
     let n = 0;
     for (const [i, hp] of this.hp) {
       const lv = this.g.level;
@@ -255,7 +261,7 @@ export class WallDamage {
       if (d > radius + 0.5) continue;
       // through the open, to the face of it nearest the blast; not through another wall
       const nx = cx + Math.max(-0.56, Math.min(0.56, x - cx)), ny = cy + Math.max(-0.56, Math.min(0.56, y - cy));
-      if (!lv.lineOfSight(x, y, nx, ny)) continue;
+      if (!this._reaches(x, y, nx, ny, z)) continue;
       const k = Math.max(0.15, 1 - Math.max(0, d - 0.5) / radius);
       if (this._hurtWall(i, damage * 2.4 * k, null, x, y)) n++;
     }
@@ -354,7 +360,7 @@ export class WallDamage {
     return true;
   }
 
-  _tubesNear(x, y, r) {
+  _tubesNear(x, y, r, z = 0.5) {
     const lv = this.g.level, tube = this.g.art.texIndex.get('CEIL_TUBE');
     if (tube === undefined) return;
     const R = Math.ceil(r);
@@ -362,7 +368,7 @@ export class WallDamage {
       for (let cx = Math.floor(x) - R; cx <= Math.floor(x) + R; cx++) {
         if (!lv.inBounds(cx, cy)) continue;
         const i = cy * lv.W + cx;
-        if (lv.ceilTex[i] === tube && dist(x, y, cx + 0.5, cy + 0.5) < r && lv.lineOfSight(x, y, cx + 0.5, cy + 0.5)) this._breakTube(i);
+        if (lv.ceilTex[i] === tube && dist(x, y, cx + 0.5, cy + 0.5) < r && this._reaches(x, y, cx + 0.5, cy + 0.5, z)) this._breakTube(i);
       }
     }
   }

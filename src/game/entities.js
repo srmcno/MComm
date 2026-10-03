@@ -638,10 +638,10 @@ export class Bolt {
   update(dt, game) {
     this.t += dt;
     this.life -= dt;
-    const z0 = this.z;
+    const x0 = this.x, y0 = this.y, z0 = this.z;
     this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
     if (this.life <= 0) { this.alive = false; return; }
-    if (this.z < 0.05 || this.z > 2.4 || game.level.blockedShot(this.x, this.y, this.z) || game.level.hitsCeiling(this.x, this.y, z0, this.z)) {
+    if (this.z < 0.05 || this.z > 2.4 || game.level.blockedShot(this.x, this.y, this.z) || game.level.hitsCeiling(x0, y0, z0, this.x, this.y, this.z)) {
       this.alive = false;
       game.onBoltImpact(this, null);
       return;
@@ -689,6 +689,7 @@ export class PipeBomb {
     if (this.settled) return;
 
     this.vz -= 16 * dt;
+    const x0 = this.x, y0 = this.y;
     const nx = this.x + this.vx * dt, ny = this.y + this.vy * dt;
     if (game.level.blockedAt(nx, ny, this.z)) {
       // Bounce off the wall it hit, on whichever axis actually blocked.
@@ -699,7 +700,7 @@ export class PipeBomb {
     const z0 = this.z;
     this.z += this.vz * dt;
     // The ceiling: it bounces off the slab instead of sailing up through it.
-    if (this.vz > 0 && game.level.hitsCeiling(this.x, this.y, z0 + 0.06, this.z + 0.06)) {
+    if (this.vz > 0 && game.level.hitsCeiling(x0, y0, z0 + 0.06, this.x, this.y, this.z + 0.06)) {
       this.z = CEIL_H - 0.07;
       this.vz = -this.vz * 0.35;
       game.sound.sfx('pipebomb_land', { pan: game.panAt(this.x, this.y), vol: 0.4, rate: 1.2 });
@@ -790,7 +791,7 @@ export class Acid {
     this.t += dt;
     this.life -= dt;
     this.vz -= 11 * dt;
-    const z0 = this.z;
+    const x0 = this.x, y0 = this.y, z0 = this.z;
     this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
     const p = game.player;
     if (this.life <= 0) { this.alive = false; return; }
@@ -801,7 +802,7 @@ export class Acid {
       game.onAcidSplash(this, true);
       return;
     }
-    if (this.z < 0.06 || game.level.blockedAt(this.x, this.y, this.z) || game.level.hitsCeiling(this.x, this.y, z0 + 0.05, this.z + 0.05)) {
+    if (this.z < 0.06 || game.level.blockedAt(this.x, this.y, this.z) || game.level.hitsCeiling(x0, y0, z0 + 0.05, this.x, this.y, this.z + 0.05)) {
       this.alive = false;
       game.onAcidSplash(this, false);
     }
