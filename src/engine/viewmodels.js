@@ -29,7 +29,7 @@ import { buildBrickFace, buildBrickPortrait, buildIlsaPortrait, releaseStudios }
 const PI = Math.PI, TAU = PI * 2;
 const sin = Math.sin, cos = Math.cos, abs = Math.abs, sqrt = Math.sqrt;
 const floor = Math.floor, ceil = Math.ceil, min = Math.min, max = Math.max;
-const pow = Math.pow, atan2 = Math.atan2, hypot = Math.hypot, exp = Math.exp;
+const pow = Math.pow, atan2 = Math.atan2, hypot = Math.hypot, exp = Math.exp, acos = Math.acos;
 
 /** Cheap deterministic 2D hash -> 0..1. Used for grain, dust, scratches. */
 function hash2(x, y, s = 0) {
@@ -1368,6 +1368,24 @@ function resolve3(sc) {
         if ((k === 0 && x === 0) || (k === 1 && x === W - 1)) continue;
         if (z - 1 / g.iz[j] > th) { a *= 0.40; break; }
       }
+      // Hands: a crease on the far side wherever one digit lies against another
+      // or against the gun, however shallow the step. Without it four touching
+      // fingers melt into one shape. The palm, the web and the arm are `soft`:
+      // they neither cast nor take one, so knuckles rise out of the back of the
+      // hand instead of sitting on it like marbles.
+      if (sc.hands) {
+        const pr = sc.prims[g.pid[i]];
+        if (!pr.soft) {
+          for (let k = 0; k < 4; k++) {
+            const j = nb[k];
+            if (j < 0 || j >= W * H || g.pid[j] < 0 || g.pid[j] === g.pid[i]) continue;
+            if ((k === 0 && x === 0) || (k === 1 && x === W - 1)) continue;
+            const pj = sc.prims[g.pid[j]];
+            if (pj.soft || (!pr.hand && !pj.hand) || (pr.hand && pj.hand && pr.part === pj.part)) continue;
+            if (1 / g.iz[j] < z) { a *= pr.hand ? 1 - pr.crease : 0.7; break; }
+          }
+        }
+      }
       ao[i] = a;
     }
   }
@@ -1532,7 +1550,7 @@ function flat3(col, gl, shadeFn, o = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// hands: one rig, every weapon
+// hands: the palette, skin and the tattoo
 // ---------------------------------------------------------------------------
 // Hardigan wears fingerless black leather driving gloves, because it is 1996
 // and he is the kind of man who owns driving gloves. So the knuckles are
@@ -1543,8 +1561,7 @@ const SKIN3 = rgba(214, 160, 124, 255);
 const SKIN3_D = rgba(156, 100, 76, 255);
 const SKIN3_R = rgba(200, 118, 96, 255);    // knuckles and fingertips flush redder
 const HAIR3 = rgba(62, 42, 30, 255);
-const NAIL3 = rgba(226, 196, 176, 255);
-const GLOVE3 = rgba(44, 38, 38, 255);
+const GLOVE3 = rgba(52, 45, 43, 255);
 const GLOVE3_HI = rgba(118, 108, 104, 255);
 const STITCH3 = rgba(150, 136, 112, 255);
 const INK3 = rgba(34, 44, 70, 255);
@@ -1572,224 +1589,6 @@ function skinShade(S, hair, so, circ) {
   // pores and freckles
   if (cell3(S.u * 3, w * 3, 17 + so) > 0.965) c = shadeC(c, 0.9);
   S.col = c; S.gl = gl;
-}
-
-function leatherShade(S, so, wearK = 0.6) {
-  const n = nz3(S.u * 1.4 + so, S.v * 5.3 + so);
-  const f = nz3(S.u * 6.1 + so, S.v * 23);
-  let c = shadeC(GLOVE3, 0.86 + n * 0.3 + (f - 0.5) * 0.22);
-  // worn crest where the leather is bent over a knuckle and catches the light
-  const crest = clamp(-S.ny * 0.9 - S.nz * 0.3, 0, 1) * wearK;
-  c = mix(c, GLOVE3_HI, crest * (0.3 + n * 0.5));
-  c = mix(c, rgba(14, 12, 12, 255), clamp((1 - S.ao) * 0.9, 0, 0.6));
-  S.col = c; S.gl = 0.34 + crest * 0.25 + f * 0.1;
-  // pebbled grain
-  S.nx += (f - 0.5) * 0.25; S.ny += (n - 0.5) * 0.25;
-}
-
-/**
- * Finger material: leather up to `cut` cm, a rolled stitched hem, then skin
- * with a crease at the next joint and a nail on the back (v = nailV) of the tip.
- */
-function fingerMat(cut, so, nailV = 0.75, crease = 2.4) {
-  return {
-    col: SKIN3, gl: 0.3,
-    shade(S) {
-      if (S.u < cut) {
-        leatherShade(S, so, 0.9);
-        if (S.u > cut - 0.35) { S.col = shadeC(S.col, 1.35); S.ny -= 0.3; }
-        if (S.u > cut - 0.65 && S.u < cut - 0.5 && (floor(S.v * 28) & 1)) S.col = STITCH3;
-        return;
-      }
-      skinShade(S, 0, so, 6.5);
-      const d = abs(S.u - cut - crease);
-      if (d < 0.12) S.col = mix(S.col, SKIN3_D, 0.55);
-      // the nail: a pale glossy plate with a dark rim, on the back of the tip
-      let dv = S.v - nailV;
-      if (dv > 0.5) dv -= 1; else if (dv < -0.5) dv += 1;
-      const tip = S.u - (S.prim.len - 1.25);
-      if (tip > 0 && abs(dv) < 0.13) {
-        const rim = abs(dv) > 0.10 || tip < 0.15;
-        S.col = rim ? mix(S.col, SKIN3_D, 0.6) : mix(NAIL3, rgba(250, 236, 226, 255), clamp(tip - 0.9, 0, 1));
-        S.gl = rim ? S.gl : 0.62;
-      }
-    },
-  };
-}
-
-const LEATHER3 = { col: GLOVE3, gl: 0.34, shade: (S) => leatherShade(S, 3.1) };
-
-/**
- * A hand gripping a cylinder-ish handle.
- *   c        the handle's axis at the top of the hand (local space)
- *   a        axis direction, index finger toward little finger
- *   p        from the axis toward the palm
- *   q        wrap direction: the fingers go from p, through q, round to -p
- *   rp, rq   the handle's half-thickness along p and q (an ellipse)
- *   s        axial offsets of the four fingers (null to skip one)
- *   trigger  optional path (grip coords) for a straight-ish index finger
- *   thumb    thumb path in grip coords [ga, gp, gq]
- *   wrist    wrist centre, grip coords; arm: direction in LOCAL space
- */
-function hand3(sc, H) {
-  const { c, a, p, q } = H;
-  const G = (ga, gp, gq) => vBasis(c, a, ga, p, gp, q, gq);
-  const rp = H.rp, rq = H.rq;
-  const so = H.seed || 0;
-  const FING = [
-    { r: 0.96, L: [4.2, 2.5, 2.0] },
-    { r: 1.02, L: [4.6, 2.9, 2.1] },
-    { r: 0.97, L: [4.3, 2.7, 2.0] },
-    { r: 0.84, L: [3.5, 2.1, 1.8] },
-  ];
-  const wrap = H.wrap === undefined ? 1 : H.wrap;
-  // --- the four fingers, walked round the handle joint by joint ---
-  for (let k = 0; k < 4; k++) {
-    const s = H.s[k];
-    if (s === null || s === undefined) continue;
-    const f = FING[k];
-    if (k === 0 && (H.trigger || H.triggerL)) {
-      const pts = spline(H.triggerL || H.trigger.map((g) => G(g[0], g[1], g[2])), 3);
-      loft(sc, pts, (t) => f.r * (1 - t * 0.14) * (1 + 0.1 * exp(-pow((t - 0.45) / 0.08, 2))),
-        fingerMat(3.4, so + k), { segs: 10, capEnd: 'round', up: a });
-      continue;
-    }
-    // point on the offset ellipse at angle th (0 = palm side, +90deg = q side)
-    const at = (th) => {
-      const ex = rp * cos(th), ey = rq * sin(th);
-      const nn = vNorm([cos(th) / rp, sin(th) / rq, 0]);
-      const off = f.r * 1.04;
-      return [ex + nn[0] * off, ey + nn[1] * off];
-    };
-    const mcp = [rp + 1.7 + f.r * 0.4, (H.mcpQ || 0.6)];
-    const joints = [mcp];
-    let th = atan2(mcp[1] / rq, mcp[0] / rp);
-    for (let j = 0; j < 3; j++) {
-      const L = f.L[j] * (H.fscale || 1);
-      const prev = joints[joints.length - 1];
-      let pt = at(th);
-      let guard = 0;
-      while (hypot(pt[0] - prev[0], pt[1] - prev[1]) < L && guard++ < 400) {
-        th += 0.02 * wrap;
-        pt = at(th);
-      }
-      joints.push(pt);
-    }
-    // straight bones, fat joints: sample each phalanx and swell the knuckles
-    const pts = [], rs = [];
-    const slope = H.slope || 0;
-    for (let j = 0; j < 3; j++) {
-      const A = joints[j], B = joints[j + 1];
-      for (let m = 0; m < 3; m++) {
-        const t = m / 3;
-        pts.push(G(s + slope * (j + t), lerp(A[0], B[0], t), lerp(A[1], B[1], t)));
-        const knuckle = m === 0 ? (j === 0 ? 1.12 : 1.1) : 1;
-        rs.push(f.r * (1 - (j + t) * 0.06) * knuckle);
-      }
-    }
-    pts.push(G(s + slope * 3, joints[3][0], joints[3][1]));
-    rs.push(f.r * 0.8);
-    loft(sc, pts, (t, i) => rs[min(rs.length - 1, i)], fingerMat(f.L[0] * 0.8, so + k),
-      { segs: 10, capEnd: 'round', up: a, capLen: 0.9 });
-  }
-  // --- palm and back of the hand ---
-  const sm = H.sMid;
-  const hb = [G(sm + 0.5, rp + 2.0, H.wristQ), G(sm + 0.3, rp + 2.2, H.wristQ * 0.55),
-    G(sm, rp + 2.15, H.wristQ * 0.18), G(sm - 0.2, rp + 1.95, (H.mcpQ || 0.6) - 0.6)];
-  loft(sc, spline(hb, 3), (t) => [lerp(2.9, 4.1, smoothstep(0, 0.8, t)), lerp(2.0, 1.75, t)],
-    LEATHER3, { segs: 14, up: a, capEnd: 'round', capLen: 0.5 });
-  // knuckle pads across the back of the hand
-  if (H.pads !== false) {
-    for (let k = 0; k < 4; k++) {
-      if (H.s[k] === null || H.s[k] === undefined) continue;
-      const kp = G(H.s[k], rp + 3.4, (H.mcpQ || 0.6) - 0.4);
-      const m = metal3(rgba(38, 36, 40, 255), { gl: 0.5, grain: 0.1, scratch: 0.8, wear: 0.4, seed: 40 + k });
-      ball3(sc, kp, 0.9, 0.75, 0.9, m, { rings: 6, segs: 10 });
-    }
-  }
-  // --- thumb ---
-  if (H.thumb || H.thumbL) {
-    const tl = H.thumbL || H.thumb.map((g) => G(g[0], g[1], g[2]));
-    const tp = spline(tl, 4);
-    const tr = H.thumbR || [1.55, 1.3, 1.15, 1.05];
-    loft(sc, tp, (t) => {
-      const i = t * (tr.length - 1), i0 = floor(i), i1 = min(tr.length - 1, i0 + 1);
-      return lerp(tr[i0], tr[i1], i - i0);
-    }, fingerMat(H.thumbCut || 5.0, so + 9, H.thumbNailV === undefined ? 0.5 : H.thumbNailV, 2.6),
-    { segs: 12, capEnd: 'round', up: H.thumbUp || a, capLen: 0.9 });
-    // the ball of the thumb, filling the web
-    const b0 = tl[0], b1 = tl[1];
-    loft(sc, [b0, vLerp(b0, b1, 0.5), b1], (t) => 1.9 - t * 0.35, LEATHER3,
-      { segs: 12, up: a, capStart: 'round', capEnd: 'round' });
-  }
-  // --- wrist, cuff, forearm and sleeve ---
-  if (H.arm) forearm3(sc, H.wristL || G(H.wrist[0], H.wrist[1], H.wrist[2]), H.arm, H);
-}
-
-/**
- * The forearm: glove cuff with a velcro strap, a lot of arm, and a rolled
- * sleeve where it leaves the frame. `tattoo` places the heart on the arm.
- */
-function forearm3(sc, w, dir, H) {
-  const d = vNorm(dir);
-  const len = H.armLen || 34;
-  const up = H.armUp || [0, -1, 0];
-  const pts = [];
-  const bend = H.armBend || [0, 0, 0];
-  for (let i = 0; i <= 10; i++) {
-    const t = i / 10;
-    pts.push(vAdd(vAdd(w, vMul(d, t * len)), vMul(bend, t * t * len)));
-  }
-  const so = (H.seed || 0) + 21;
-  const sleeveAt = H.sleeveAt || 26;
-  const tat = H.tattoo;
-  const mat = {
-    col: SKIN3, gl: 0.3,
-    shade(S) {
-      if (S.u < 3.2) {
-        leatherShade(S, so, 0.5);
-        // velcro strap with a stitched edge and a brass snap
-        if (S.u > 1.0 && S.u < 2.4) {
-          S.col = shadeC(S.col, 0.8);
-          if (S.u < 1.15 || S.u > 2.25) S.col = STITCH3;
-        }
-        if (S.u > 3.0) { S.col = shadeC(S.col, 1.3); S.ny -= 0.25; }
-        return;
-      }
-      skinShade(S, 1.0, so, 26);
-      // veins over the tendons toward the wrist
-      const vv = nz3(S.u * 0.35 + so, S.v * 2.2);
-      if (S.u < 16 && abs(vv - 0.5) < 0.018) { S.col = mix(S.col, rgba(150, 110, 118, 255), 0.35); S.nz -= 0.2; }
-      if (tat) tattoo3(S, tat);
-    },
-  };
-  const rad = (t) => {
-    const u = t * len;
-    // wrist -> the swell of the forearm muscle -> elbow
-    const sw = smoothstep(1.5, 12, u) * (1 - smoothstep(24, 40, u) * 0.25);
-    const k = H.armScale || 1;
-    return [(2.75 + sw * 2.2) * k, (2.15 + sw * 1.75) * k];
-  };
-  loft(sc, pts, rad, mat, { segs: 16, up, capStart: 'round', capLen: 0.6 });
-  // rolled sleeve
-  const sp = pts.filter((p, i) => i / 10 * len >= sleeveAt - 1.5);
-  if (sp.length >= 2) {
-    loft(sc, sp, (t) => { const r = rad(sleeveAt / len + t * 0.3); const k = t < 0.25 ? 1.32 : 1.2; return [r[0] * k, r[1] * k]; },
-      {
-        col: CLOTH3, gl: 0.12,
-        shade(S) {
-          const n = nz3(S.u * 0.9, S.v * 6);
-          let c = shadeC(CLOTH3, 0.8 + n * 0.4);
-          if ((floor(S.u * 6 + S.v * 40) & 3) === 0) c = shadeC(c, 0.9);   // twill
-          // rolled cuff: a fat fold with its own shadow line
-          const fold = S.u - (sleeveAt - 1.5);
-          if (fold < 2.2 && fold > 0) c = shadeC(c, 1.12 - abs(fold - 1.1) * 0.2);
-          if (abs(fold - 2.3) < 0.25) c = shadeC(c, 0.55);
-          c = mix(c, rgba(20, 20, 14, 255), clamp((1 - S.ao) * 0.8, 0, 0.5));
-          S.col = c; S.gl = 0.1;
-        },
-      }, { segs: 16, up });
-  }
 }
 
 /**
@@ -1820,6 +1619,709 @@ function tattoo3(S, t) {
     S.col = mix(S.col, edge ? INK3 : rgba(226, 204, 150, 255), fade);
     const word = t.word || 'MOM';
     if (!edge && glyph3(word, by, bx, -(word.length * 4 - 1) * 0.04, -0.2, 0.4)) S.col = mix(S.col, INK3, 0.9);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// hands: one rig, every weapon
+// ---------------------------------------------------------------------------
+// A hand is not a bundle of tubes. This one has a palm with volume running
+// from the wrist to a curved row of knuckles; four fingers in proportion
+// (index 0.95, middle 1.0, ring 0.96, little 0.8 of the middle finger, each
+// split 0.45 / 0.30 / 0.25 into its three phalanges) with straight bones,
+// rounded swollen joints, a taper to the tip and a nail on it; and a thumb
+// that is shorter and fatter than the rest, two visible segments rooted in
+// the muscle at the base of the palm. Every digit is its own primitive and
+// resolve3 draws a crease wherever one lies against another or against the
+// gun, which is what keeps four fingers reading as four fingers at a glance.
+//
+// The glove: fingerless black driving leather over the palm, the back of the
+// hand and the first joint of each finger, vented over every knuckle, a
+// rolled stitched hem where the skin starts, seams down the stalls and three
+// stitched points down the back.
+
+const SKIN3_P = rgba(222, 140, 118, 255);   // the pad of a fingertip
+const SKIN3_W = rgba(228, 184, 152, 255);   // the pale band the glove keeps out of the sun
+const NAIL3B = rgba(234, 194, 182, 255);    // nail plate over its pink bed
+const NAIL3E = rgba(246, 232, 214, 255);    // the free edge
+const sq3 = (x) => x * x;
+
+// Anatomy, in centimetres, for a big man. A finger runs from its knuckle (the
+// MCP joint's centre) to the fingertip; w and h are its half-width and
+// half-depth at the base.
+const DIGIT3 = [
+  { len: 9.5, w: 0.98, h: 0.86 },    // index
+  { len: 10.0, w: 1.0, h: 0.88 },    // middle
+  { len: 9.6, w: 0.95, h: 0.84 },    // ring
+  { len: 8.0, w: 0.83, h: 0.75 },    // little
+];
+const PHAL3 = [0.45, 0.30, 0.25];
+// The thumb: its metacarpal (buried in the ball of the thumb), then the two
+// segments you see, together about 0.65 of the index finger. `root` is how
+// much of the metacarpal the digit itself carries before the mound takes over.
+const THUMB3 = { L: [4.6, 2.9, 2.5], root: 1.6, w: 1.15, h: 0.96 };
+const PALM3 = 9.0;    // wrist joint to the middle of the knuckle row
+// the knuckle row in the palm's own frame (toward the fingers, toward the
+// thumb, out of the back), index first: an arc, the little finger set back
+const KROW3 = [[8.95, 2.95, -0.1], [9.35, 0.95, 0.06], [8.95, -0.95, -0.08], [8.1, -2.75, -0.45]];
+
+// Down a finger x is 0 at the knuckle, 0.45 at the middle joint, 0.75 at the
+// last and 1 at the end of the bone. Columns: half-width, then half-depth on
+// the nail side and on the pad side, as fractions of the digit's base size.
+// Joints swell, bones waist in, a flat nail rides on a full pad.
+const FPROF3 = [
+  [0.00, 1.08, 1.02, 1.04],
+  [0.10, 1.00, 0.86, 1.02],
+  [0.30, 0.93, 0.80, 0.98],
+  [0.45, 0.99, 0.94, 0.84],
+  [0.56, 0.90, 0.80, 0.92],
+  [0.68, 0.85, 0.74, 0.90],
+  [0.75, 0.87, 0.79, 0.77],
+  [0.85, 0.84, 0.64, 0.92],
+  [1.00, 0.80, 0.57, 0.86],
+];
+// The thumb: a fat root (the ball of the thumb), a thick first phalanx, a
+// knuckle, a broad flat last phalanx.
+// The thumb, root to tip: wide where it leaves the ball of the thumb, one
+// smooth taper to a rounded tip, the joint barely swelling so it bends without
+// a step; the last segment flat on top under a broad nail, full under the pad.
+const TPROF3 = [
+  [0.00, 1.10, 1.02, 1.12],
+  [0.229, 1.05, 0.98, 1.03],    // the knuckle, inside the glove
+  [0.40, 0.99, 0.91, 0.99],
+  [0.55, 0.96, 0.87, 0.95],
+  [0.643, 0.96, 0.87, 0.92],    // the joint: no knob, no fold
+  [0.75, 0.94, 0.77, 0.94],
+  [0.86, 0.92, 0.66, 0.94],
+  [1.00, 0.86, 0.58, 0.84],
+];
+function profAt3(P, x) {
+  if (x <= P[0][0]) return P[0];
+  for (let i = 1; i < P.length; i++) {
+    if (x <= P[i][0]) {
+      const A = P[i - 1], B = P[i];
+      const t = smoothstep(0, 1, (x - A[0]) / (B[0] - A[0]));
+      return [x, lerp(A[1], B[1], t), lerp(A[2], B[2], t), lerp(A[3], B[3], t)];
+    }
+  }
+  return P[P.length - 1];
+}
+
+/** Black driving-glove leather: pebbled, oiled, worn grey where it is stretched. */
+function gloveShade(S, so, circ, wearK = 0.6) {
+  const w = S.v * circ;
+  const n = nz3(S.u * 0.32 + so, w * 0.32 + so * 0.7);
+  const f = nz3(S.u * 2.4 + so * 1.3, w * 2.4 + 0.5);
+  const f2 = nz3(S.u * 2.4 + 3.1, w * 2.4 + so);
+  let c = shadeC(GLOVE3, 0.82 + n * 0.34 + (f - 0.5) * 0.26);
+  // the worn sheen where the leather is stretched over a crest toward the light
+  const crest = clamp(-S.ny * 0.8 - S.nz * 0.35, 0, 1) * wearK;
+  c = mix(c, GLOVE3_HI, crest * (0.2 + n * 0.42));
+  c = mix(c, rgba(12, 10, 10, 255), clamp((1 - S.ao) * 0.9, 0, 0.62));
+  S.col = c;
+  S.gl = 0.38 + crest * 0.2 + (f - 0.5) * 0.12;
+  S.nx += (f - 0.5) * 0.22; S.ny += (f2 - 0.5) * 0.22;
+}
+
+/**
+ * Is this pixel on a dashed run of stitching? `along` runs down the seam and
+ * `off` is the distance from it, both in cm; px is a pixel's size there, so
+ * the thread stays one pixel wide and the dashes stay readable far away.
+ */
+function stitch3(along, off, px, pitch = 0.32) {
+  if (abs(off) > max(0.045, px * 0.62)) return false;
+  const k = along / max(pitch, px * 3.2);
+  return k - floor(k) < 0.56;
+}
+
+/**
+ * A closed tube from explicit rings of local points (each segs + 1 long, the
+ * last repeating the first). cen[i] is ring i's centre and us[i] its distance
+ * along the tube (the shader's u; v runs 0..1 round the ring). A ring that
+ * has shrunk to a point takes its normal from poles[i].
+ */
+function tubeRings3(sc, rings, cen, us, mat, extra, poles) {
+  const R = rings.length, segs = rings[0].length - 1;
+  const M = sc.M;
+  const pid = prim3(sc, mat, extra);
+  const CV = new Array(R);
+  for (let i = 0; i < R; i++) {
+    const row = new Array(segs + 1);
+    const ip = min(R - 1, i + 1), im = max(0, i - 1);
+    for (let j = 0; j <= segs; j++) {
+      const P = rings[i][j];
+      const out = vSub(P, cen[i]);
+      let nn;
+      if (poles && poles[i]) nn = poles[i];
+      else {
+        const jm = j === 0 ? segs - 1 : j - 1, jp = j === segs ? 1 : j + 1;
+        nn = vNorm(vCross(vSub(rings[ip][j], rings[im][j]), vSub(rings[i][jp], rings[i][jm])));
+        if (vDot(nn, out) < 0) nn = vMul(nn, -1);
+      }
+      const p = mP(M, P[0], P[1], P[2]);
+      const d = vNorm(mD(M, nn[0], nn[1], nn[2]));
+      row[j] = [p[0], p[1], p[2], d[0], d[1], d[2], us[i], j / segs];
+    }
+    CV[i] = row;
+  }
+  for (let i = 0; i < R - 1; i++) {
+    for (let j = 0; j < segs; j++) {
+      const a = CV[i][j], b = CV[i + 1][j], c = CV[i + 1][j + 1], d = CV[i][j + 1];
+      rtri(pid, a, b, c, true, 0);
+      rtri(pid, a, c, d, true, 0);
+    }
+  }
+  return pid;
+}
+
+/**
+ * One digit from its joint centres J (knuckle, two joints, end of the last
+ * bone): straight bones with the joints rounded off, a knuckle cap behind
+ * and a fingertip in front. The nail side faces cross(hinge, tangent), or
+ * for the thumb `o.up` squared off each bone. `xJ` is where the joints fall
+ * on the profile's x scale. Fills in where the joints and the nail ended up.
+ */
+function digit3(sc, J, hinge, dims, prof, xJ, mat, extra, o = {}) {
+  const P = [J[0]];
+  for (let b = 0; b < 3; b++) {
+    for (const t of [0.2, 0.5, 0.8]) P.push(vLerp(J[b], J[b + 1], t));
+    P.push(J[b + 1]);
+  }
+  const line = spline(P, 3);
+  const n = line.length;              // 37 samples: the joints are 0, 12, 24, 36
+  const s = [0];
+  for (let i = 1; i < n; i++) s.push(s[i - 1] + vLen(vSub(line[i], line[i - 1])));
+  const sJ = [0, s[12], s[24], s[n - 1]];
+  const xAt = (si) => {
+    for (let b = 0; b < 3; b++) {
+      if (si <= sJ[b + 1] || b === 2) return lerp(xJ[b], xJ[b + 1], clamp((si - sJ[b]) / max(1e-6, sJ[b + 1] - sJ[b]), 0, 1));
+    }
+    return 1;
+  };
+  const segs = o.segs || 14;
+  const frame = (i) => {
+    const T = vNorm(vSub(line[min(n - 1, i + 1)], line[max(0, i - 1)]));
+    const D = vNorm(o.up ? vSub(o.up, vMul(T, vDot(o.up, T))) : vCross(hinge, T));
+    return [T, D, vCross(T, D)];
+  };
+  const dimAt = (x) => { const p = profAt3(prof, x); return [p[1] * dims.w, p[2] * dims.h, p[3] * dims.h]; };
+  const ring = (C, F3, w, hd, hp) => {
+    const [T, D, Lt] = F3, r = [];
+    for (let j = 0; j <= segs; j++) {
+      const th = (j / segs) * TAU, c = cos(th), sn = sin(th);
+      r.push(vBasis(C, D, c * (c >= 0 ? hd : hp), Lt, sn * w, T, 0));
+    }
+    return r;
+  };
+  const rings = [], cen = [], us = [], poles = [];
+  // the knuckle: the head of the bone behind the finger, rounding it off
+  {
+    const F3 = frame(0), [w, hd, hp] = dimAt(0);
+    const cl = (o.capBase === undefined ? 0.95 : o.capBase) * w;
+    for (let k = 4; k >= 1; k--) {
+      const al = (k / 4) * PI / 2, k2 = cos(al);
+      const C = vSub(line[0], vMul(F3[0], sin(al) * cl));
+      rings.push(ring(C, F3, w * k2, hd * k2, hp * k2)); cen.push(C); us.push(-sin(al) * cl);
+      poles.push(k === 4 ? vMul(F3[0], -1) : null);
+    }
+  }
+  for (let i = 0; i < n; i++) {
+    const [w, hd, hp] = dimAt(xAt(s[i]));
+    rings.push(ring(line[i], frame(i), w, hd, hp)); cen.push(line[i]); us.push(s[i]); poles.push(null);
+  }
+  // the fingertip: blunt, the pad fuller than the nail side
+  const end = s[n - 1];
+  const Fe = frame(n - 1), [we, hde, hpe] = dimAt(1);
+  const capTip = (o.capTip || 0.8) * we;
+  for (let k = 1; k <= 4; k++) {
+    const al = (k / 4) * PI / 2, k2 = pow(cos(al), 0.7);
+    const C = vAdd(line[n - 1], vMul(Fe[0], sin(al) * capTip));
+    rings.push(ring(C, Fe, we * k2, hde * k2, hpe * k2)); cen.push(C); us.push(end + sin(al) * capTip);
+    poles.push(k === 4 ? Fe[0] : null);
+  }
+  const nail1 = end + capTip * 0.5;
+  const M = sc.M;
+  Object.assign(extra, {
+    sJ, end, capTip, len: end, wt: we,
+    nail1, nail0: nail1 - (o.nailLen || 1.25),
+    nailN: vNorm(mD(M, Fe[1][0], Fe[1][1], Fe[1][2])),
+  });
+  return tubeRings3(sc, rings, cen, us, mat, extra, poles);
+}
+
+/** The vent over a knuckle: a round hole in the glove with the knuckle in it. */
+function ventShade3(S, pr, lw) {
+  const z = S.z;
+  const X = (S.x + 0.5 - CAM_CX) * z / CAM_F - pr.ventC[0];
+  const Y = (S.y + 0.5 - CAM_CY) * z / CAM_F - pr.ventC[1];
+  const Z = z - pr.ventC[2];
+  const dl = sqrt(X * X + Y * Y + Z * Z) || 1;
+  const r = acos(clamp((X * pr.ventN[0] + Y * pr.ventN[1] + Z * pr.ventN[2]) / dl, -1, 1)) * dl;
+  const R = pr.ventR;
+  if (r < R) {
+    if (r > R - lw * 1.1) { S.col = rgba(18, 13, 12, 255); S.gl = 0.1; return; }   // the hole's cut edge
+    const n = nz3(S.u * 1.3 + pr.seed, S.v * 4.1 + pr.seed);
+    let c = mix(SKIN3_R, SKIN3, 0.3 + n * 0.3);
+    c = mix(c, SKIN3_D, clamp((1 - S.ao) * 0.8 + (r / R) * 0.3, 0, 0.6));
+    S.col = c; S.gl = 0.34;
+  } else if (r < R + max(0.12, lw * 1.6)) {
+    S.col = shadeC(S.col, 1.32); S.gl += 0.06;        // the leather lip round it
+  }
+}
+
+/** Every finger and thumb: glove stall, then skin, creases, hair and a nail. */
+function digitShade3(S) {
+  const pr = S.prim, u = S.u;
+  const th = S.v * TAU, cd = cos(th), sd = sin(th);
+  const px = S.z / CAM_F, lw = max(0.05, px * 0.7);
+  const so = pr.seed;
+  const uP = pr.sJ[1], uD = pr.sJ[2], end = pr.sJ[3];
+  if (u < pr.cut) {
+    gloveShade(S, so, pr.circ, 0.9);
+    const e = pr.cut - u;
+    const hem = pr.thumb ? 0.18 : 0.32;
+    if (e < lw * 1.2) { S.col = shadeC(S.col, 0.42); S.gl *= 0.4; }                 // the cut edge
+    else if (e < hem) { S.col = shadeC(S.col, 1.12 + (hem - e) * 0.8); S.gl += 0.06; } // rolled hem
+    else if (stitch3(S.v * pr.circ, e - 0.48, px)) S.col = STITCH3;
+    // seams down both sides of the stall
+    const side = acos(clamp(abs(sd), 0, 1)) * pr.wb;
+    if (!pr.thumb && u > 0.5 && e > 0.62 && stitch3(u, side, px, 0.3)) S.col = mix(S.col, STITCH3, 0.85);
+    if (pr.ventC) ventShade3(S, pr, lw);
+    return;
+  }
+  // ---- skin ----
+  const ws = S.v * pr.circ;
+  const n = nz3(u * 0.45 + so, ws * 0.45 + so);
+  const f = nz3(u * 1.8 + so * 1.7, ws * 1.8);
+  let c = mix(SKIN3_D, SKIN3, clamp(0.64 + (n - 0.5) * 0.55 + (f - 0.5) * 0.2, 0, 1));
+  const dors = max(0, cd);
+  const jK = pr.thumb ? uD : uP;                    // the big knuckle in the skin
+  const kP = exp(-sq3((u - jK) / 0.6)) * dors;
+  const kD = pr.thumb ? 0 : exp(-sq3((u - uD) / 0.45)) * dors;
+  c = mix(c, SKIN3_R, clamp(kP * 0.55 + kD * 0.38, 0, 0.62));
+  c = mix(c, SKIN3_P, smoothstep(uD + 0.3, end + pr.capTip, u) * (0.2 + 0.32 * max(0, -cd)));
+  const e = u - pr.cut;
+  if (e < 0.55) c = mix(c, SKIN3_W, (1 - e / 0.55) * 0.4);
+  if (e < lw * 1.4) c = mix(c, SKIN3_D, 0.6);       // the hem's shadow on the skin
+  c = mix(c, SKIN3_R, clamp((1 - S.ao) * 1.0, 0, 0.45));
+  let gl = 0.22 + f * 0.1 + kP * 0.1;
+  // wrinkles across the knuckles, folds under them
+  if (cd > 0.35) {
+    const arch = (1 - cd) * 0.16, lw2 = lw * 0.8;
+    for (let k = -1; k <= 1; k++) {
+      const uk = jK + k * 0.19 + arch;
+      if (abs(u - uk) < lw2 && abs(sd) < 0.62 - abs(k) * 0.22) { c = mix(c, SKIN3_D, 0.34); gl *= 0.8; }
+    }
+    if (!pr.thumb) {
+      for (let k = 0; k <= 1; k++) {
+        const uk = uD - 0.06 + k * 0.16 + arch * 0.8;
+        if (abs(u - uk) < lw2 && abs(sd) < 0.45 - k * 0.18) c = mix(c, SKIN3_D, 0.3);
+      }
+    }
+  }
+  if (cd < -0.2 && ((!pr.thumb && abs(u - uP) < lw * 1.2) || abs(u - uD) < lw * 1.2)) c = mix(c, SKIN3_D, 0.62);
+  // hair on the back of the finger between the glove and the last joint
+  if (pr.hair && cd > 0.15 && u > pr.cut + 0.15 && u < uD - 0.25) {
+    const h = nz3(u * 0.7 + so * 3, ws * 9.0 + so);
+    const k = smoothstep(0.68, 0.72, h) * pr.hair * smoothstep(0.15, 0.5, cd) * smoothstep(0.42, 0.66, n + 0.1);
+    if (k > 0.02) { c = mix(c, HAIR3, clamp(k * 0.5, 0, 0.45)); gl *= 1 - k * 0.4; }
+  }
+  // the nail: a glossy plate on the back of the tip, pale lunula, cream free edge
+  if (cd > 0 && u > pr.nail0 - lw * 1.4 && u < pr.nail1 + lw) {
+    const a = abs(th > PI ? th - TAU : th);
+    const half = pr.nailA * sqrt(clamp((u - pr.nail0) / 0.3, 0, 1));
+    const aw = lw / pr.wt;
+    if (u >= pr.nail0 && u <= pr.nail1 && a < half) {
+      let nc = mix(NAIL3B, rgba(228, 192, 178, 255), clamp(1 - (u - pr.nail0) / 0.26, 0, 1) * 0.5);
+      nc = shadeC(nc, 0.94 + (f - 0.5) * 0.12);
+      if (u > pr.nail1 - max(0.12, px * 1.5)) nc = NAIL3E;
+      if (a > half - aw) nc = mix(nc, SKIN3_D, 0.45);
+      c = mix(nc, c, 0.12);
+      gl = 0.46;
+      S.nx += pr.nailN[0] * 0.5; S.ny += pr.nailN[1] * 0.5; S.nz += pr.nailN[2] * 0.5;
+    } else if (a < half + aw * 1.3 && u < pr.nail1 && u > pr.nail0 - lw * 1.4) c = mix(c, SKIN3_D, 0.6);
+  }
+  S.col = c; S.gl = gl;
+}
+const DIGIT_MAT3 = { col: SKIN3, gl: 0.3, hand: true, crease: 0.5, shade: digitShade3 };
+
+/** The back of the glove and its palm: leather, edge seams, three stitched points. */
+function palmShade3(S) {
+  const pr = S.prim, u = S.u;
+  gloveShade(S, pr.seed, 20, 0.75);
+  const px = S.z / CAM_F, lw = max(0.05, px * 0.7);
+  const th = S.v * TAU, sg = cos(th), tg = sin(th);
+  // the seam round the edge of the hand where the back panel meets the palm
+  const edge = acos(clamp(abs(sg), 0, 1)) * 1.3;
+  if (u > 0.6 && stitch3(u, edge - 0.14, px, 0.3)) S.col = mix(S.col, STITCH3, 0.75);
+  else if (edge < lw) S.col = shadeC(S.col, 0.62);
+  // three stitched points down the back
+  if (tg > 0.3 && u > pr.L * 0.2 && u < pr.L * 0.66) {
+    for (const p0 of [-0.36, 0.02, 0.4]) {
+      const d = (sg - p0) * pr.hw;
+      if (abs(d) < lw * 0.8) { S.col = shadeC(S.col, 0.55); break; }
+      if (stitch3(u, abs(d) - 0.17, px, 0.26)) { S.col = mix(S.col, STITCH3, 0.7); break; }
+    }
+  }
+  // creases where the leather bunches behind the knuckles
+  if (tg > 0.2 && u > pr.L - 2.0 && u < pr.L - 0.5) {
+    const w = nz3(u * 0.6 + sg * 2.0, sg * 3.0 + pr.seed);
+    if (abs(((u + w * 0.8) % 0.66) - 0.33) < lw * 0.6) S.col = shadeC(S.col, 0.64);
+  }
+}
+const PALM_MAT3 = { col: GLOVE3, gl: 0.38, hand: true, soft: true, shade: palmShade3 };
+const THENAR_MAT3 = { col: GLOVE3, gl: 0.38, hand: true, soft: true, shade: (S) => gloveShade(S, S.prim.seed, 11, 0.8) };
+
+/**
+ * The ball of the thumb and the web, as one fan of hand: a solid whose
+ * section spans from the thumb's metacarpal (cmc to mcp) across to the
+ * forefinger's side of the palm (palmP to idxP). Thick where it leaves the
+ * palm, thinning to the web's rounded free edge, closed at both ends, so the
+ * thumb grows out of the hand instead of out of a hole in it.
+ */
+function web3(sc, cmc, mcp, palmP, idxP, fs, extra) {
+  const NR = 10, NC = 4, segs = 22;
+  const at = (t) => {
+    const M = vLerp(cmc, mcp, t), I = vLerp(palmP, idxP, t);
+    return { M, I, C: vLerp(M, I, 0.5) };
+  };
+  const tan = (t) => vNorm(vSub(at(min(1, t + 0.04)).C, at(max(0, t - 0.04)).C));
+  const half = (t) => { const g = at(t); return vLen(vSub(g.I, g.M)) * 0.5 + 0.6 * fs; };
+  const thick = (t) => lerp(1.6, 0.82, smoothstep(0, 1, t)) * fs;
+  const ring = (C, T, g, ra, rb) => {
+    let L = vSub(g.I, g.M);
+    L = vNorm(vSub(L, vMul(T, vDot(L, T))));
+    const S2 = vCross(T, L), r = [];
+    for (let j = 0; j <= segs; j++) {
+      const th = (j / segs) * TAU;
+      r.push(vBasis(C, L, cos(th) * ra, S2, sin(th) * rb, T, 0));
+    }
+    return r;
+  };
+  const rings = [], cen = [], us = [], poles = [];
+  const cap = (t, dir) => {
+    const g = at(t), T = tan(t), ra = half(t), rb = thick(t);
+    const ks = [];
+    for (let k = 1; k <= NC; k++) ks.push(k);
+    if (dir < 0) ks.reverse();
+    for (const k of ks) {
+      const al = (k / NC) * PI / 2, ca = cos(al), sa = sin(al);
+      const C = vAdd(g.C, vMul(T, dir * sa * rb * 0.9));
+      rings.push(ring(C, T, g, ra * (0.35 + 0.65 * ca), rb * ca)); cen.push(C);
+      us.push(t * 6 + dir * sa * rb * 0.9); poles.push(k === NC ? vMul(T, dir) : null);
+    }
+  };
+  cap(0, -1);
+  for (let i = 0; i <= NR; i++) {
+    const t = i / NR, g = at(t);
+    rings.push(ring(g.C, tan(t), g, half(t), thick(t))); cen.push(g.C); us.push(t * 6); poles.push(null);
+  }
+  cap(1, 1);
+  return tubeRings3(sc, rings, cen, us, THENAR_MAT3, Object.assign({ len: 6 }, extra), poles);
+}
+
+/**
+ * The palm and the back of the hand, wrist to knuckles: a flattened tube
+ * whose far end follows the actual knuckle row K (index first). F runs from
+ * the wrist W toward the knuckles, D out of the back of the hand, R toward
+ * the thumb. The ball of the thumb and the heel of the hand swell the palm.
+ */
+function palm3(sc, W, K, F, D, R, extra) {
+  const Kc = vMul(vAdd(vAdd(K[0], K[1]), vAdd(K[2], K[3])), 0.25);
+  const eR = vBasis(K[0], R, 1.1, F, -0.75, D, -0.2);
+  const eU = vBasis(K[3], R, -1.0, F, -0.95, D, -0.25);
+  const row = [eR, K[0], K[1], K[2], K[3], eU];
+  const rl = row.map((k) => vDot(vSub(k, Kc), R));
+  const knuck = (l) => {
+    if (l >= rl[0]) return row[0];
+    for (let i = 1; i < row.length; i++) {
+      if (l >= rl[i]) return vLerp(row[i], row[i - 1], (l - rl[i]) / max(1e-6, rl[i - 1] - rl[i]));
+    }
+    return row[row.length - 1];
+  };
+  const ww = 2.8, segs = 24, NR = 12, NC = 3;
+  const L = vLen(vSub(Kc, W));
+  const rings = [], cen = [], us = [], poles = [];
+  for (let i = 0; i <= NR + NC; i++) {
+    const t = min(1, i / NR);
+    const al = i > NR ? ((i - NR) / NC) * PI / 2 : 0;
+    const ka = cos(al);
+    const e = t * 0.6 + t * t * (3 - 2 * t) * 0.4;
+    const ring = [];
+    let cs = [0, 0, 0];
+    for (let j = 0; j <= segs; j++) {
+      const ph = (j / segs) * TAU, c = cos(ph), sn = sin(ph);
+      const sg = Math.sign(c) * pow(abs(c), 0.8), tg = Math.sign(sn) * pow(abs(sn), 0.8);
+      const kl = lerp(rl[rl.length - 1], rl[0], (sg + 1) / 2);
+      let m = vLerp(vAdd(W, vMul(R, sg * ww)), knuck(kl), e);
+      // the cap closes the knuckle end, pulling in toward the middle knuckle
+      if (al > 0) m = vAdd(vLerp(Kc, m, ka), vMul(F, sin(al) * 0.7));
+      const hd = lerp(1.6, 0.92, t) * (1 - 0.2 * sg * sg) * ka;
+      const hp = (lerp(1.75, 1.25, t)
+        + 0.55 * exp(-sq3((t - 0.3) / 0.26) - sq3((sg - 0.55) / 0.38))       // ball of the thumb
+        + 0.4 * exp(-sq3((t - 0.38) / 0.3) - sq3((sg + 0.62) / 0.32)))       // heel of the hand
+        * (1 - 0.15 * sg * sg) * ka;
+      const P = vAdd(m, vMul(D, tg >= 0 ? tg * hd : tg * hp));
+      ring.push(P);
+      if (j < segs) cs = vAdd(cs, P);
+    }
+    rings.push(ring);
+    cen.push(vMul(cs, 1 / segs));
+    us.push(t * L + (al > 0 ? sin(al) * 0.7 : 0));
+    poles.push(i === NR + NC ? F : null);
+  }
+  return tubeRings3(sc, rings, cen, us, PALM_MAT3, Object.assign({ L, len: L }, extra), poles);
+}
+
+/**
+ * A hand. Two ways to pose it:
+ *  - round a handle (H.c): c is the handle's axis level with the index
+ *    finger, a the axis toward the little finger, p from the axis toward the
+ *    palm, q the way the fingers wrap; rp, rq its half-sizes along p and q,
+ *    sq the power of its section (2 round, 4 or more boxy). s: where each
+ *    finger sits along the axis. Each finger is walked round the handle a
+ *    phalanx at a time, so it hugs whatever section it is given; mcpP and
+ *    mcpQ (numbers or one per finger) place the knuckles off it. wrist: where
+ *    the wrist roughly is (the palm keeps its real length, only the direction
+ *    is used). back: overrides which way the back of the hand faces.
+ *  - open (H.palm = { W, F, D }): the wrist, toward the knuckles, out of the
+ *    back; curl gives each finger's three joint angles, spread its splay.
+ * trigger: three points the index finger reaches toward instead, joint by
+ * joint (the bones keep their lengths; only directions come from the points).
+ * thumb: where the thumb's knuckle sits, then two points its segments reach
+ * toward (again only directions; the two visible segments together are about
+ * 0.65 of the index finger). thumbBase: a point inside the ball of the thumb
+ * the metacarpal runs back toward; thumbUp: the way the thumbnail faces.
+ * thumbRel / thumbUpRel give the same in the palm's own frame (toward the
+ * fingers, toward the thumb, out of the back), for an open hand.
+ * side: 1 for a right hand, -1 for a left. skip: fingers not to draw.
+ * vents: false for no knuckle vents. arm, armLen, armBend, armUp, sleeveAt and
+ * tattoo ({ u, s, word, face }) dress the forearm (see arm3).
+ */
+function hand3(sc, H) {
+  sc.hands = true;
+  const so = (H.seed || 0) * 0.37;
+  const fs = H.fscale || 1;
+  const side = H.side || 1;
+  const M = sc.M;
+  const camP = (p) => mP(M, p[0], p[1], p[2]);
+  const camD = (d) => vNorm(mD(M, d[0], d[1], d[2]));
+  const ortho = (v, ...axes) => { let r = v; for (const ax of axes) r = vSub(r, vMul(ax, vDot(r, ax))); return vNorm(r); };
+  const part = () => (sc.parts = (sc.parts || 0) + 1);
+  const K = [], JS = [], hinges = [];
+  let W, F, D, R;
+  if (H.c) {
+    const { c, a, p, q, rp, rq } = H;
+    const sq = H.sq || 2, ex = 2 / sq;
+    const G = (ga, gp, gq) => vBasis(c, a, ga, p, gp, q, gq);
+    const at = (th, off) => {
+      const ct = cos(th), st = sin(th);
+      const x = rp * Math.sign(ct) * pow(abs(ct), ex), y = rq * Math.sign(st) * pow(abs(st), ex);
+      const gx = Math.sign(x) * pow(abs(x / rp), sq - 1) / rp, gy = Math.sign(y) * pow(abs(y / rq), sq - 1) / rq;
+      const gl = hypot(gx, gy) || 1;
+      return [x + gx / gl * off, y + gy / gl * off];
+    };
+    const sDef = [0, 2.05, 4.05, 5.85];
+    let back = [0, 0, 0];
+    for (let k = 0; k < 4; k++) {
+      const dg = DIGIT3[k];
+      const sk = H.s && H.s[k] !== null && H.s[k] !== undefined ? H.s[k] : sDef[k] * fs;
+      const mp = Array.isArray(H.mcpP) ? H.mcpP[k] : (H.mcpP === undefined ? 1.55 : H.mcpP);
+      const mq = Array.isArray(H.mcpQ) ? H.mcpQ[k] : (H.mcpQ === undefined ? 0.4 : H.mcpQ);
+      const slope = H.slope || 0;
+      const pts = [[rp + mp, mq]];
+      let th = atan2(mq / rq, (rp + mp) / rp);
+      const offs = [0.92, 0.84, 0.8];
+      for (let j = 0; j < 3; j++) {
+        const Lj = dg.len * PHAL3[j] * fs;
+        const off = dg.h * offs[j] * fs + (H.gap === undefined ? 0.04 : H.gap);
+        const prev = pts[pts.length - 1];
+        let pt = at(th, off), guard = 0;
+        while (hypot(pt[0] - prev[0], pt[1] - prev[1]) < Lj && guard++ < 900) { th += 0.01; pt = at(th, off); }
+        pts.push(pt);
+      }
+      const J = pts.map((pt, j) => G(sk + slope * j, pt[0], pt[1]));
+      K.push(J[0]); JS.push(J);
+      const T0 = vNorm(vSub(J[1], J[0]));
+      const out = ortho(vSub(J[0], G(sk, 0, 0)), T0);
+      back = vAdd(back, out);
+      hinges.push(vNorm(vCross(T0, out)));
+    }
+    const Kc = vMul(vAdd(vAdd(K[0], K[1]), vAdd(K[2], K[3])), 0.25);
+    F = vNorm(vSub(Kc, H.wrist || vSub(Kc, a)));
+    W = vSub(Kc, vMul(F, PALM3 * fs));
+    D = ortho(H.back || back, F);
+    R = ortho(vSub(K[0], K[3]), F, D);
+  } else {
+    const P = H.palm;
+    W = P.W; F = vNorm(P.F); D = ortho(P.D, F);
+    R = vMul(vCross(D, F), side);
+    for (let k = 0; k < 4; k++) {
+      const kr = KROW3[k];
+      const Kk = vBasis(W, F, kr[0] * fs, R, kr[1] * fs, D, kr[2] * fs);
+      const Fk = vNorm(vAdd(F, vMul(R, H.spread ? H.spread[k] : [0.08, 0.01, -0.06, -0.13][k])));
+      const curl = H.curl ? H.curl[k] : [0.2, 0.25, 0.15];
+      const J = [Kk];
+      let ang = 0;
+      for (let j = 0; j < 3; j++) {
+        ang += curl[j];
+        J.push(vAdd(J[j], vMul(vAdd(vMul(Fk, cos(ang)), vMul(D, -sin(ang))), DIGIT3[k].len * PHAL3[j] * fs)));
+      }
+      K.push(Kk); JS.push(J); hinges.push(vNorm(vCross(Fk, D)));
+    }
+  }
+  // the index finger reaching for a trigger
+  if (H.trigger) {
+    const J = [K[0]];
+    for (let j = 0; j < 3; j++) J.push(vAdd(J[j], vMul(vNorm(vSub(H.trigger[j], J[j])), DIGIT3[0].len * PHAL3[j] * fs)));
+    JS[0] = J;
+    const T0 = vNorm(vSub(J[1], J[0]));
+    if (H.triggerUp) hinges[0] = vNorm(vCross(T0, ortho(H.triggerUp, T0)));
+    else {
+      const hg = vCross(vSub(J[2], J[1]), vSub(J[1], J[0]));
+      if (vLen(hg) > 1e-3) hinges[0] = vNorm(hg);
+    }
+  }
+  // ---- the fingers ----
+  for (let k = 0; k < 4; k++) {
+    if (H.skip && H.skip[k]) continue;
+    const dg = DIGIT3[k], J = JS[k];
+    const T0 = vNorm(vSub(J[1], J[0]));
+    const crown = vNorm(vAdd(D, vSub(vMul(F, 0.55), vMul(T0, 0.3))));
+    digit3(sc, J, hinges[k], { w: dg.w * fs, h: dg.h * fs }, FPROF3, [0, 0.45, 0.75, 1], DIGIT_MAT3, {
+      seed: so + k * 1.7, part: part(), cut: dg.len * PHAL3[0] * fs * 0.66,
+      circ: TAU * dg.w * fs * 0.92, wb: dg.w * fs, nailA: 0.8, hair: 1,
+      ventC: H.vents === false ? null : camP(J[0]), ventN: camD(crown), ventR: 0.5 * dg.w * fs,
+    }, { nailLen: 0.125 * dg.len * fs });
+  }
+  // ---- the thumb: a mound of muscle off the palm, then two segments ----
+  // H.thumb is where the thumb's knuckle sits and two points its segments
+  // reach toward (an open hand gives them in the palm's own frame as
+  // thumbRel). The bones keep their lengths; the metacarpal runs from the
+  // knuckle back toward thumbBase, inside the ball of the thumb.
+  if (H.thumb || H.thumbRel) {
+    const rel = (v) => vBasis(W, F, v[0] * fs, R, v[1] * fs, D, v[2] * fs);
+    const tp = H.thumbRel ? H.thumbRel.map(rel) : H.thumb;
+    const mcp = tp[0];
+    const baseHint = H.thumbBase || vBasis(W, F, 2.0 * fs, R, 1.6 * fs, D, -0.9 * fs);
+    const back = vNorm(vSub(baseHint, mcp));
+    const cmc = vAdd(mcp, vMul(back, THUMB3.L[0] * fs));
+    const root = vAdd(mcp, vMul(back, THUMB3.root * fs));
+    const ip = vAdd(mcp, vMul(vNorm(vSub(tp[1], mcp)), THUMB3.L[1] * fs));
+    const tip = vAdd(ip, vMul(vNorm(vSub(tp[2], ip)), THUMB3.L[2] * fs));
+    const tdir = vNorm(vSub(tip, ip));
+    const upHint = H.thumbUpRel ? vBasis([0, 0, 0], F, H.thumbUpRel[0], R, H.thumbUpRel[1], D, H.thumbUpRel[2])
+      : (H.thumbUp || vAdd(R, D));
+    const up = ortho(upHint, tdir);
+    const tl = THUMB3.root + THUMB3.L[1] + THUMB3.L[2];
+    digit3(sc, [root, mcp, ip, tip], null, { w: THUMB3.w * fs, h: THUMB3.h * fs }, TPROF3,
+      [0, THUMB3.root / tl, (THUMB3.root + THUMB3.L[1]) / tl, 1], DIGIT_MAT3, {
+        seed: so + 9, part: part(), cut: (THUMB3.root + 0.45) * fs,
+        circ: TAU * THUMB3.w * fs * 0.95, wb: THUMB3.w * fs, nailA: 0.86, hair: 0.6, thumb: true,
+      }, { up, capBase: 0.4, nailLen: 1.3 * fs, segs: 16 });
+    // the ball of the thumb and the web, one piece with the palm
+    web3(sc, cmc, vLerp(root, mcp, 0.92), vBasis(W, F, 4.6 * fs, R, 0.9 * fs, D, -0.4 * fs),
+      vBasis(K[0], F, -0.9 * fs, R, 0.25 * fs, D, -0.2 * fs), fs, { seed: so + 5 });
+  }
+  // ---- the palm and the back of the hand ----
+  palm3(sc, W, K, F, D, R, { seed: so + 4, hw: 3.6 * fs });
+  // ---- wrist, cuff, forearm and sleeve ----
+  if (H.arm !== false) {
+    arm3(sc, W, H.arm ? vNorm(H.arm) : vMul(F, -1), Object.assign({}, H, { armUp: H.armUp || R, snap: D }));
+  }
+  return { W, F, D, R, K, JS };
+}
+
+/**
+ * The forearm: the glove's cuff with its strap, a lot of arm, and a rolled
+ * sleeve where it leaves the frame. A tattoo with `face` is turned to face
+ * the camera, wherever the pose has put the arm.
+ */
+function arm3(sc, w, dir, H) {
+  const d = vNorm(dir);
+  const len = H.armLen || 34;
+  const up = H.armUp || [0, -1, 0];
+  const pts = [];
+  const bend = H.armBend || [0, 0, 0];
+  for (let i = 0; i <= 10; i++) {
+    const t = i / 10;
+    pts.push(vAdd(vAdd(w, vMul(d, t * len)), vMul(bend, t * t * len)));
+  }
+  const so = (H.seed || 0) + 21;
+  const sleeveAt = H.sleeveAt || 26;
+  let tat = H.tattoo;
+  if (tat && tat.face) {
+    // which way round the arm is the camera, at the tattoo?
+    const M = sc.M;
+    const cam = [-(M[0] * M[3] + M[4] * M[7] + M[8] * M[11]), -(M[1] * M[3] + M[5] * M[7] + M[9] * M[11]),
+      -(M[2] * M[3] + M[6] * M[7] + M[10] * M[11])];
+    const i0 = clamp(Math.round((tat.u / len) * 10), 1, 9);
+    const T = vNorm(vSub(pts[i0 + 1], pts[i0 - 1]));
+    const N = vNorm(vSub(up, vMul(T, vDot(up, T))));
+    const B = vCross(T, N);
+    const tc = vSub(cam, pts[i0]);
+    let v = atan2(vDot(tc, B), vDot(tc, N)) / TAU + (tat.dv || 0);
+    v -= floor(v);
+    tat = Object.assign({}, tat, { v });
+  }
+  const mat = {
+    col: SKIN3, gl: 0.3, hand: true, soft: true,
+    shade(S) {
+      const px = S.z / CAM_F, lw = max(0.05, px * 0.7);
+      if (S.u < 3.3) {
+        gloveShade(S, so, 17, 0.5);
+        // the strap round the wrist, stitched down both edges, a snap on it
+        if (S.u > 1.0 && S.u < 2.5) {
+          S.col = shadeC(S.col, 0.86);
+          if (stitch3(S.v * 17, min(abs(S.u - 1.18), abs(S.u - 2.32)), px, 0.28)) S.col = STITCH3;
+          if (abs(S.u - 1.0) < lw || abs(S.u - 2.5) < lw) S.col = shadeC(S.col, 0.5);
+        }
+        // the cuff's rolled edge, and the shadow it throws on the arm
+        if (S.u > 3.0) { S.col = shadeC(S.col, 1.3); S.ny -= 0.2; }
+        if (S.u > 3.3 - lw) S.col = shadeC(S.col, 0.4);
+        return;
+      }
+      skinShade(S, 1.0, so, 26);
+      if (S.u < 3.3 + lw * 1.5) S.col = mix(S.col, SKIN3_D, 0.6);
+      // veins over the tendons toward the wrist
+      const vv = nz3(S.u * 0.35 + so, S.v * 2.2);
+      if (S.u < 16 && abs(vv - 0.5) < 0.018) { S.col = mix(S.col, rgba(150, 110, 118, 255), 0.35); S.nz -= 0.2; }
+      if (tat) tattoo3(S, tat);
+    },
+  };
+  const rad = (t) => {
+    const u = t * len;
+    const sw = smoothstep(1.5, 12, u) * (1 - smoothstep(24, 40, u) * 0.25);
+    const k = H.armScale || 1;
+    return [(2.75 + sw * 2.2) * k, (2.05 + sw * 1.75) * k];
+  };
+  loft(sc, pts, rad, mat, { segs: 16, up, capStart: 'round', capLen: 0.6 });
+  // the snap on the strap, on the back of the wrist
+  if (H.snap) {
+    const T = vNorm(vSub(pts[1], pts[0]));
+    const s0 = vNorm(vSub(H.snap, vMul(T, vDot(H.snap, T))));
+    const N = vNorm(vSub(up, vMul(T, vDot(up, T))));
+    const r = rad(1.75 / len);
+    const B = vCross(T, N);
+    const rr = 1 / sqrt(sq3(vDot(s0, N) / r[0]) + sq3(vDot(s0, B) / r[1]));
+    ball3(sc, vAdd(vAdd(w, vMul(d, 1.75)), vMul(s0, rr)), 0.45, 0.45, 0.3, brass3({ seed: so }), { rings: 4, segs: 8 });
+  }
+  const sp = pts.filter((p, i) => i / 10 * len >= sleeveAt - 1.5);
+  if (sp.length >= 2) {
+    loft(sc, sp, (t) => { const r = rad(sleeveAt / len + t * 0.3); const k = t < 0.25 ? 1.32 : 1.2; return [r[0] * k, r[1] * k]; },
+      {
+        col: CLOTH3, gl: 0.12, hand: true, soft: true,
+        shade(S) {
+          const n = nz3(S.u * 0.9, S.v * 6);
+          let c = shadeC(CLOTH3, 0.8 + n * 0.4);
+          if ((floor(S.u * 6 + S.v * 40) & 3) === 0) c = shadeC(c, 0.9);   // twill
+          const fold = S.u - (sleeveAt - 1.5);
+          if (fold < 2.2 && fold > 0) c = shadeC(c, 1.12 - abs(fold - 1.1) * 0.2);
+          if (abs(fold - 2.3) < 0.25) c = shadeC(c, 0.55);
+          c = mix(c, rgba(20, 20, 14, 255), clamp((1 - S.ao) * 0.8, 0, 0.5));
+          S.col = c; S.gl = 0.1;
+        },
+      }, { segs: 16, up });
   }
 }
 
@@ -1897,7 +2399,7 @@ const PEARL3 = {
 // above its left shoulder, so the top flat and the left flank carry the art.
 
 const WIDOW3 = {
-  pos: [7.2, 4.4, 20.0], yaw: -0.34, pitch: 0.0, roll: 0.1,
+  pos: [9.4, 3.6, 28.0], yaw: -0.38, pitch: 0.04, roll: 0.16,
   len: 26.5, slideEnd: 19.2,
   muzzle: [0, 1.25, 26.6],
   port: [0.95, 0, 8.4],
@@ -2097,14 +2599,12 @@ function drawWidow3(sc, P) {
   // ---- the hand ----
   const a = gd, p = [1, 0, 0], q = vNorm(vCross(p, a));
   hand3(sc, {
-    c: vAdd(gt, vMul(a, 0.2)), a, p: [1, 0, 0], q: vMul(q, 1), rp: 1.7, rq: 2.75,
-    s: [null, 2.55, 4.6, 6.5], sMid: 3.8, mcpQ: 0.4, wrap: 1, slope: 0.05,
-    trigger: [[0.9, 2.8, 0.2], [0.3, 2.5, 3.0], [-0.1, 1.4, 4.6], [-0.3, 0.2, 5.1]],
-    thumbL: [[1.6, 6.4, -3.2], [-0.2, 5.0, -2.2], [-1.8, 4.5, 0.2], [-2.2, 4.3, 2.8], [-2.15, 4.2, 5.2]],
-    thumbCut: 4.6, thumbNailV: 0.4, thumbR: [1.45, 1.2, 1.08, 0.98],
-    wristL: [3.2, 7.0, -4.0], wristQ: -6.6,
-    arm: [0.22, 0.3, -1], armLen: 36, armUp: [1, -0.3, 0], armBend: [0.05, 0.25, 0],
-    tattoo: { u: 15, v: 0.62, s: 2.6 }, seed: 7,
+    c: vAdd(gt, vMul(a, 0.4)), a, p, q, rp: 1.62, rq: 2.7,
+    s: [0.2, 2.3, 4.35, 6.3], mcpP: 1.4, mcpQ: [0.9, 0.6, 0.3, 0.0], slope: 0.05,
+    trigger: [[2.2, 5.4, 6.4], [0.9, 6.2, 8.9], [-0.4, 6.4, 9.4]],
+    thumbBase: [0.0, 6.4, -3.2], thumb: [[-2.45, 3.9, 3.1], [-2.55, 4.1, 6.0], [-1.9, 4.35, 8.3]], thumbUp: [-1, -0.3, 0],
+    wrist: [3.5, 12.5, -5.0], armLen: 36, armBend: [0.05, 0.25, 0],
+    tattoo: { u: 15, s: 2.6, face: true }, seed: 7,
   });
 
   return { muzzle: [0, W.muzzle[1], W.len + 3.8] };
@@ -2314,30 +2814,20 @@ function drawSplitter3(sc, P) {
       { seed: 71, len: 5.8, r: 1.0, spent: 1, hull: rgba(120, 30, 26, 255) });
   }
 
-  // ---- hands: right on the grip, left on the pump ----
-  const a = gDir, q = vNorm(vCross([1, 0, 0], a));
-  hand3(sc, {
-    c: vAdd(gTop, vMul(a, 0.3)), a, p: [1, 0, 0], q, rp: 1.75, rq: 2.7,
-    s: [null, 2.55, 4.6, 6.5], sMid: 3.8, mcpQ: 0.4, slope: 0.05,
-    triggerL: [[2.4, 6.9, 1.0], [2.0, 6.9, 3.8], [0.9, 6.9, 5.4], [0.3, 6.8, 5.9]],
-    thumbL: [[1.8, 6.4, -2.6], [-0.2, 5.4, -1.8], [-2.2, 4.8, 0.2], [-3.0, 4.4, 2.6], [-3.0, 4.1, 5.0]],
-    thumbCut: 4.2, thumbNailV: 0.4, thumbR: [1.45, 1.2, 1.08, 0.98],
-    wristL: [3.4, 9.4, -3.6], wristQ: -6.6,
-    arm: [0.32, 0.22, -1], armLen: 36, armUp: [1, -0.3, 0], armBend: [0.05, 0.2, 0],
-    tattoo: { u: 16, v: 0.62, s: 2.6 }, seed: 7,
-  });
-  // left hand under the pump: palm below-left, fingers curling up the right side
+  // ---- hands: right on the grip, left cupping the pump ----
+  rightGrip3(sc, gTop, gDir, [0, 6.8, 6.1], { thumbY: 1.2 });
   push3(sc, mT(0, 0, pz));
-  const pa = [0, 0, -1], pp = vNorm([-0.35, 1, 0]);
-  const pq = vNorm([1, 0.35, 0]);
+  // The fore-end is three barrels wide and its underside sits on the bottom
+  // edge of the frame, so a hand cupped under it is a thumb and nothing else.
+  // He grips it from the near side instead: palm flat on the wood, four
+  // fingers hooked over the top of the barrels, thumb hooked under. The
+  // section the fingers walk round is the wood plus the barrels on it.
   hand3(sc, {
-    c: [0, 4.2, 27.6], a: pa, p: pp, q: pq, rp: 2.7, rq: 5.7,
-    s: [0, 2.05, 4.05, 5.85], sMid: 2.9, mcpQ: -0.8, slope: 0.0, fscale: 1.0,
-    thumbL: [[-6.2, 8.0, 21.6], [-7.2, 6.0, 23.6], [-6.9, 4.1, 25.6], [-6.5, 3.3, 27.5], [-6.2, 3.0, 29.2]],
-    thumbCut: 4.2, thumbNailV: 0.6, thumbR: [1.45, 1.2, 1.08, 0.98], thumbUp: [0, -1, 0],
-    wristL: [-7.4, 7.4, 22.6], wristQ: -6.4,
-    arm: [-0.62, 0.3, -1], armLen: 38, armUp: [-1, -0.3, 0], armBend: [-0.1, 0.25, 0],
-    tattoo: { u: 14, v: 0.35, s: 2.4, word: 'NUKE' }, seed: 13, pads: false,
+    side: -1, c: [0, 4.2, 21.9], a: [0, 0, 1], p: [-1, 0, 0], q: [0, -1, 0], rp: 5.85, rq: 4.0, sq: 2.6,
+    s: [0, 2.05, 4.05, 5.85], mcpP: 1.35, mcpQ: [0.7, 0.65, 0.55, 0.35], slope: 0,
+    thumb: [[-5.6, 8.2, 20.6], [-3.4, 8.4, 21.6], [-1.2, 8.3, 22.7]], thumbUp: [0, 1, 0.2],
+    wrist: [-7.6, 12.6, 23.0], arm: [-0.45, 0.55, -1], armLen: 38, armBend: [-0.1, 0.25, 0],
+    tattoo: { u: 14, s: 2.4, word: 'NUKE', face: true }, seed: 13,
   });
   pop3(sc);
 
@@ -2346,41 +2836,60 @@ function drawSplitter3(sc, P) {
 
 /**
  * The right hand on a pistol grip: gTop is the top of the grip's axis in
- * gun-local space, gDir runs down it, trig is the trigger's contact point.
- * The thumb rides the left of the frame at thumbY, pointing forward.
+ * gun-local space, gDir runs down it, trig is the face of the trigger. The
+ * web rides high on the back strap, three fingers wrap the front strap with
+ * their tips on the far panel, the index curls onto the trigger and the thumb
+ * wraps the back of the grip and lies forward along its left. thumbX/Y/Z
+ * nudge the thumb clear of a wide receiver.
  */
 function rightGrip3(sc, gTop, gDir, trig, o = {}) {
-  const a = gDir, q = vNorm(vCross([1, 0, 0], a));
+  const a = gDir, p = [1, 0, 0], q = vNorm(vCross(p, a));
   const T = (dx, dy, dz) => [gTop[0] + dx, gTop[1] + dy, gTop[2] + dz];
-  const ty = o.thumbY === undefined ? -0.6 : o.thumbY;
-  const tx = o.thumbX === undefined ? -3.0 : o.thumbX;
-  hand3(sc, Object.assign({
-    c: vAdd(gTop, vMul(a, 0.3)), a, p: [1, 0, 0], q, rp: o.rp || 1.75, rq: o.rq || 2.7,
-    s: [null, 2.55, 4.6, 6.5], sMid: 3.8, mcpQ: 0.4, slope: 0.05,
-    triggerL: [T(2.4, 1.6, -0.8), T(2.1, 1.5, (trig[2] - gTop[2]) * 0.5), vAdd(trig, [0.9, 0.1, -0.4]), vAdd(trig, [0.3, 0.3, 0.1])],
-    thumbL: [T(1.8, 1.2, -4.2), T(-0.2, 0.2, -3.4), T(tx + 0.8, ty + 0.2, -1.4), T(tx, ty, 1.0), T(tx, ty - 0.2, 3.4)],
-    thumbCut: 4.2, thumbNailV: 0.4, thumbR: [1.45, 1.2, 1.08, 0.98],
-    wristL: T(3.4, 4.2, -5.2), wristQ: -6.6,
-    arm: [0.3, 0.24, -1], armLen: 36, armUp: [1, -0.3, 0], armBend: [0.05, 0.2, 0],
-    tattoo: { u: 16, v: 0.62, s: 2.6 }, seed: 7,
+  const R = (dx, dy, dz) => [trig[0] + dx, trig[1] + dy, trig[2] + dz];
+  const tx = o.thumbX || 0, ty = o.thumbY || 0, tz = o.thumbZ || 0;
+  return hand3(sc, Object.assign({
+    c: vAdd(gTop, vMul(a, 0.4)), a, p, q, rp: o.rp || 1.75, rq: o.rq || 2.7,
+    s: [0.2, 2.3, 4.35, 6.3], mcpP: 1.4, mcpQ: [0.9, 0.6, 0.3, 0.0], slope: 0.05,
+    trigger: [R(2.2, -0.7, -2.5), R(0.9, 0.1, 0), R(-0.4, 0.3, 0.5)],
+    thumbBase: T(0, 1.8 + ty * 0.5, -6.4),
+    thumb: [T(-2.45 + tx, -0.7 + ty, -0.1 + tz), T(-2.55 + tx, -0.5 + ty, 2.8 + tz), T(-1.9 + tx, -0.25 + ty, 5.1 + tz)],
+    thumbUp: [-1, -0.3, 0],
+    wrist: T(3.5, 7.9, -8.2), armLen: 36, armBend: [0.05, 0.2, 0],
+    tattoo: { u: 16, s: 2.6, face: true }, seed: 7,
   }, o.hand || {}));
 }
 
 /**
  * The left hand under a horizontal fore-end whose axis runs along z through
- * (cx, cy): palm below, fingers curling up the far side, thumb along the near
- * side, forearm coming in from the lower left. `hw`, `hh` are its half sizes.
+ * (cx, cy), the index finger at z: the palm cups it from below, the fingers
+ * curl up the far side, the thumb lies forward along the near side and the
+ * forearm comes in from the lower left. hw, hh: the fore-end's half sizes.
  */
 function leftForeGrip3(sc, cx, cy, z, hw, hh, o = {}) {
-  hand3(sc, Object.assign({
-    c: [cx, cy, z], a: [0, 0, -1], p: vNorm([-0.35, 1, 0]), q: vNorm([1, 0.35, 0]), rp: hh + 0.2, rq: hw,
-    s: [0, 2.05, 4.05, 5.85], sMid: 2.9, mcpQ: -0.8, slope: 0.0,
-    thumbL: [[cx - hw - 0.5, cy + hh + 1.8, z - 6], [cx - hw - 1.5, cy + hh * 0.6 + 0.4, z - 4],
-      [cx - hw - 1.2, cy - hh * 0.05, z - 2], [cx - hw - 0.8, cy - hh * 0.35, z - 0.1], [cx - hw - 0.5, cy - hh * 0.45, z + 1.6]],
-    thumbCut: 4.2, thumbNailV: 0.6, thumbR: [1.45, 1.2, 1.08, 0.98], thumbUp: [0, -1, 0],
-    wristL: [cx - hw - 1.7, cy + hh + 1.2, z - 5.0], wristQ: -6.4,
-    arm: [-0.62, 0.3, -1], armLen: 38, armUp: [-1, -0.3, 0], armBend: [-0.1, 0.25, 0],
-    tattoo: { u: 14, v: 0.35, s: 2.4, word: 'NUKE' }, seed: 13, pads: false,
+  return hand3(sc, Object.assign({
+    side: -1, c: [cx, cy, z], a: [0, 0, -1], p: [0, 1, 0], q: [1, 0, 0], rp: hh, rq: hw, sq: 2.6,
+    s: [0, 2.05, 4.05, 5.85], mcpP: 1.35, mcpQ: [hw * 0.42, hw * 0.4, hw * 0.36, hw * 0.3], slope: 0,
+    thumb: [[cx - hw - 0.9, cy + hh * 0.45, z - 2.6], [cx - hw - 1.0, cy + hh * 0.15, z + 0.3], [cx - hw - 0.55, cy - hh * 0.05, z + 2.7]],
+    thumbBase: [cx - hw - 0.4, cy + hh + 4.5, z - 5.5], thumbUp: [-1, -0.3, -0.55],
+    wrist: [cx - hw - 1.5, cy + hh + 6.5, z - 8.5], armLen: 38, armBend: [-0.1, 0.25, 0],
+    tattoo: { u: 14, s: 2.4, word: 'NUKE', face: true }, seed: 13,
+  }, o));
+}
+
+/**
+ * The left hand on a vertical side handle (vgTop its top, vgDir down it):
+ * the palm on its outboard side so the back of the hand and the knuckles face
+ * him, the fingers round the front, the thumb hooked round the back of it.
+ */
+function sideGrip3(sc, vgTop, vgDir, o = {}) {
+  const la = vgDir, lp = [-1, 0, 0], lq = vNorm(vMul(vCross(lp, la), -1));
+  const T = (dx, dy, dz) => [vgTop[0] + dx, vgTop[1] + dy, vgTop[2] + dz];
+  return hand3(sc, Object.assign({
+    side: -1, c: vAdd(vgTop, vMul(la, 0.3)), a: la, p: lp, q: lq, rp: 1.45, rq: 1.8,
+    s: [0.3, 2.35, 4.35, 6.15], mcpP: 1.45, mcpQ: [0.9, 0.6, 0.35, 0.1], slope: 0,
+    thumb: [T(-1.0, 0.9, -2.3), T(1.0, 1.0, -2.6), T(2.9, 1.15, -2.2)], thumbBase: T(-2.4, 3.6, -5.0), thumbUp: [0, -0.5, -1],
+    wrist: T(-3.0, 3.6, -8.4), armLen: 38, armBend: [-0.1, 0.25, 0],
+    tattoo: { u: 14, s: 2.4, word: 'NUKE', face: true }, seed: 13,
   }, o));
 }
 
@@ -2554,18 +3063,8 @@ function drawNailer3(sc, P) {
     },
   }, { segs: 14, capEnd: 'round', up: [1, 0, 0] });
 
-  rightGrip3(sc, gTop, gDir, [0, 7.8, 6.6], { thumbY: -1.2, thumbX: -3.7 });
-  // left hand on the vertical grip: palm on its left, fingers round the front
-  const la = vgDir, lp = [-1, 0, 0], lq = vNorm(vMul(vCross(lp, la), -1));
-  hand3(sc, {
-    c: vAdd(vgTop, vMul(la, 0.4)), a: la, p: lp, q: lq, rp: 1.45, rq: 1.8,
-    s: [0.4, 2.45, 4.45, 6.25], sMid: 3.3, mcpQ: 0.4, slope: 0.0,
-    thumbL: [[-8.4, 6.6, 7.4], [-7.4, 5.0, 8.6], [-5.6, 4.6, 9.6], [-4.0, 5.0, 10.2], [-3.4, 5.4, 11.2]],
-    thumbCut: 4.2, thumbNailV: 0.6, thumbR: [1.45, 1.2, 1.08, 0.98], thumbUp: [0, -1, 0],
-    wristL: [-9.0, 8.2, 7.0], wristQ: -6.4,
-    arm: [-0.55, 0.3, -1], armLen: 38, armUp: [-1, -0.3, 0], armBend: [-0.1, 0.25, 0],
-    tattoo: { u: 14, v: 0.35, s: 2.4, word: 'NUKE' }, seed: 13,
-  });
+  rightGrip3(sc, gTop, gDir, [0, 7.8, 6.6], { thumbY: 1.0 });
+  sideGrip3(sc, vgTop, vgDir);
 
   return { muzzle: [ax, ay, N3.barrelsTo + 0.6] };
 }
@@ -2697,8 +3196,8 @@ function drawHalo3(sc, P) {
     glow(0.5), { segs: 8, up: [1, 0, 0], capEnd: 'round' });
   // fore-grip: a chunky block under the front of the spine
   box3(sc, -2.6, 5.4, 12.5, 2.6, 8.2, 19.5, body);
-  rightGrip3(sc, gTop, gDir, [0, 7.4, 7.6], { thumbY: -0.8, thumbX: -3.4 });
-  leftForeGrip3(sc, 0, 6.8, 18.6, 2.7, 1.5);
+  rightGrip3(sc, gTop, gDir, [0, 7.4, 7.6], { thumbY: 1.0 });
+  leftForeGrip3(sc, 0, 6.8, 18.8, 2.6, 1.4);
 
   return { muzzle: [0, 3.0, H3.ringZ + 0.8] };
 }
@@ -2790,17 +3289,16 @@ function drawDeadman3(sc, P) {
       S.col = mix(shadeC(col, 0.9 + nz3(S.u, S.v * 3) * 0.2), rgba(10, 8, 8, 255), clamp((1 - S.ao) * 1.2, 0, 0.6));
     }), { segs: 8, up: [1, 0, 0] });
   }
-  // ---- the hand: fingers round the case, thumb on the button ----
+  // ---- the hand: held like a remote, the palm under it, the fingers curled
+  // up the near side, the thumb over the top and on the button ----
   const thumbDown = plunge * 0.9;
   hand3(sc, {
-    c: [0, 2.2, 7.6], a: [0, 0, -1], p: [1, 0, 0], q: [0, 1, 0], rp: 3.6, rq: 2.2,
-    s: [-2.2, -0.2, 1.8, 3.6], sMid: 0.6, mcpQ: -1.0, slope: 0, wrap: 1,
-    thumbL: [[5.2, 2.0, 3.0], [4.8, -0.2, 5.4], [3.0, -1.6 + thumbDown * 0.5, 7.6], [1.2, -1.9 + thumbDown, 9.2],
-      [0.2, -2.0 + thumbDown, 10.4]],
-    thumbCut: 4.6, thumbNailV: 0.5, thumbR: [1.6, 1.35, 1.15, 1.05], thumbUp: [0, -1, 0],
-    wristL: [5.8, 3.6, 0.8], wristQ: -6.0,
-    arm: [0.5, 0.35, -1], armLen: 36, armUp: [1, -0.4, 0], armBend: [0.05, 0.2, 0],
-    tattoo: { u: 15, v: 0.6, s: 2.6 }, seed: 7,
+    c: [0, 2.2, 9.4], a: [0, 0, -1], p: [0, 1, 0], q: [-1, 0, 0], rp: 2.2, rq: 3.6, sq: 5,
+    s: [0, 2.0, 3.95, 5.75], mcpP: 1.3, mcpQ: [-0.6, -0.5, -0.4, -0.2], slope: 0,
+    thumb: [[4.3, 0.1, 7.0], [2.4, -1.5 + thumbDown * 0.5, 8.9], [0.3, -2.1 + thumbDown, 10.2]], thumbBase: [6.2, 4.2, 3.6],
+    thumbUp: [0.3, -1, -0.45],
+    wrist: [6.8, 7.0, 2.5], armLen: 36, armBend: [0.05, 0.2, 0],
+    tattoo: { u: 15, s: 2.6, face: true }, seed: 7,
   });
   return { muzzle: [0, -2, bz] };
 }
@@ -3005,15 +3503,20 @@ function drawPipebomb3(sc, P) {
   // Everything is authored in the bomb's frame: its axis on local z, which
   // this turns to run across the view, timer on top, his palm underneath.
   const B = mChain(mT(0, -(P.lift || 0), 0), mRY(PI / 2));
+  const arm = { armLen: 36, armBend: [0.1, 0.3, 0], tattoo: { u: 14, s: 2.6, face: true }, seed: 7 };
   const hold = (o) => Object.assign({
-    c: [0, 0, 4.4], a: [0, 0, -1], p: [0, 1, 0], q: [-1, 0, 0], rp: 2.15, rq: 2.15,
-    s: [0, 2.05, 4.05, 5.85], sMid: 2.9, mcpQ: -0.8, slope: 0,
-    thumbL: [[2.8, 3.8, 6.4], [3.4, 1.0, 5.6], [2.8, -1.4, 4.6], [1.6, -2.6, 3.4], [0.4, -2.9, 2.2]],
-    thumbCut: 4.2, thumbNailV: 0.6, thumbR: [1.5, 1.25, 1.1, 1.0], thumbUp: [0, -1, 0],
-    wristL: [3.0, 5.2, 6.6], wristQ: -6.0,
-    arm: [1, 0.62, 0.35], armLen: 36, armUp: [0, -1, 0], armBend: [0.1, 0.3, 0],
-    tattoo: { u: 14, v: 0.55, s: 2.6 }, seed: 7,
-  }, o);
+    c: [0, 0, 4.4], a: [0, 0, -1], p: [0, 1, 0], q: [-1, 0, 0], rp: 2.12, rq: 2.12,
+    s: [0, 2.05, 4.05, 5.85], mcpP: 1.35, mcpQ: [0.7, 0.6, 0.5, 0.3], slope: 0,
+    thumb: [[3.1, 1.5, 4.9], [2.8, -1.0, 4.6], [1.5, -2.6, 3.9]], thumbBase: [4.6, 5.2, 3.8], thumbUp: [1, -0.35, 0],
+    wrist: [5.5, 6.5, 3.0],
+  }, arm, o);
+  // the hand open, palm toward him: W the wrist, F up the fingers, D out of the back
+  const open = (curl, o) => Object.assign({
+    palm: { W: [1.0, 12.0, -0.6], F: [-0.3, -1, 0.3], D: [-1, 0.45, 0] },
+    curl: [[curl * 0.8, curl, curl * 0.7], [curl * 0.75, curl * 1.05, curl * 0.7],
+      [curl * 0.8, curl * 1.1, curl * 0.75], [curl * 0.9, curl * 1.15, curl * 0.8]],
+    spread: [0.12, 0.02, -0.08, -0.18],
+  }, arm, o);
   push3(sc, B);
   if (stage === 'hold' || stage === 'wind') {
     pipeBomb3(sc, M_ID, { led, time: P.time });
@@ -3022,16 +3525,16 @@ function drawPipebomb3(sc, P) {
     // release: the bomb tumbling away up the screen, fingers flung open
     const t = P.t || 0.5;
     pipeBomb3(sc, mChain(mT(-8 - t * 26, -5 - t * 6, -1 - t * 3), mRZ(0.8 + t * 2.4), mRX(0.6 + t * 2)), { led, time: P.time });
-    hand3(sc, hold({
-      wrap: 0.3, rp: 2.6, rq: 2.6,
-      thumbL: [[2.8, 3.8, 6.4], [3.8, 1.4, 6.2], [4.2, -0.8, 5.8], [4.2, -2.4, 5.2], [4.0, -3.4, 4.6]],
+    hand3(sc, open(0.16, {
+      thumbRel: [[4.4, 3.5, -1.3], [6.8, 5.2, -1.6], [8.8, 6.2, -1.8]], thumbUpRel: [0.1, 0.55, 0.85],
     }));
   } else {
     // empty hand, curling shut on the way back down
     const close = P.close || 0;
-    hand3(sc, hold({
-      wrap: 0.45 + close * 0.6, rp: 2.4 - close, rq: 2.4 - close,
-      thumbL: [[2.8, 3.8, 6.4], [3.6, 1.2, 5.8], [3.4, -0.9, 5.0], [2.6, -2.0, 4.0], [1.8, -2.4, 3.0]],
+    hand3(sc, open(0.35 + close * 0.6, {
+      palm: { W: [1.0, 12.0 - close * 3.2, -2.0], F: [-0.3, -1, 0.05], D: [-1, 0.45, 0] },
+      thumbRel: [[4.4, 3.4, -1.4], [6.2, 4.2 - close * 1.8, -2.4 - close * 0.8], [7.4, 3.6 - close * 3.2, -3.4 - close * 0.8]],
+      thumbUpRel: [0.2, 0.6, 0.8],
     }));
   }
   pop3(sc);
@@ -3163,17 +3666,8 @@ function drawSaw3(sc, P) {
   loft(sc, spline([[0, 6.4, 5.4], [0, 7.6, 5.8], [0, 8.6, 5.4]], 3), (t) => [0.34, 0.6 - t * 0.1],
     paint3(rgba(190, 40, 30, 255), { seed: 195 }), { segs: 8, up: [1, 0, 0], capEnd: 'round' });
 
-  rightGrip3(sc, gTop, gDir, [0, 7.4, 5.6], { thumbY: -1.2, thumbX: -3.7 });
-  const la = vgDir, lp = [-1, 0, 0], lq = vNorm(vMul(vCross(lp, la), -1));
-  hand3(sc, {
-    c: vAdd(vgTop, vMul(la, 0.4)), a: la, p: lp, q: lq, rp: 1.45, rq: 1.8,
-    s: [0.4, 2.45, 4.45, 6.25], sMid: 3.3, mcpQ: 0.4, slope: 0.0,
-    thumbL: [[-8.4, 6.6, 6.4], [-7.4, 5.0, 7.6], [-5.6, 4.6, 8.6], [-4.0, 5.0, 9.2], [-3.4, 5.4, 10.2]],
-    thumbCut: 4.2, thumbNailV: 0.6, thumbR: [1.45, 1.2, 1.08, 0.98], thumbUp: [0, -1, 0],
-    wristL: [-9.0, 8.2, 6.0], wristQ: -6.4,
-    arm: [-0.55, 0.3, -1], armLen: 38, armUp: [-1, -0.3, 0], armBend: [-0.1, 0.25, 0],
-    tattoo: { u: 14, v: 0.35, s: 2.4, word: 'NUKE' }, seed: 13,
-  });
+  rightGrip3(sc, gTop, gDir, [0, 7.4, 5.6], { thumbY: 1.4 });
+  sideGrip3(sc, vgTop, vgDir);
 
   return { muzzle: [0, cyB, B.barTo + 0.5], exhaust: [2.0, -2.4, 9.4] };
 }
@@ -3350,7 +3844,7 @@ const WEAPON_POSES3 = {
     fire0: { R: { dy: -3, dz: 6, rx: 0.3 }, P: { stage: 'throw', t: 0.2, led: 1, time: '0:06' } },
     fire1: { R: { dy: -1, dz: 4, rx: 0.15 }, P: { stage: 'empty', t: 0.6, close: 0.1 } },
     fire2: { R: { dy: 1.5, dz: 1 }, P: { stage: 'empty', close: 0.5 } },
-    reload0: { R: { dy: 2.8, dz: -1.5, rx: -0.12 }, P: { stage: 'hold', led: 0, time: '----' } },
+    reload0: { R: { dy: 2.3, dz: -1.5, rx: -0.12 }, P: { stage: 'hold', led: 0, time: '----' } },
     reload1: { R: { dy: 2, dz: -1, rx: -0.1 }, P: { stage: 'hold', led: 0, time: '0:06' } },
   },
 };
