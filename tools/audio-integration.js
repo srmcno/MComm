@@ -310,13 +310,17 @@ check('the VOICE option exists and reports what is playing', !!r.label && r.mode
     g.newGame(1); g.loadLevel(0); g.setState('play');
     // A line with no recorded take: the game reads it to nobody. It is a
     // subtitle, not the browser voice (the first of Ilsa's pools nobody recorded).
-    const { VOICE_PACK } = await import('./src/audio/voicepack.js');
+    // The cast arrives behind the game (voices/*.js); wait for all of it.
+    for (let i = 0; i < 600 && !g.castLoaded; i++) await sleep(50);
+    const VOICE_PACK = { clips: g.castBank ? g.castBank.clips.slice() : [] };
+    out.castLoaded = g.castLoaded || 0;
     const { voiceOf } = await import('./src/audio/vox.js');
     const taken = new Set(VOICE_PACK.clips.map((c) => c.k));
+    // A pool nobody recorded, if there still is one; otherwise words nobody did.
     const bare = Object.keys(g.voxLines).find((k) => Array.isArray(g.voxLines[k]) && voiceOf(k) === 'ilsa'
       && !taken.has(k) && g.voxLines[k].every((s) => !s.includes('%s')));
-    out.bare = bare;
-    const dur = g.speakAs('ilsa', bare, '');
+    out.bare = bare || 'exact words';
+    const dur = bare ? g.speakAs('ilsa', bare, '') : g.speakAs('ilsa', null, 'Vance here. This sentence was never recorded by anyone.');
     out.dur = dur;
     out.caption = g.lastSpoken && g.lastSpoken.text;
     await sleep(80);
@@ -370,6 +374,7 @@ check('the VOICE option exists and reports what is playing', !!r.label && r.mode
   check('a line nobody recorded is a subtitle: captioned, and no browser (or any synthetic) voice says it',
     !!v.bare && !v.first.length && !(v.dur > 0) && !!v.caption, `${v.bare}: ${v.dur}s, ${v.first.length} utterances, "${String(v.caption).slice(0, 40)}"`);
   check('natural voices: nothing spoken or captioned carries phones or braces', !v.leak);
+  check('the recorded cast arrives behind the game, from the voices folder', v.castLoaded > 400 && v.pack === v.castLoaded, `${v.castLoaded} clips loaded, ${v.pack} in the bank`);
   if (v.pack) {
     const t = v.take;
     check('recorded cast: a line with a take plays the take, captioned with its words, and no browser voice',
@@ -390,13 +395,32 @@ check('the VOICE option exists and reports what is playing', !!r.label && r.mode
   await pg.goto(`http://127.0.0.1:${PORT}/index.html`);
   await pg.waitForFunction(() => window.NUKEHAUS && window.NUKEHAUS.game, null, { timeout: 120000 });
   const d = await pg.evaluate(async () => {
+    const g = window.NUKEHAUS.game;
+    const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
     const { ClipBank } = await import('./src/audio/acted.js');
-    const { VOICE_PACK } = await import('./src/audio/voicepack.js');
+    const { VOICE_FILES } = await import('./src/audio/voicepack.js');
+    const want = (set) => VOICE_FILES.filter((f) => f.set === set).reduce((n, f) => n + f.clips, 0);
+    for (let i = 0; i < 600 && !g.castLoaded; i++) await sleep(50);
+    const first = g.brickVoice;
+    const clips = g.castBank.clips.slice();
+    // and the other Brick: switching to him fetches his takes in place of these
+    const other = g.brickVoices.find((b) => b.id !== first).id;
+    const out = { n: 0, bad: [], worst: 0, first, other, swapped: false };
+    g.setBrickVoice(other);
+    for (let i = 0; i < 600; i++) {
+      if (g.castBank.clips.filter((c) => c.r === 'brick').length === want(other)) break;
+      await sleep(50);
+    }
+    const his = g.castBank.clips.filter((c) => c.r === 'brick');
+    out.swapped = his.length === want(other) && g.castBank.clips.length === clips.filter((c) => c.r !== 'brick').length + his.length;
+    out.label = g.titleScreen.optionList(g).find((o) => o.label === 'BRICK VOICE').value();
+    g.setBrickVoice(first);
+    out.back = g.castBank.clips.filter((c) => c.r === 'brick').length === want(first);
     const ctx = new OfflineAudioContext(1, 22050, 22050);
-    const bank = new ClipBank(VOICE_PACK);
+    const bank = new ClipBank({ clips: [...clips, ...his] });
     bank.attach(ctx, ctx.destination);
-    const out = { n: VOICE_PACK.clips.length, bad: [], worst: 0 };
-    for (const c of VOICE_PACK.clips) {
+    out.n = bank.clips.length;
+    for (const c of bank.clips) {
       try {
         const buf = await bank._decode(c);
         const off = Math.abs(buf.duration - c.d);
@@ -407,7 +431,8 @@ check('the VOICE option exists and reports what is playing', !!r.label && r.mode
     return out;
   });
   await pg.close();
-  check(`every recorded take decodes to its stated length (${d.n})`, d.bad.length === 0,
+  check(`BRICK VOICE switches his takes (${d.first} to ${d.other} and back) and leaves the rest of the cast alone`, d.swapped && d.back, `${d.label}`);
+  check(`every recorded take, both Bricks, decodes to its stated length (${d.n})`, d.bad.length === 0,
     d.bad.length ? d.bad.slice(0, 4).join('; ') : `worst ${d.worst.toFixed(3)}s off`);
 }
 

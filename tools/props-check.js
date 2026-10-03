@@ -7,7 +7,7 @@ import { PropStudio, DIRS, viewDir } from '../src/engine/propstudio.js';
 import { MeshBank } from '../src/engine/propmesh.js';
 import { MODELS, PIECES } from '../src/engine/propmodels.js';
 import { MAPS, DECOR, parseLevel } from '../src/game/maps.js';
-import { PROP_DEFS } from '../src/game/props.js';
+import { PROP_DEFS, Props } from '../src/game/props.js';
 import { Level } from '../src/game/level.js';
 import { WallDamage } from '../src/game/walldamage.js';
 import { TEXTURE_ORDER } from '../src/engine/textures.js';
@@ -186,6 +186,75 @@ for (let li = 0; li < MAPS.length; li++) {
 }
 check(`walls that can come down exist on most floors (${breakable} on ${withAny} of ${MAPS.length})`, withAny >= 3);
 check('bringing down every breakable wall opens nothing a key or a secret was guarding', wallBad.length === 0, wallBad.join('; '));
+
+// ------------------------------------------------------------------ out of the walls
+// A model that reaches into a wall is cut off by it, and from the right angle
+// looks like the next room's furniture coming through. None stands in one,
+// and none ends up in one after a boot, a blast or a fall.
+{
+  const noop = new Proxy(function () {}, { get: (t, k) => (k === Symbol.toPrimitive ? () => 0 : noop), apply: () => noop });
+  const art2 = { ...art, meshes: new MeshBank(MODELS, PIECES), props: new PropStudio(MODELS, PIECES), sprites: {} };
+  const depthIn = (lv, props, d) => {
+    const f = props._foot(d);
+    if (!f) return 0;
+    const fX = Math.cos(d.yaw), fY = Math.sin(d.yaw), rX = fY, rY = -fX;
+    const tilt = d.fall ? d.fall.ang : 0, roll = d.flying ? d.roll || 0 : 0, front = props._frontOf(d);
+    const ct = Math.cos(tilt), st = Math.sin(tilt), cr = Math.cos(roll), sr = Math.sin(roll);
+    let w = 0;
+    for (let a = 0; a <= 8; a++) for (let b = 0; b <= 4; b++) for (let c = 0; c <= 8; c++) {
+      let y = f.top * b / 4, z = f.minZ + (f.maxZ - f.minZ) * c / 8;
+      const x = f.minX + (f.maxX - f.minX) * a / 8;
+      if (tilt) { const zz = z - front; const y1 = y * ct - zz * st; z = y * st + zz * ct + front; y = y1; }
+      if (roll) { const yy = y - f.cy; const y1 = yy * cr - z * sr; z = yy * sr + z * cr; y = y1 + f.cy; }
+      const wx = d.x + x * rX + z * fX, wy = d.y + x * rY + z * fY;
+      const cx = Math.floor(wx), cy = Math.floor(wy);
+      if (cx < 0 || cy < 0 || cx >= lv.W || cy >= lv.H) { w = 1; continue; }
+      if (lv.wall[cy * lv.W + cx] !== 1) continue;
+      const fx = wx - cx, fy = wy - cy;
+      const open = (i, j) => lv.wall[(cy + j) * lv.W + cx + i] !== 1;
+      let dd = 1;
+      if (open(-1, 0)) dd = Math.min(dd, fx);
+      if (open(1, 0)) dd = Math.min(dd, 1 - fx);
+      if (open(0, -1)) dd = Math.min(dd, fy);
+      if (open(0, 1)) dd = Math.min(dd, 1 - fy);
+      w = Math.max(w, dd);
+    }
+    return w;
+  };
+  const standing = [], after = [];
+  let n = 0;
+  for (let li = 0; li < MAPS.length; li++) {
+    const lv = new Level(parseLevel(li), art2);
+    let t = 0;
+    const base = { level: lv, art: art2, enemies: [], items: [], player: { x: -50, y: -50, z: 0.5, dead: false, hurt() {} }, get time() { return t; }, shake: 0 };
+    const game = new Proxy(base, { get: (o, k) => (k in o ? o[k] : noop), set: (o, k, v) => { o[k] = v; return true; } });
+    const props = new Props(game);
+    props.load(lv);
+    for (const d of lv.decor) {
+      const p = depthIn(lv, props, d);
+      if (p > 0.02) standing.push(`${li}:${d.kind}@${d.x.toFixed(1)},${d.y.toFixed(1)} ${p.toFixed(2)}`);
+    }
+    let rs = 99 + li;
+    const rnd = () => ((rs = (rs * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    for (let round = 0; round < 3; round++) {
+      for (const d of lv.decor) {
+        if (!d.def || d.def.hp === Infinity || d.gone || d.broken || d.fall) continue;
+        const a = rnd() * Math.PI * 2;
+        if (d.def.mass === 'light' && !d.solid) props._kickFly(d, Math.cos(a), Math.sin(a));
+        else if (d.def.tall) props.topple(d, Math.cos(a), Math.sin(a), 0);
+      }
+      for (let k = 0; k < 60 * 4; k++) { t += 1 / 60; props.update(1 / 60); }
+    }
+    for (const d of lv.decor) {
+      if (d.gone || d.broken) continue;
+      n++;
+      const p = depthIn(lv, props, d);
+      if (p > 0.03) after.push(`${li}:${d.kind}@${d.x.toFixed(1)},${d.y.toFixed(1)} ${p.toFixed(2)}`);
+    }
+  }
+  check('no furniture model stands with any part of it inside a wall', standing.length === 0, standing.slice(0, 5).join(', '));
+  check(`kicked, thrown and toppled three times over, no furniture ends up inside a wall (${n} props)`, after.length === 0, after.slice(0, 5).join(', '));
+}
 
 console.log(`\nprops-check - furniture models, placement and breakable walls\n`);
 console.log(`${fail === 0 ? 'PASS' : 'FAIL'}  ${pass} passed, ${fail} failed\n`);

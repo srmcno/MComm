@@ -149,6 +149,90 @@ const CAP_LITTER = 220;
 const CAP_DEBRIS = 130;
 const HALF_PI = Math.PI / 2;
 
+// ------------------------------------------------------------ out of the walls
+//
+// The furniture is solid models, and a model that ends up reaching into a wall
+// is cut off by it: half a chair sticking out of the plaster, or the end of a
+// bench showing past a corner. Flying, sliding, spinning, falling and coming
+// to rest, a prop is kept out of the walls by its real extent (the model's own
+// bounds), not just by its middle.
+
+/** A wall to the furniture: off the map, solid, or a door that is not open. */
+function wallCell(lv, cx, cy) {
+  if (cx < 0 || cy < 0 || cx >= lv.W || cy >= lv.H) return true;
+  const i = cy * lv.W + cx, c = lv.wall[i];
+  if (c === 1) return true;
+  if (c === 2) return lv.doorOpen[i] < 0.95;
+  return false;
+}
+
+/** A model's bounds in its own frame (x right, y up, z front), worked out once. */
+function meshFoot(m) {
+  if (m._foot) return m._foot;
+  const f = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity, top: 0, cy: m.cy || 0 };
+  for (let i = 0; i < m.vx.length; i++) {
+    const x = m.vx[i], y = m.vy[i], z = m.vz[i];
+    if (x < f.minX) f.minX = x;
+    if (x > f.maxX) f.maxX = x;
+    if (z < f.minZ) f.minZ = z;
+    if (z > f.maxZ) f.maxZ = z;
+    if (y > f.top) f.top = y;
+  }
+  if (!(f.maxX > f.minX)) { f.minX = f.maxX = f.minZ = f.maxZ = 0; }
+  m._foot = f;
+  return f;
+}
+
+/**
+ * Where a box's corners, edge middles and face middles come down on the floor
+ * once it is turned (yaw), tipped over its front edge (tilt) and rolled about
+ * its middle (roll), exactly as meshdraw.js draws it. Fills `out` with
+ * x, y pairs and returns it.
+ */
+function boxFootprint(f, x0, y0, yaw, tilt, front, roll, rollY, out) {
+  const fX = Math.cos(yaw), fY = Math.sin(yaw), rX = fY, rY = -fX;
+  const ct = Math.cos(tilt), st = Math.sin(tilt), cr = Math.cos(roll), sr = Math.sin(roll);
+  out.length = 0;
+  for (let a = 0; a < 3; a++) {
+    const bx = f.minX + (f.maxX - f.minX) * a * 0.5;
+    for (let b = 0; b < 3; b++) {
+      const by = f.top * b * 0.5;
+      for (let c = 0; c < 3; c++) {
+        let y = by, z = f.minZ + (f.maxZ - f.minZ) * c * 0.5;
+        if (tilt) { const zz = z - front; const y1 = y * ct - zz * st; z = y * st + zz * ct + front; y = y1; }
+        if (roll) { const yy = y - rollY; const y1 = yy * cr - z * sr; z = yy * sr + z * cr; y = y1 + rollY; }
+        out.push(x0 + bx * rX + z * fX, y0 + bx * rY + z * fY);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * How far to move a footprint to get every point of it out of the walls, as
+ * [dx, dy], or null if it is clear. Each point leaves its wall cell by the
+ * nearest face with open floor beyond it.
+ */
+function wallPush(lv, pts) {
+  let mx = 0, my = 0, any = false;
+  for (let k = 0; k < pts.length; k += 2) {
+    const px = pts[k], py = pts[k + 1];
+    const cx = Math.floor(px), cy = Math.floor(py);
+    if (!wallCell(lv, cx, cy)) continue;
+    const fx = px - cx, fy = py - cy;
+    let best = 0.75, ox = 0, oy = 0;
+    if (fx < best && !wallCell(lv, cx - 1, cy)) { best = fx; ox = -(fx + 0.01); oy = 0; }
+    if (1 - fx < best && !wallCell(lv, cx + 1, cy)) { best = 1 - fx; ox = 1 - fx + 0.01; oy = 0; }
+    if (fy < best && !wallCell(lv, cx, cy - 1)) { best = fy; ox = 0; oy = -(fy + 0.01); }
+    if (1 - fy < best && !wallCell(lv, cx, cy + 1)) { best = 1 - fy; ox = 0; oy = 1 - fy + 0.01; }
+    if (!ox && !oy) continue;     // deep in the rock: nothing sensible to do from here
+    any = true;
+    if (Math.abs(ox) > Math.abs(mx)) mx = ox;
+    if (Math.abs(oy) > Math.abs(my)) my = oy;
+  }
+  return any ? [mx, my] : null;
+}
+
 const pack = (r, g, b, a) => ((a << 24) | (b << 16) | (g << 8) | r) >>> 0;
 const rgbOf = (c) => [c & 255, (c >>> 8) & 255, (c >>> 16) & 255];
 const pickOf = (rng, arr) => arr[Math.min(arr.length - 1, (rng() * arr.length) | 0)];
@@ -509,13 +593,17 @@ export class Props {
   blast(x, y, z, radius, damage) {
     const lv = this.g.level;
     if (!lv || !lv.decor) return;
+    // Only what the blast can reach: a wall between keeps the next room's
+    // furniture, lights and litter where they are.
+    const sees = (tx, ty) => lv.lineOfSight(x, y, tx, ty);
     for (const it of this.g.items) {
-      if (it.kind === 'lamp' && !it.taken && dist(x, y, it.x, it.y) < radius * 0.8) this.shootLamp(it);
+      if (it.kind === 'lamp' && !it.taken && dist(x, y, it.x, it.y) < radius * 0.8 && sees(it.x, it.y)) this.shootLamp(it);
     }
     for (const d of lv.decor) {
       if (!d.def || d.broken || d.gone || d.def.hp === Infinity) continue;
       const r = dist(x, y, d.hx, d.hy);
       if (r >= radius) continue;
+      if (!sees(d.hx, d.hy)) continue;
       const k = 1 - r / radius;
       const L = r || 1, ux = r > 0.05 ? (d.hx - x) / L : this.rng() - 0.5, uy = r > 0.05 ? (d.hy - y) / L : this.rng() - 0.5;
       const force = damage * k;
@@ -531,7 +619,7 @@ export class Props {
     // Debris on the floor is thrown again.
     for (const b of this.debris) {
       const r = dist(x, y, b.x, b.y);
-      if (r >= radius || b.jet) continue;
+      if (r >= radius || b.jet || !sees(b.x, b.y)) continue;
       const k = 1 - r / radius, L = r || 1;
       b.vx += ((b.x - x) / L) * (3 + damage * 0.12 * k);
       b.vy += ((b.y - y) / L) * (3 + damage * 0.12 * k);
@@ -728,6 +816,125 @@ export class Props {
     }
   }
 
+  /** The model's bounds, from its solid model if it has one, else from the studio. */
+  _foot(d) {
+    if (d._foot && d._footK === d.kind) return d._foot;
+    let f = null;
+    const mb = this.meshes;
+    if (mb && mb.has(d.kind)) {
+      const m = mb.get(d.kind, 'ok', d.variant);
+      if (m && m.ready) f = meshFoot(m);
+    }
+    const st = this.studio;
+    if (!f && st && st.has(d.kind)) {
+      const b = st.bounds(d.kind, d.variant);
+      const top = (b && b.top) || d.h0 || d.h;
+      if (b && b.maxX > b.minX) f = { minX: b.minX, maxX: b.maxX, minZ: b.minZ, maxZ: b.maxZ, top, cy: top * 0.5 };
+    }
+    if (f) { d._foot = f; d._footK = d.kind; }
+    return f;
+  }
+
+  /** How far the model's front face is from its middle: what it tips over on. */
+  _frontOf(d) {
+    const M = (this.meshes && this.meshes.models) || (this.studio && this.studio.models);
+    const m = M && M[d.kind];
+    return m && m.front !== undefined ? m.front : 0.2;
+  }
+
+  /** Round enough to slide along a wall on: the smaller of its half-widths. */
+  _radius(d) {
+    const f = this._foot(d);
+    if (!f) return 0.2;
+    const r = Math.min(Math.max(-f.minX, f.maxX), Math.max(-f.minZ, f.maxZ));
+    return clamp(r, 0.12, 0.42);
+  }
+
+  /** How deep a circle at (x, y) reaches into the walls round it (0 if it does not). */
+  _overlap(x, y, r) {
+    const lv = this.g.level;
+    const cx = Math.floor(x), cy = Math.floor(y);
+    let o = 0;
+    for (let j = -1; j <= 1; j++) {
+      for (let i = -1; i <= 1; i++) {
+        const gx = cx + i, gy = cy + j;
+        if (!wallCell(lv, gx, gy)) continue;
+        if (!i && !j) return r + 1;
+        const qx = x < gx ? gx : x > gx + 1 ? gx + 1 : x;
+        const qy = y < gy ? gy : y > gy + 1 ? gy + 1 : y;
+        const dd = Math.hypot(x - qx, y - qy);
+        if (r - dd > o) o = r - dd;
+      }
+    }
+    return o;
+  }
+
+  /**
+   * Stand it back out of any wall its model reaches into: as it is, turned,
+   * tipped or rolling. A few rounds, since getting out of one wall can put a
+   * corner into the one opposite in a tight spot. True if it had to move.
+   */
+  _unwall(d) {
+    const lv = this.g.level, f = this._foot(d);
+    if (!lv || !f) return false;
+    const pts = this._pts || (this._pts = []);
+    const front = this._frontOf(d);
+    let moved = false;
+    for (let it = 0; it < 4; it++) {
+      const tilt = d.fall ? d.fall.ang : 0, roll = d.flying ? d.roll || 0 : 0;
+      boxFootprint(f, d.x, d.y, d.yaw, tilt, front, roll, f.cy, pts);
+      const push = wallPush(lv, pts);
+      if (!push) break;
+      const nx = d.x + push[0], ny = d.y + push[1];
+      if (wallCell(lv, Math.floor(nx), Math.floor(ny))) break;
+      d.x = nx; d.y = ny; moved = true;
+    }
+    return moved;
+  }
+
+  /**
+   * How far over a tall thing can go before it meets a wall: it comes to rest
+   * leaning on the wall at that angle, instead of falling through it into the
+   * next room. Whatever of it was touching a wall standing up does not count.
+   */
+  _fallRoom(d) {
+    const lv = this.g.level, f = this._foot(d);
+    if (!lv || !f) return HALF_PI;
+    const pts = this._pts || (this._pts = []);
+    const front = this._frontOf(d);
+    boxFootprint(f, d.x, d.y, d.yaw, 0, front, 0, 0, pts);
+    const was = [];
+    for (let k = 0; k < pts.length; k += 2) was.push(wallCell(lv, Math.floor(pts[k]), Math.floor(pts[k + 1])));
+    let last = 0;
+    for (let a = 0.05; a < HALF_PI + 0.05; a += 0.05) {
+      const ang = Math.min(a, HALF_PI);
+      boxFootprint(f, d.x, d.y, d.yaw, ang, front, 0, 0, pts);
+      for (let k = 0; k < pts.length; k += 2) {
+        if (!was[k >> 1] && wallCell(lv, Math.floor(pts[k]), Math.floor(pts[k + 1]))) return Math.max(0.12, last);
+      }
+      last = ang;
+    }
+    return HALF_PI;
+  }
+
+  /** A piece at rest is laid alongside a wall, not into it. */
+  _unwallPiece(b) {
+    const mb = this.meshes, lv = this.g.level;
+    if (!mb || !lv || !mb.has(b.piece, true)) return;
+    const m = mb.get(b.piece, 'ok', b.v, true);
+    if (!m || !m.ready) return;
+    const f = meshFoot(m);
+    const pts = this._pts || (this._pts = []);
+    for (let it = 0; it < 3; it++) {
+      boxFootprint(f, b.x, b.y, b.yaw, 0, 0, b.roll || 0, f.cy, pts);
+      const push = wallPush(lv, pts);
+      if (!push) break;
+      const nx = b.x + push[0], ny = b.y + push[1];
+      if (wallCell(lv, Math.floor(nx), Math.floor(ny))) break;
+      b.x = nx; b.y = ny;
+    }
+  }
+
   /** Kicked: a chair, a cone, a bin, hoofed across the room, hurting what it meets. */
   _kickFly(d, ca, sa) {
     const g = this.g;
@@ -771,18 +978,24 @@ export class Props {
     d.yaw += d.spin * dt;
     const nx = d.x + mv.vx * dt, ny = d.y + mv.vy * dt;
     const speed = Math.hypot(mv.vx, mv.vy);
-    if (lv.blocked(nx, ny)) {
+    // Its body meets the wall, not just its middle: a chair stops with its
+    // legs against the plaster, not with half of it through it.
+    const rad = this._radius(d), o0 = this._overlap(d.x, d.y, rad);
+    const stopped = (x, y) => lv.blocked(x, y) || this._overlap(x, y, rad) > o0 + 1e-3;
+    if (stopped(nx, ny)) {
       // A hard stop at speed finishes it; a soft one just turns it round.
       if (speed > 6.5 && def.hp !== Infinity && d.kind !== 'cone' && d.kind !== 'spool') {
         this._unfly(d, false);
         this.hit(d, 999, d.x, d.y, d.z + 0.3, 'crash');
         return;
       }
-      if (lv.blocked(nx, d.y)) mv.vx *= -0.4;
-      if (lv.blocked(d.x, ny)) mv.vy *= -0.4;
+      if (stopped(nx, d.y)) mv.vx *= -0.4;
+      if (stopped(d.x, ny)) mv.vy *= -0.4;
       if (speed > 2) g.sound.sfx(MAT[def.mat].hit, { pan: g.panAt(d.x, d.y), vol: 0.5 });
       d.spin += (this.rng() - 0.5) * 8;
     } else { d.x = nx; d.y = ny; }
+    // spinning or tumbling, the ends of it still stay this side of the wall
+    this._unwall(d);
     d.hx = d.x; d.hy = d.y;
 
     if (speed > 2.5) {
@@ -813,6 +1026,7 @@ export class Props {
     const k = this.flying.indexOf(d);
     if (k >= 0) this.flying.splice(k, 1);
     d.flying = false; d.lift = 0; d.mv = null; d.roll = 0; d.rollRate = 0; d.spin = 0;
+    this._unwall(d);
     d.hx = d.x; d.hy = d.y;
     if (settle && !d.broken) this._gridAdd(d);
   }
@@ -827,7 +1041,8 @@ export class Props {
     if (d.fall || d.broken || d.gone || !def.tall) return;
     const backed = d.wall || def.tall === true && d.solid && this._backed(d);
     if (!backed && (ux || uy)) d.yaw = Math.atan2(uy, ux);
-    d.fall = { t: -delay, ang: 0, vel: 0, dir: d.yaw, landed: false };
+    d.fall = { t: -delay, ang: 0, vel: 0, dir: d.yaw, landed: false, max: HALF_PI };
+    d.fall.max = this._fallRoom(d);
     d.shake = Math.max(d.shake, delay + 0.2);
     g.sound.sfx('creak_topple', { pan: g.panAt(d.x, d.y) });
     if (delay > 0.2) g.hud.popup('TIMBER', { size: 12, life: 0.9, y: -40, color: rgba(255, 208, 72, 255) });
@@ -846,8 +1061,9 @@ export class Props {
     // it goes slowly, then all at once
     f.vel += (4 + 10 * Math.sin(f.ang + 0.2)) * dt;
     f.ang += f.vel * dt;
-    if (f.ang >= HALF_PI) {
-      f.ang = HALF_PI;
+    const lim = f.max || HALF_PI;
+    if (f.ang >= lim) {
+      f.ang = lim;
       if (!f.landed) this._land(d);
     }
     d.pose = Math.min(4, Math.round(f.ang / HALF_PI * 4));
@@ -861,13 +1077,16 @@ export class Props {
     this._clearBlock(d);
     const ux = Math.cos(f.dir), uy = Math.sin(f.dir);
     const front = (g.art.props && g.art.props.models[d.kind] && g.art.props.models[d.kind].front) || 0.2;
-    const len = d.h0;
+    // how far along the floor it reaches: all of it, or less if it came to
+    // rest leaning on a wall
+    const lean = f.ang < HALF_PI - 0.01;
+    const len = d.h0 * Math.sin(f.ang);
     // the footprint lying down: from its front edge out to where its top came down
     const px = d.x + ux * front, py = d.y + uy * front;
     const cx = px + ux * len * 0.5, cy = py + uy * len * 0.5;
     this._gridDel(d);
     d.hx = cx; d.hy = cy; d.hr = len * 0.5;
-    d.h = Math.min(d.h0, front * 2 + 0.05);
+    d.h = Math.max(Math.min(d.h0, front * 2 + 0.05), lean ? d.h0 * Math.cos(f.ang) + front : 0);
     this._gridAdd(d);
     const heavy = (def.crush || 40) >= 80;
     g.sound.sfx(heavy ? 'crash_heavy' : MAT[def.mat].brk || 'wood_break', { pan: g.panAt(cx, cy) });
@@ -1058,7 +1277,7 @@ export class Props {
         const target = Math.round(b.roll / Math.PI) * Math.PI;
         b.roll += (target - b.roll) * (1 - Math.exp(-12 * dt));
         b.rollRate *= Math.exp(-8 * dt);
-        if (!b.jet && Math.hypot(b.vx, b.vy) < 0.15 && Math.abs(b.vz) < 0.1) { b.rest = true; b.roll = target; }
+        if (!b.jet && Math.hypot(b.vx, b.vy) < 0.15 && Math.abs(b.vz) < 0.1) { b.rest = true; b.roll = target; this._unwallPiece(b); }
       }
     }
   }

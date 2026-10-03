@@ -118,6 +118,7 @@ export class Raycaster {
     this._castWalls(lv, cam, art, light, opts, horizon, dirX, dirY, planeX, planeY);
     this._castPlanes(lv, cam, art, light, opts, horizon);
     this._drawSky(art, cam, opts, horizon);
+    this.lv = lv;
     drawMeshes(this, cam, horizon, light, meshes, opts);
     this._drawSprites(lv, cam, art, light, sprites, opts, horizon, dirX, dirY, planeX, planeY);
     return buf;
@@ -524,6 +525,12 @@ export class Raycaster {
       const skyTop = this.skyTop;
       // the furniture's depth, pixel by pixel (meshdraw.js); 1e9 where there is none
       const pz = this.pz;
+      // Over a parapet the raycaster draws sky, not the rooms beyond it, so
+      // only what is out in the open may show there: a warhead, a burst, a
+      // body on the far side of the deck. Whatever stands under a roof past
+      // the berm is behind walls that were never drawn, and must not float up
+      // over the parapet (it used to: lamps, staff and furniture next door).
+      const open = openToSky(lv, s);
       for (let x = cx0; x < cx1; x++) {
         // Depth test per column, with one concession: a column capped by a
         // parapet still shows the horizon above it, so a distant warhead is
@@ -531,7 +538,7 @@ export class Raycaster {
         let rowLimit = cy1;
         const near = additive ? s._d - 0.15 : s._d;
         if (zbuf[x] < near) {
-          if (skyTop[x] <= 0) continue;
+          if (skyTop[x] <= 0 || !open) continue;
           rowLimit = Math.min(cy1, skyTop[x]);
           if (rowLimit <= cy0) continue;
         }
@@ -584,6 +591,18 @@ export class Raycaster {
       d: ty, scale,
     };
   }
+}
+
+/**
+ * Is a sprite out in the open, where it can be seen over a parapet: off the
+ * map, up above the roofs, or standing where the roof is open?
+ */
+function openToSky(lv, s) {
+  if (!lv) return true;
+  const x = s.x, y = s.y;
+  if (x < 0 || y < 0 || x >= lv.W || y >= lv.H) return true;
+  if ((s.z || 0) > CEIL_H - 0.05) return true;
+  return !!lv.sky[(y | 0) * lv.W + (x | 0)];
 }
 
 /**

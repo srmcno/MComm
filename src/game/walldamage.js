@@ -218,6 +218,9 @@ export class WallDamage {
           const px = Math.max(cx, Math.min(cx + 1, fx)), py = Math.max(cy, Math.min(cy + 1, fy));
           const d = Math.hypot(px - x, py - y);
           if (d > radius) continue;
+          // only a face the blast can see: not one in the next room, behind another wall
+          const ox = f === 0 ? -0.05 : f === 1 ? 0.05 : 0, oy = f === 2 ? -0.05 : f === 3 ? 0.05 : 0;
+          if (!lv.lineOfSight(x, y, px + ox, py + oy)) continue;
           const k = 1 - d / radius;
           // where on the face the blast centre falls
           let u = f < 2 ? py - cy : px - cx;
@@ -250,6 +253,9 @@ export class WallDamage {
       const cx = (i % lv.W) + 0.5, cy = ((i / lv.W) | 0) + 0.5;
       const d = dist(x, y, cx, cy);
       if (d > radius + 0.5) continue;
+      // through the open, to the face of it nearest the blast; not through another wall
+      const nx = cx + Math.max(-0.56, Math.min(0.56, x - cx)), ny = cy + Math.max(-0.56, Math.min(0.56, y - cy));
+      if (!lv.lineOfSight(x, y, nx, ny)) continue;
       const k = Math.max(0.15, 1 - Math.max(0, d - 0.5) / radius);
       if (this._hurtWall(i, damage * 2.4 * k, null, x, y)) n++;
     }
@@ -356,7 +362,7 @@ export class WallDamage {
       for (let cx = Math.floor(x) - R; cx <= Math.floor(x) + R; cx++) {
         if (!lv.inBounds(cx, cy)) continue;
         const i = cy * lv.W + cx;
-        if (lv.ceilTex[i] === tube && dist(x, y, cx + 0.5, cy + 0.5) < r) this._breakTube(i);
+        if (lv.ceilTex[i] === tube && dist(x, y, cx + 0.5, cy + 0.5) < r && lv.lineOfSight(x, y, cx + 0.5, cy + 0.5)) this._breakTube(i);
       }
     }
   }

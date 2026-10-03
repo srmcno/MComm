@@ -305,6 +305,32 @@ export class Level {
     return this.propBlock[i] && this.propH[i] > 0 ? this.propH[i] : 0;
   }
 
+  /**
+   * A step from (x0, y0) to (x1, y1) that changes both cell coordinates skips
+   * the corner between them, and passes through one of the two cells beside
+   * it. Which one: [x, y, k], a point in that cell on the step and how far
+   * along it is, or null when the step crosses no corner. Rounds and shells
+   * test it, or a shot down a diagonal slips between two walls that meet.
+   */
+  cornerCell(x0, y0, x1, y1) {
+    const ax = Math.floor(x0), ay = Math.floor(y0), bx = Math.floor(x1), by = Math.floor(y1);
+    if (ax === bx || ay === by || x1 === x0 || y1 === y0) return null;
+    const tx = (Math.max(ax, bx) - x0) / (x1 - x0), ty = (Math.max(ay, by) - y0) / (y1 - y0);
+    const k = (tx + ty) * 0.5;
+    return [x0 + (x1 - x0) * k, y0 + (y1 - y0) * k, k];
+  }
+
+  /**
+   * Did something rising from z0 to z1 at (x, y) just go up into the ceiling
+   * slab? Only under a roof: not under open sky or off the map, and not if it
+   * was above the roof already (a burst high over the building).
+   */
+  hitsCeiling(x, y, z0, z1) {
+    const c = CEIL_H - 0.02;
+    if (z1 < c || z0 >= c || x < 0 || y < 0 || x >= this.W || y >= this.H) return false;
+    return !this.sky[this.idx(x, y)];
+  }
+
   /** True if the cell blocks line of sight (doors count until nearly open). */
   opaque(x, y) {
     if (x < 0 || y < 0 || x >= this.W || y >= this.H) return true;

@@ -1,6 +1,7 @@
 // entities.js - everything walking, hovering or bolted to a wall that wants you dead.
 
 import { clamp, damp, dist, wrapAngle, makeRng, randRange, TAU } from '../core/math.js';
+import { CEIL_H } from '../core/world.js';
 
 // The walk runs off distance. The sprite generator publishes how far its
 // painted feet push the floor back per cycle (rig.cycle, a fraction of the
@@ -637,9 +638,10 @@ export class Bolt {
   update(dt, game) {
     this.t += dt;
     this.life -= dt;
+    const z0 = this.z;
     this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
     if (this.life <= 0) { this.alive = false; return; }
-    if (this.z < 0.05 || this.z > 2.4 || game.level.blockedShot(this.x, this.y, this.z)) {
+    if (this.z < 0.05 || this.z > 2.4 || game.level.blockedShot(this.x, this.y, this.z) || game.level.hitsCeiling(this.x, this.y, z0, this.z)) {
       this.alive = false;
       game.onBoltImpact(this, null);
       return;
@@ -694,7 +696,14 @@ export class PipeBomb {
       if (game.level.blockedAt(this.x, ny, this.z)) this.vy *= -0.42; else this.y = ny;
       game.sound.sfx('pipebomb_land', { pan: game.panAt(this.x, this.y), vol: 0.5 });
     } else { this.x = nx; this.y = ny; }
+    const z0 = this.z;
     this.z += this.vz * dt;
+    // The ceiling: it bounces off the slab instead of sailing up through it.
+    if (this.vz > 0 && game.level.hitsCeiling(this.x, this.y, z0 + 0.06, this.z + 0.06)) {
+      this.z = CEIL_H - 0.07;
+      this.vz = -this.vz * 0.35;
+      game.sound.sfx('pipebomb_land', { pan: game.panAt(this.x, this.y), vol: 0.4, rate: 1.2 });
+    }
     // The floor here, or the top of whatever parapet or prop it came down on.
     const rest = 0.08 + (game.level.restAt ? game.level.restAt(this.x, this.y) : 0);
     if (this.z <= rest) {
@@ -781,6 +790,7 @@ export class Acid {
     this.t += dt;
     this.life -= dt;
     this.vz -= 11 * dt;
+    const z0 = this.z;
     this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
     const p = game.player;
     if (this.life <= 0) { this.alive = false; return; }
@@ -791,7 +801,7 @@ export class Acid {
       game.onAcidSplash(this, true);
       return;
     }
-    if (this.z < 0.06 || game.level.blockedAt(this.x, this.y, this.z)) {
+    if (this.z < 0.06 || game.level.blockedAt(this.x, this.y, this.z) || game.level.hitsCeiling(this.x, this.y, z0 + 0.05, this.z + 0.05)) {
       this.alive = false;
       game.onAcidSplash(this, false);
     }

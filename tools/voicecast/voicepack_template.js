@@ -18,17 +18,7 @@
 // t: the words, d: seconds, b: base64 mp3 } (acted.js plays them).
 
 export const VOICE_FILES = [
-  {"src": "voices/cast-0.js", "set": "cast", "tier": 0, "clips": 147, "bytes": 5588392},
-  {"src": "voices/cast-1.js", "set": "cast", "tier": 0, "clips": 89, "bytes": 3991610},
-  {"src": "voices/cast-2.js", "set": "cast", "tier": 1, "clips": 57, "bytes": 1973424},
-  {"src": "voices/cast-3.js", "set": "cast", "tier": 2, "clips": 131, "bytes": 5544912},
-  {"src": "voices/cast-4.js", "set": "cast", "tier": 2, "clips": 52, "bytes": 2214003},
-  {"src": "voices/brick-stevem-0.js", "set": "stevem", "tier": 0, "clips": 159, "bytes": 5462575},
-  {"src": "voices/brick-stevem-1.js", "set": "stevem", "tier": 1, "clips": 46, "bytes": 2007819},
-  {"src": "voices/brick-texas-0.js", "set": "texas", "tier": 0, "clips": 164, "bytes": 5599488},
-  {"src": "voices/brick-texas-1.js", "set": "texas", "tier": 0, "clips": 47, "bytes": 2003988},
-  {"src": "voices/brick-texas-2.js", "set": "texas", "tier": 2, "clips": 126, "bytes": 5584528},
-  {"src": "voices/brick-texas-3.js", "set": "texas", "tier": 2, "clips": 16, "bytes": 415143}
+/*FILES*/
 ];
 
 /**

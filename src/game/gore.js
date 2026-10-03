@@ -1282,6 +1282,7 @@ export class Gore {
    */
   impulse(x, y, z, r, str) {
     const rng = this.rng;
+    const lv = this.game && this.game.level;
     for (let pass = 0; pass < 3; pass++) {
       const list = pass === 0 ? this.parts : pass === 1 ? this.gibs : this.casings;
       for (let i = 0; i < list.length; i++) {
@@ -1292,6 +1293,8 @@ export class Gore {
         if (d > r) continue;
         const k = (1 - d / r) * str * (pass === 2 ? 0.6 : 1);
         if (k < 0.4) continue;
+        // a wall between keeps what is lying in the next room where it lies
+        if (lv && !lv.lineOfSight(x, y, c.x, c.y)) continue;
         const L = d || 1;
         c.vx += (d > 0.05 ? dx / L : rng() - 0.5) * k;
         c.vy += (d > 0.05 ? dy / L : rng() - 0.5) * k;

@@ -5,7 +5,7 @@ import { Post } from './engine/post.js';
 import { loadAssets } from './engine/assets.js';
 import { Text } from './ui/text.js';
 import { TitleScreen } from './ui/title.js';
-import { Game, STATE } from './game/game.js';
+import { Game, STATE, loadBrickVoice, saveBrickVoice } from './game/game.js';
 import {
   renderWorld, drawViewmodel, drawBrief, drawIntermission,
   drawGameOver, drawVictory, drawPause, drawLoading,
@@ -17,7 +17,7 @@ import { Sound } from './audio/synth.js';
 import { Vox, LINES as VOX_LINES } from './audio/vox.js';
 import { Speech, loadVoiceMode } from './audio/speech.js';
 import { ClipBank } from './audio/acted.js';
-import { VOICE_PACK } from './audio/voicepack.js';
+import { loadVoices, BRICK_VOICES, brickVoiceOk } from './audio/voicepack.js';
 
 // Internal render width bounds. The ceiling is generous so a fast machine gets
 // a crisp image; the adaptive controller pulls it back down on anything slower.
@@ -115,6 +115,46 @@ export async function boot() {
 
   if (art.warnings.length) console.warn('[assets]', art.warnings);
 
+  // The recorded cast ships beside the game (voices/cast-N.js) and is fetched
+  // now, in the background, the lines heard most first. Nothing waits for it:
+  // a line whose take has not arrived yet is a subtitle until it has.
+  // Brick comes in two casts (BRICK VOICE in the options); only the chosen one
+  // is fetched, and the other only if he is switched to it.
+  const castBank = new ClipBank(null);
+  const castSets = {}, castAsked = {};
+  let castSpeech = null;
+  const saved = loadBrickVoice();
+  game.brickVoice = brickVoiceOk(saved) ? saved : BRICK_VOICES[0].id;
+  const castArrived = (clips, set) => {
+    (castSets[set] || (castSets[set] = [])).push(...clips);
+    if (set !== 'cast' && set !== game.brickVoice) return;
+    castBank.add(clips);
+    if (castSpeech) castSpeech.attachClips(castBank);
+  };
+  if (!safe) {
+    castAsked.cast = castAsked[game.brickVoice] = true;
+    loadVoices(castArrived, { brick: game.brickVoice })
+      .then((n) => { game.castLoaded = n; }).catch(() => { /* the cast stays subtitles */ });
+  }
+  game.castBank = castBank;
+  game.brickVoices = BRICK_VOICES;
+  game.setBrickVoice = (id) => {
+    if (!brickVoiceOk(id) || id === game.brickVoice) return false;
+    game.brickVoice = id;
+    saveBrickVoice(id);
+    if (castSpeech && castSpeech.cancel) { try { castSpeech.cancel(); } catch { /* ignore */ } }
+    castBank.dropRole('brick');
+    if (castSets[id]) castBank.add(castSets[id]);
+    if (castSpeech) castSpeech.attachClips(castBank);
+    if (!castAsked[id] && !safe) {
+      castAsked[id] = true;
+      loadVoices(castArrived, { sets: [id] }).catch(() => { /* he stays subtitles */ });
+    }
+    return true;
+  };
+  // Whether the chosen Brick has any takes here yet (the option says LOADING until he does).
+  game.brickVoiceReady = () => castBank.has('brick_kill');
+
   // Audio can only start inside a gesture, so wire it to the first real input.
   let audioStarted = false;
   const startAudio = async () => {
@@ -146,13 +186,13 @@ export async function boot() {
           if (speech) speech.attachFormant(v);
           game.vox.setVolume(game.volVox);
         }
-        // The recorded cast: the lines heard most, played from takes through
-        // the same bus. Lines without a take are subtitles only.
-        if (speech && sound.ctx && VOICE_PACK && VOICE_PACK.clips && VOICE_PACK.clips.length) {
+        // The recorded cast, played from takes through the same bus as it
+        // arrives. Lines without a take are subtitles only.
+        if (speech && sound.ctx) {
           try {
-            const bank = new ClipBank(VOICE_PACK);
-            bank.attach(sound.ctx, sound.sfxBus || sound.ctx.destination);
-            speech.attachClips(bank);
+            castBank.attach(sound.ctx, sound.sfxBus || sound.ctx.destination);
+            castSpeech = speech;
+            speech.attachClips(castBank);
           } catch (e) { console.warn('[audio] recorded cast unavailable', e); }
         }
         if (game.state === STATE.TITLE) sound.music('title', { fadeIn: 2.0 });

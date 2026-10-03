@@ -1097,11 +1097,12 @@ export class Game {
       }
       const d = dist(h.x, h.y, p.x, p.y);
       // Only the worst cloud you are standing in burns you. Two gorgers dying in
-      // the same doorway used to stack into an unsurvivable square metre.
-      if (d < h.r && (!worst || h.dps > worst.dps)) worst = h;
+      // the same doorway used to stack into an unsurvivable square metre. A
+      // cloud stays in its own room: the wall between keeps it out.
+      if (d < h.r && (!worst || h.dps > worst.dps) && this.blastReaches(h.x, h.y, p.x, p.y)) worst = h;
       for (const e of this.enemies) {
         if (!e.alive || e.def.mutant) continue;
-        if (dist(h.x, h.y, e.x, e.y) < h.r) e.hurt(h.dps * dt, this, h.x, h.y);
+        if (dist(h.x, h.y, e.x, e.y) < h.r && this.blastReaches(h.x, h.y, e.x, e.y)) e.hurt(h.dps * dt, this, h.x, h.y);
       }
     }
     if (worst) {
@@ -2282,6 +2283,14 @@ export class Game {
       if (pz < 0.02 || pz > CEIL_H || this.level.blockedShot(px, py, pz)) {
         return { wall: true, enemy: null, item: null, x: px - dx * step, y: py - dy * step, z: pz };
       }
+      // the corner this step skipped, if it skipped one: two walls that only
+      // meet at a corner are still a wall
+      if (t > 0) {
+        const cc = this.level.cornerCell(px - dx * step, py - dy * step, px, py);
+        if (cc && this.level.blockedShot(cc[0], cc[1], pz - dz * step * (1 - cc[2]))) {
+          return { wall: true, enemy: null, item: null, x: px - dx * step, y: py - dy * step, z: pz - dz * step };
+        }
+      }
       for (const e of this.enemies) {
         if (!e.alive || e.state === ST.DYING || e.state === ST.DEAD) continue;
         const dxy = Math.hypot(px - e.x, py - e.y);
@@ -2322,6 +2331,7 @@ export class Game {
     for (const e of this.enemies) {
       const d = dist(x, y, e.x, e.y);
       if (d >= radius) continue;
+      if (!this.blastReaches(x, y, e.x, e.y)) continue;
       const force = damage * (1 - d / radius);
       if (e.alive) {
         const killed = e.hurt(force, this, x, y);
@@ -2338,7 +2348,7 @@ export class Game {
       }
     }
     for (const it of this.items) {
-      if (it.solid && !it.taken && it.kind === 'barrel' && dist(x, y, it.x, it.y) < radius) {
+      if (it.solid && !it.taken && it.kind === 'barrel' && dist(x, y, it.x, it.y) < radius && this.blastReaches(x, y, it.x, it.y)) {
         // Chained barrels: give the next one a beat so it reads as a chain.
         // Game time, so a pause does not let the chain finish behind the menu.
         this.after(0.09, () => { if (!it.taken) this.damageProp(it, 999); });
@@ -2346,7 +2356,7 @@ export class Game {
     }
     const p = this.player;
     const dp = dist(x, y, p.x, p.y);
-    if (dp < radius) {
+    if (dp < radius && this.blastReaches(x, y, p.x, p.y)) {
       // Same dial as the airburst above: a barrel you set off is still the
       // world hurting you, and the world is gentler on CLERICAL.
       p.hurt(damage * 0.5 * (1 - dp / radius) * (this.diff.enemyDamage || 1), this, 'own-explosion');
@@ -2446,9 +2456,13 @@ export class Game {
       const R = f.ring.ringRadius;
       for (let i = 0; i < f.ring.ringCount; i++) {
         const t = (i / f.ring.ringCount) * TAU;
-        const cx = b.x + (ux * Math.cos(t) + vx * Math.sin(t)) * R;
-        const cy = b.y + (uy * Math.cos(t) + vy * Math.sin(t)) * R;
-        const cz = b.z + (uz * Math.cos(t) + vz * Math.sin(t)) * R;
+        let cx = b.x + (ux * Math.cos(t) + vx * Math.sin(t)) * R;
+        let cy = b.y + (uy * Math.cos(t) + vy * Math.sin(t)) * R;
+        let cz = b.z + (uz * Math.cos(t) + vz * Math.sin(t)) * R;
+        // Indoors the ring splashes against the walls, floor and ceiling of the
+        // room it went off in, instead of blooming inside them and next door.
+        const clip = this.ringClip(b.x, b.y, b.z, cx, cy, cz);
+        if (clip) { if (clip.k < 0.08) continue; cx = clip.x; cy = clip.y; cz = clip.z; }
         const sub = this.sky.detonate(cx, cy, cz, f.ring.blastRadius, 0, 'halo');
         sub.secondary = true;
         sub.gore = f.ring.gore || null;
@@ -2464,6 +2478,7 @@ export class Game {
       for (const e of this.enemies) {
         const d = dist(b.x, b.y, e.x, e.y);
         if (d >= b.maxR) continue;
+        if (!this.blastReaches(b.x, b.y, e.x, e.y, b.z)) continue;
         const force = gd * (1 - d / b.maxR);
         if (!e.alive) {
           if (!e.def.boss && !e.def.miniboss) this.blastCorpse(e, b.x, b.y, b.z, force, gore);
@@ -2476,13 +2491,73 @@ export class Game {
         if (!killed) e.shove(e.x - b.x, e.y - b.y, Math.max(5, gore.knock || 5) * (1 - d / b.maxR));
       }
       for (const it of this.items) {
-        if (it.solid && !it.taken && dist(b.x, b.y, it.x, it.y) < b.maxR) this.damageProp(it, 999);
+        if (it.solid && !it.taken && dist(b.x, b.y, it.x, it.y) < b.maxR && this.blastReaches(b.x, b.y, it.x, it.y, b.z)) this.damageProp(it, 999);
       }
       // ...and the furniture, and the walls round it.
       const pr = Math.min(b.maxR * 0.7, 3.2);
       this.props.blast(b.x, b.y, b.z, pr, gd * 1.6);
       if (this.walls) this.walls.blast(b.x, b.y, b.z, pr, gd * 1.2);
     }
+  }
+
+  /**
+   * Can a blast at (x, y, z) reach (tx, ty)? A wall or a shut door between
+   * them stops it. One that goes off up over the roofs reaches what is out in
+   * the open and nothing under a roof: the slab is between them.
+   */
+  blastReaches(x, y, tx, ty, z = 0.5) {
+    const lv = this.level;
+    if (!lv) return true;
+    if (z > CEIL_H + 0.05) return !lv.inBounds(tx, ty) || !!lv.sky[lv.idx(tx, ty)];
+    return lv.lineOfSight(x, y, tx, ty);
+  }
+
+  /**
+   * A Halo ring burst on its way out from the shell: where it meets a wall,
+   * the floor or a roofed ceiling first, as { x, y, z, k } (k is how far
+   * along it got), or null if the way is clear (open sky).
+   */
+  ringClip(x0, y0, z0, x1, y1, z1) {
+    const lv = this.level;
+    if (!lv) return null;
+    const L = Math.hypot(x1 - x0, y1 - y0, z1 - z0) || 1;
+    const n = Math.max(2, Math.ceil(L / 0.25));
+    let lx = x0, ly = y0, lz = z0;
+    for (let i = 1; i <= n; i++) {
+      const k = i / n;
+      const x = x0 + (x1 - x0) * k, y = y0 + (y1 - y0) * k, z = z0 + (z1 - z0) * k;
+      const inside = x >= 0 && y >= 0 && x < lv.W && y < lv.H;
+      let stop = z <= 0.02;
+      if (!stop && inside) {
+        // a wall below its top; the ceiling from below, or the roof from above
+        const roofed = !lv.sky[lv.idx(x, y)] && !lv.wall[lv.idx(x, y)];
+        stop = lv.blockedAt(x, y, z) || lv.hitsCeiling(x, y, lz, z) || (roofed && lz >= CEIL_H && z < CEIL_H);
+      }
+      if (stop) {
+        const zc = lz < CEIL_H ? Math.max(0.05, Math.min(lz, CEIL_H - 0.05)) : Math.max(lz, CEIL_H + 0.05);
+        return { x: lx, y: ly, z: zc, k: (i - 1) / n };
+      }
+      lx = x; ly = y; lz = z;
+    }
+    return null;
+  }
+
+  /**
+   * A shell that hit something inside its arming distance: the fuse was not
+   * live, so it is a dud. It does not burst, but it does not go through
+   * either: sparks, a clang and a dent where it struck.
+   */
+  onFlakDud(f, kind) {
+    const x = f.x, y = f.y, z = f.z;
+    const L = Math.hypot(f.vx, f.vy) || 1;
+    this.particles.sparks(x, y, z, 12, 2.2, [255, 214, 150], 6);
+    this.particles.dust(x, y, z, 3);
+    this.sound.sfx('hit_wall', { pan: this.panAt(x, y), vol: 0.75, rate: 0.75 });
+    this.sound.sfx('metal_hit', { pan: this.panAt(x, y), vol: 0.45, rate: 1.3 });
+    if (kind === 'wall') this.walls.bulletHole(x, y, z, f.vx / L, f.vy / L, true);
+    else if (kind === 'ceiling') this.walls.ceilingHit(x, y);
+    else if (kind === 'floor') this.addDecal(x, y, 'scorch');
+    this.shake = Math.max(this.shake, 0.6);
   }
 
   onWarheadKilled(w, b, chain) {
@@ -2537,6 +2612,8 @@ export class Game {
       if (!e.alive || b.hit.has('e' + e.id)) continue;
       if (Math.abs(e.z - b.z) > b.r + 1) continue;
       if (dist(b.x, b.y, e.x, e.y) > b.r) continue;
+      // a burst does not reach round a wall, or down through a roof
+      if (!b.deadman && !this.blastReaches(b.x, b.y, e.x, e.y, b.z)) continue;
       b.hit.add('e' + e.id);
       const killed = e.hurt(b.deadman ? 999 : 42, this, b.x, b.y);
       // The Deadman kills everything; taking it apart as well would bury the
@@ -2550,6 +2627,8 @@ export class Game {
     // off for shooting the thing in front of you.
     if (b.deadman || b.contact) return;
     const p = this.player;
+    // not through a wall, and not down through the roof over your head
+    if (!this.blastReaches(b.x, b.y, p.x, p.y, b.z)) return;
     // Difficulty scales everything that hurts you — except, until now, the one
     // thing you fire yourself. CLERICAL widens the blast by 18% to make the sky
     // easier, which quietly made your own airburst the deadliest thing on the
@@ -3123,6 +3202,14 @@ export function loadVolumes(game) {
     if (!v) return;
     for (const k of ['volMaster', 'volMusic', 'volVox']) if (Number.isFinite(v[k])) game[k] = Math.max(0, Math.min(1, v[k]));
   } catch { /* private window or sandboxed frame: defaults */ }
+}
+// Which recorded Brick the player wants (voicepack.js BRICK_VOICES).
+const BRICK_KEY = 'nukehaus.brickVoice';
+export function loadBrickVoice() {
+  try { return localStorage.getItem(BRICK_KEY) || ''; } catch { return ''; }
+}
+export function saveBrickVoice(id) {
+  try { localStorage.setItem(BRICK_KEY, id); } catch { /* it just will not survive a reload */ }
 }
 export function saveVolumes(game) {
   try { localStorage.setItem(VOL_KEY, JSON.stringify({ volMaster: game.volMaster, volMusic: game.volMusic, volVox: game.volVox })); }

@@ -7,6 +7,7 @@
 
 import { clamp, dist3, makeRng, randRange, TAU } from '../core/math.js';
 import { CITY_AZIMUTH, CITY_NAMES } from '../engine/skybox.js';
+import { CEIL_H } from '../core/world.js';
 
 export const CITY_RADIUS = 62;
 // A shell is inert for its first few metres. Below this it passes through
@@ -500,51 +501,79 @@ export class SkyWar {
           if (dist3(f.x, f.y, f.z, w.x, w.y, w.z) < 2.6) { pop = true; break; }
         }
       }
-      // Shells burst on architecture, but only on what is actually in the way:
-      // a parapet stops nothing above its cap, and the map boundary stops
-      // nothing at all, since every warhead lives beyond it.
-      // Sweep the whole step. A shell covers better than two cells per frame, so
-      // testing only where it landed let it tunnel clean through a one-cell wall.
-      // Nothing bursts inside the arming distance: a shell that clips the parapet
-      // at the player's elbow passes through it, the way real flak does, instead
-      // of taking his face off for shooting across his own deck.
-      // Furniture is in the way too: a shell fired into a desk bursts on the
-      // desk (and takes it apart), not on the wall behind it. Any distance past
-      // the muzzle: a burst on something you hit does not hurt you.
-      let propT = 2, propX = 0, propY = 0, propZ = 0;
-      if (!pop && game.props && f.travelled > 0.3 && (f.z < 1.4 || pz < 1.4)) {
-        const n = Math.max(1, Math.ceil(step / 0.18));
+      // What the shell meets on its way through this step, earliest first: a
+      // body or a warhead (the proximity fuse, above), a piece of furniture, a
+      // wall, the floor, or the ceiling where the roof is shut. The whole step
+      // is swept, in steps a fraction of a cell: a shell covers better than two
+      // cells a frame, and a diagonal step can slip between two walls that only
+      // meet at a corner.
+      // Every wall stops a shell. Inside the arming distance the fuse is not
+      // live, so it hits as a dud (sparks and a dent, see onFlakDud) instead of
+      // bursting in the player's face; it used to pass straight through, into
+      // the next room. The one exception is a parapet's cap: a shell that clips
+      // the berm at the player's elbow goes over it.
+      // Furniture is hit at any range past the muzzle, and bursts: a burst on
+      // something you hit does not hurt you (see onBlastHurtPlayer).
+      const lv = game.level;
+      let hitT = 2, hitX = 0, hitY = 0, hitZ = 0, hitKind = null, hitArmed = false;
+      if (lv) {
+        // fine enough not to step over the corner of a door's slab
+        const n = Math.max(1, Math.ceil(step / 0.06));
+        let lx = px, ly = py, lz = pz;
+        const W = lv.W, H = lv.H;
         for (let k = 1; k <= n; k++) {
           const t = k / n;
           if (prox && prox.t <= t) break;
           const sx = px + (f.x - px) * t, sy = py + (f.y - py) * t, sz = pz + (f.z - pz) * t;
-          if (sz >= 1.4 || sz < 0) continue;
-          if (game.props.at(sx, sy, sz)) { propT = t; propX = sx; propY = sy; propZ = sz; break; }
-        }
-      }
-      let wallT = 2;
-      if (!pop && game.level && f.travelled > FLAK_ARM_DIST && (f.z < 1.4 || pz < 1.4)) {
-        const n = Math.max(1, Math.ceil(step / 0.45));
-        for (let k = 1; k <= n; k++) {
-          const t = k / n;
-          if (prox && prox.t <= t) break;   // it met something before this wall
-          if (t >= propT) break;            // or a piece of furniture
-          const sx = px + (f.x - px) * t, sy = py + (f.y - py) * t, sz = pz + (f.z - pz) * t;
-          if (sz >= 1.4) continue;
-          if (game.level.blockedAt(sx, sy, sz)) {
-            // Burst at the contact point, not past it.
-            f.x = sx; f.y = sy; f.z = sz;
-            pop = true;
-            wallT = t;
+          const cx = Math.floor(sx), cy = Math.floor(sy);
+          const along = f.travelled - step * (1 - t);
+          const armed = along >= FLAK_ARM_DIST;
+          let what = null;
+          if (cx >= 0 && cy >= 0 && cx < W && cy < H) {
+            if (sz < CEIL_H && sz >= 0 && along > 0.3 && game.props && game.props.at(sx, sy, sz)) what = 'prop';
+            else if (sz < CEIL_H + 0.25) {
+              let blockedHere = lv.blockedAt(sx, sy, sz);
+              if (!blockedHere) {
+                const cc = lv.cornerCell(lx, ly, sx, sy);
+                if (cc && lv.blockedAt(cc[0], cc[1], lz + (sz - lz) * cc[2])) blockedHere = true;
+              }
+              if (blockedHere) {
+                const i = cy * W + cx;
+                const parapet = lv.wall[i] === 1 && lv.wallHeight(i) < CEIL_H - 0.01;
+                if (!(parapet && !armed)) what = 'wall';
+              }
+            }
+          }
+          // The ceiling, crossed from below where there is a roof over it: the
+          // cell it went up through decides, not the one it came out over (a
+          // shell that rises out of a room at its edge is over the wall by
+          // then). Anything already above the roof is in the open.
+          const CZ = CEIL_H - 0.02;
+          if (!what && lz < CZ && sz >= CZ) {
+            const q = (CZ - lz) / (sz - lz);
+            const qx = lx + (sx - lx) * q, qy = ly + (sy - ly) * q;
+            if (qx >= 0 && qy >= 0 && qx < W && qy < H) {
+              const qi = Math.floor(qy) * W + Math.floor(qx);
+              if (lv.wall[qi] === 1) { if (lv.wallHeight(qi) >= CEIL_H - 0.01) what = 'wall'; }
+              else if (!lv.sky[qi]) what = 'ceiling';
+            }
+          }
+          if (!what && sz <= 0.005) what = 'floor';
+          if (what) {
+            // stop at the last clear point, on this side of whatever it hit
+            hitT = t; hitX = lx; hitY = ly; hitZ = Math.max(0.03, Math.min(lz, CEIL_H - 0.03));
+            hitKind = what; hitArmed = armed;
             break;
           }
+          lx = sx; ly = sy; lz = sz;
         }
       }
-      if (propT < wallT && !(prox && prox.t < propT)) {
-        f.x = propX; f.y = propY; f.z = propZ;
-        f.contact = true;
+      if (hitKind && !(prox && prox.t < hitT)) {
+        f.x = hitX; f.y = hitY; f.z = hitZ;
         pop = true;
-      } else if (prox && prox.t < wallT) {
+        if (hitKind === 'prop') f.contact = true;
+        else if (!hitArmed) f.dud = hitKind;
+      } else if (prox) {
         f.x = prox.x; f.y = prox.y; f.z = prox.z;
         f.proxDist = prox.near;
         f.contact = prox.body;
@@ -554,6 +583,7 @@ export class SkyWar {
       if (pop) {
         f.alive = false;
         this.flak.splice(i, 1);
+        if (f.dud) { game.onFlakDud(f, f.dud); continue; }
         const b = this.detonate(f.x, f.y, f.z, f.blast, 0, f.weapon);
         b.proxDist = f.proxDist;
         b.contact = !!f.contact;

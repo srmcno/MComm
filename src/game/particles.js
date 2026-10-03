@@ -7,6 +7,7 @@
 
 import { rgba, makeFrame, clamp as pclamp } from '../core/pixels.js';
 import { clamp, makeRng, randRange } from '../core/math.js';
+import { CEIL_H } from '../core/world.js';
 
 const MAX_PARTICLES = 1400;
 const MAX_EFFECTS = 220;
@@ -263,7 +264,15 @@ export class Particles {
           p.vx *= -0.24; p.vy *= -0.24;
         }
       } else { p.x = nx; p.y = ny; }
+      const z0 = p.z;
       p.z += p.vz * dt;
+      // Indoors the ceiling stops them too, or sparks and chips fly up into
+      // the slab and show through it.
+      if (level && p.vz > 0 && level.hitsCeiling(p.x, p.y, z0, p.z)) {
+        p.z = CEIL_H - 0.03;
+        p.vz = -p.vz * 0.2;
+        if (p.hard && !p.additive && p.grav > 1) { p.vx *= 0.5; p.vy *= 0.5; }
+      }
       if (p.z < 0.02) {
         p.z = 0.02;
         if (p.bounce > 0 && Math.abs(p.vz) > 0.6) { p.vz = -p.vz * p.bounce; p.vx *= 0.6; p.vy *= 0.6; }

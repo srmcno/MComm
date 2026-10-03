@@ -1,7 +1,9 @@
 // acted.js - the cast, recorded.
 //
-// The lines heard most were recorded by voice actors (ElevenLabs takes) and
-// ship in voicepack.js as small mp3 clips. This module is the player for them:
+// The cast's lines were recorded by voice actors (ElevenLabs takes) and ship
+// beside the game as small mp3 clips (voices/cast-N.js, see voicepack.js),
+// arriving a file at a time after the game has started. This module is the
+// player for them:
 // Speech asks it whether a line has a take and, if so, has it played here,
 // through the game's own Web Audio graph, instead of the browser's voice.
 // Anything without a take falls through to the browser voice as before.
@@ -31,22 +33,43 @@ function b64ToBuffer(b64) {
 
 export class ClipBank {
   constructor(pack, opts = {}) {
-    const clips = (pack && Array.isArray(pack.clips)) ? pack.clips : [];
-    this.clips = clips.filter((c) => c && c.r && c.t && c.b && c.d > 0);
+    this.clips = [];
     this.rng = typeof opts.rng === 'function' ? opts.rng : Math.random;
     this.byText = new Map();
     this.byKey = new Map();
-    for (const c of this.clips) {
+    this.ctx = null;
+    this.buses = {};
+    this.cache = new Map();
+    this.last = {};
+    this.add(pack && Array.isArray(pack.clips) ? pack.clips : []);
+  }
+
+  /** More takes (a voice file that has just arrived). Returns how many were usable. */
+  add(clips) {
+    let n = 0;
+    for (const c of Array.isArray(clips) ? clips : []) {
+      if (!c || !c.r || !c.t || !c.b || !(c.d > 0)) continue;
+      this.clips.push(c);
       this.byText.set(clipKey(c.r, c.t), c);
       if (c.k) {
         if (!this.byKey.has(c.k)) this.byKey.set(c.k, []);
         this.byKey.get(c.k).push(c);
       }
+      n++;
     }
-    this.ctx = null;
-    this.buses = {};
-    this.cache = new Map();
-    this.last = {};
+    return n;
+  }
+
+  /** Forget every take of a role: Brick's other cast is about to take over. */
+  dropRole(role) {
+    this.clips = this.clips.filter((c) => c.r !== role);
+    for (const [k, c] of [...this.byText]) if (c.r === role) this.byText.delete(k);
+    for (const [k, l] of [...this.byKey]) {
+      const keep = l.filter((c) => c.r !== role);
+      if (keep.length) this.byKey.set(k, keep); else this.byKey.delete(k);
+    }
+    for (const c of [...this.cache.keys()]) if (c.r === role) this.cache.delete(c);
+    for (const k of Object.keys(this.last)) if (this.last[k] && this.last[k].r === role) delete this.last[k];
   }
 
   get size() { return this.clips.length; }
