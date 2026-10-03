@@ -190,10 +190,82 @@ const wallAt = (lv, x, y, z) => {
       at ? `parapet at ${at.x},${at.y}, ${at.h.toFixed(2)} high: low ${low}, high ${high}` : 'no parapet found');
   }
 
+  // a half-open door stops a blast where its slab still is, and not where it has gone
+  {
+    const D = new Level(parseLevel(0), art);
+    const gd = Object.create(Game.prototype); gd.level = D;
+    let door = null;
+    for (let y = 1; y < D.H - 1 && !door; y++) for (let x = 1; x < D.W - 1 && !door; x++) {
+      const i = D.idx(x, y);
+      if (D.wall[i] !== 2) continue;
+      const vert = D.doorVert[i] === 1;
+      const a = vert ? i - 1 : i - D.W, b = vert ? i + 1 : i + D.W;
+      if (!D.wall[a] && !D.wall[b] && !D.propBlock[a] && !D.propBlock[b]) door = { x, y, i, vert };
+    }
+    const through = (open, f) => {
+      D.doorOpen[door.i] = open;
+      // across the door, crossing its slab's plane at f along the way it slides
+      return door.vert
+        ? gd.blastReaches(door.x - 0.6, door.y + f, door.x + 1.6, door.y + f)
+        : gd.blastReaches(door.x + f, door.y - 0.6, door.x + f, door.y + 1.6);
+    };
+    const r = door && [through(0.7, 0.35), through(0.7, 0.85), through(0.4, 0.2), through(0.4, 0.7), through(0, 0.5), through(1, 0.5)];
+    check('a half-open door stops a blast where the slab is and lets it through the gap', !!door && r[0] && !r[1] && r[2] && !r[3] && !r[4] && r[5],
+      door ? `door at ${door.x},${door.y}: 70% open ${r[0]}/${r[1]}, 40% open ${r[2]}/${r[3]}, shut ${r[4]}, open ${r[5]}` : 'no door found');
+  }
+
+  // a column stops a blast that goes through it, and not one that goes past it
+  {
+    let col = null, gc = null;
+    for (let li = 0; li < MAPS.length && !col; li++) {
+      const parsed = parseLevel(li);
+      const C = new Level(parsed, art);
+      // the game stands its columns up as it loads a floor
+      for (const e of parsed.ents) if (e.kind === 'pillar') { const i = C.idx(e.x, e.y); C.propBlock[i] = 1; C.propH[i] = 0; }
+      for (let y = 1; y < C.H - 1 && !col; y++) for (let x = 2; x < C.W - 2 && !col; x++) {
+        const i = C.idx(x, y);
+        if (!C.propBlock[i] || C.propH[i]) continue;
+        if ([i - 1, i + 1, i - 2, i + 2].some((j) => C.wall[j] || C.propBlock[j])) continue;
+        col = { li, x, y }; gc = Object.create(Game.prototype); gc.level = C;
+      }
+    }
+    const thru = col && gc.blastReaches(col.x - 0.7, col.y + 0.5, col.x + 1.7, col.y + 0.5, 0.5);
+    const past = col && gc.blastReaches(col.x - 0.7, col.y + 0.9, col.x + 1.7, col.y + 0.9, 0.5);
+    const from = col && gc.blastReaches(col.x + 0.1, col.y + 0.5, col.x + 1.7, col.y + 0.5, 0.5);
+    check('a column stops a blast straight through it, not one that passes it, even from inside its cell', !!col && !thru && past && !from,
+      col ? `L${col.li} column at ${col.x},${col.y}: through ${thru}, past ${past}, from behind it ${from}` : 'no column found');
+  }
+
   // a ring burst that splashes on top of a roof is up on the roof, not in the room under it
   const top = g.ringClip(rx, ry, CEIL_H + 0.01, rx + 0.05, ry, CEIL_H - 0.6);
   check('a ring burst that lands on a roof does not reach the room under it', !!top && top.z >= CEIL_H && !g.blastReaches(top.x, top.y, rx, ry, top.z),
     top ? `burst at z ${top.z.toFixed(2)}` : 'not clipped');
+}
+
+// ------------------------------------------------------------------ bolts and acid
+{
+  const { Bolt, Acid } = await import('../src/game/entities.js');
+  const lv = new Level(parseLevel(0), art);
+  let room = -1;
+  for (let i = 0; i < lv.W * lv.H && room < 0; i++) if (!lv.wall[i] && !lv.sky[i] && !lv.propBlock[i]) room = i;
+  const rx = (room % lv.W) + 0.5, ry = Math.floor(room / lv.W) + 0.5;
+  let hit = null;
+  const game = { level: lv, player: { x: -50, y: -50, z: 0.5 }, onBoltImpact(b) { hit = { x: b.x, y: b.y, z: b.z }; }, onAcidSplash(a) { hit = { x: a.x, y: a.y, z: a.z }; }, onPlayerHurt() {} };
+  const fly = (P, n = 400) => { hit = null; for (let k = 0; k < n && P.alive; k++) P.update(1 / 60, game); return hit; };
+  // straight up into a roofed ceiling, a step that ends above the roof
+  const b = fly(new Bolt(rx, ry, CEIL_H - 0.1, 0, 0, 1, 12, 1, null));
+  const a = fly(new Acid(rx, ry, CEIL_H - 0.3, 0, 0, 1, 12, 1, null));
+  check('a bolt or an acid glob that hits a ceiling splashes under it, not on the roof', !!b && !!a && b.z < CEIL_H && a.z < CEIL_H,
+    `bolt at z ${b && b.z.toFixed(2)}, acid at z ${a && a.z.toFixed(2)}`);
+  // into a wall: the sparks land on its face, not inside it
+  let wall = null;
+  for (let y = 1; y < lv.H - 1 && !wall; y++) for (let x = 3; x < lv.W - 1 && !wall; x++) {
+    const i = lv.idx(x, y);
+    if (lv.wall[i] === 1 && lv.wallHeight(i) >= CEIL_H - 0.01 && !lv.wall[i - 1] && !lv.wall[i - 2] && !lv.propBlock[i - 1] && !lv.propBlock[i - 2]) wall = { x, y };
+  }
+  const w = wall && fly(new Bolt(wall.x - 1.5, wall.y + 0.5, 0.5, 1, 0, 0, 14, 1, null));
+  check('a bolt that hits a wall sparks on its face, not inside it', !!w && !lv.blockedShot(w.x, w.y, w.z) && wall.x - w.x < 0.03,
+    w ? `${(wall.x - w.x).toFixed(3)} short of the face at ${wall.x}` : 'no wall found');
 }
 
 console.log(`\nwalls-check - flak, rounds and blasts against walls, doors and ceilings\n`);

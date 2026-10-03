@@ -625,6 +625,29 @@ export class Enemy {
 }
 
 /** A slow visible projectile, so the player can actually dodge. */
+/**
+ * Where a projectile that has just hit something actually met it: the point
+ * its step crossed a roofed ceiling, or else the face of what it went into
+ * (found by halving the step), so the sparks and the splash land on this side
+ * of the slab or the wall rather than past it. `zOff` lifts the test to the
+ * top of a blob that has size.
+ */
+function settleImpact(o, lv, x0, y0, z0, zOff, blocked) {
+  const q = lv.ceilingCross(x0, y0, z0 + zOff, o.x, o.y, o.z + zOff);
+  if (q >= 0) {
+    o.x = x0 + (o.x - x0) * q; o.y = y0 + (o.y - y0) * q;
+    o.z = CEIL_H - 0.04 - zOff;
+    return;
+  }
+  if (!blocked(o.x, o.y, o.z) || blocked(x0, y0, z0)) return;
+  let lo = 0, hi = 1;
+  for (let k = 0; k < 7; k++) {
+    const m = (lo + hi) / 2;
+    if (blocked(x0 + (o.x - x0) * m, y0 + (o.y - y0) * m, z0 + (o.z - z0) * m)) hi = m; else lo = m;
+  }
+  o.x = x0 + (o.x - x0) * lo; o.y = y0 + (o.y - y0) * lo; o.z = z0 + (o.z - z0) * lo;
+}
+
 export class Bolt {
   constructor(x, y, z, dx, dy, dz, speed, damage, owner) {
     this.x = x; this.y = y; this.z = z;
@@ -643,6 +666,8 @@ export class Bolt {
     if (this.life <= 0) { this.alive = false; return; }
     if (this.z < 0.05 || this.z > 2.4 || game.level.blockedShot(this.x, this.y, this.z) || game.level.hitsCeiling(x0, y0, z0, this.x, this.y, this.z)) {
       this.alive = false;
+      const lv = game.level;
+      settleImpact(this, lv, x0, y0, z0, 0, (x, y, z) => lv.blockedShot(x, y, z));
       game.onBoltImpact(this, null);
       return;
     }
@@ -804,6 +829,8 @@ export class Acid {
     }
     if (this.z < 0.06 || game.level.blockedAt(this.x, this.y, this.z) || game.level.hitsCeiling(x0, y0, z0 + 0.05, this.x, this.y, this.z + 0.05)) {
       this.alive = false;
+      const lv = game.level;
+      settleImpact(this, lv, x0, y0, z0, 0.05, (x, y, z) => lv.blockedAt(x, y, z));
       game.onAcidSplash(this, false);
     }
   }

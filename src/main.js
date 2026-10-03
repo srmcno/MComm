@@ -134,16 +134,18 @@ export async function boot() {
   // Each file is fetched once, and a Brick's only while he is the one chosen:
   // switching away mid-download stops his remaining files, switching back
   // fetches whatever of his never came. With VOICE off nothing is wanted at
-  // all; turning it back on fetches what never came.
+  // all; turning it back on fetches what never came. A file that failed is
+  // forgotten, so the next of those asks for it again.
   const fetched = new Set();
   const wanted = (f) => {
     if (game.voiceMode === 'off' || fetched.has(f.src) || (f.set !== 'cast' && f.set !== game.brickVoice)) return false;
     fetched.add(f.src);
     return true;
   };
+  const failed = (f) => { fetched.delete(f.src); };
   const fetchCast = () => {
     if (safe) return;
-    loadVoices(castArrived, { brick: game.brickVoice, want: wanted })
+    loadVoices(castArrived, { brick: game.brickVoice, want: wanted, failed })
       .then((n) => { if (n) game.castLoaded = castBank.clips.length; }).catch(() => { /* the cast stays subtitles */ });
   };
   let voiceMode = game.voiceMode;
@@ -163,7 +165,7 @@ export async function boot() {
     castBank.dropRole('brick');
     if (castSets[id]) castBank.add(castSets[id]);
     if (castSpeech) castSpeech.attachClips(castBank);
-    if (!safe) loadVoices(castArrived, { sets: [id], want: wanted }).catch(() => { /* he stays subtitles */ });
+    if (!safe) loadVoices(castArrived, { sets: [id], want: wanted, failed }).catch(() => { /* he stays subtitles */ });
     return true;
   };
   // Whether the chosen Brick has any takes here yet (the option says LOADING until he does).

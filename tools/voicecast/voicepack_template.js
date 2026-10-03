@@ -63,12 +63,14 @@ function drain(onClips) {
  * the list was made is not worth the download. `onClips(clips, set)` is
  * called as each file arrives. Resolves with how many clips came. A file that
  * cannot be had (the game opened from disk without its voices folder, say)
- * is skipped: the lines in it stay subtitles. `opts.base` goes in front of
- * each file's path.
+ * is skipped, and `opts.failed(file)` told, so it can be asked for again
+ * later: the lines in it stay subtitles until then. `opts.base` goes in front
+ * of each file's path.
  */
 export function loadVoices(onClips, opts = {}) {
   const base = typeof opts.base === 'string' ? opts.base : '';
   const want = typeof opts.want === 'function' ? opts.want : () => true;
+  const failed = typeof opts.failed === 'function' ? opts.failed : () => {};
   let n = drain(onClips);
   if (typeof document === 'undefined' || !document.createElement) return Promise.resolve(n);
   const one = (f) => new Promise((resolve) => {
@@ -78,9 +80,9 @@ export function loadVoices(onClips, opts = {}) {
       s.src = base + f.src;
       s.async = true;
       s.onload = () => { n += drain(onClips); resolve(); };
-      s.onerror = () => resolve();
+      s.onerror = () => { failed(f); resolve(); };
       (document.head || document.documentElement).appendChild(s);
-    } catch { resolve(); }
+    } catch { failed(f); resolve(); }
   });
   return voiceFilesFor(opts.brick, opts.sets).reduce((p, f) => p.then(() => one(f)), Promise.resolve()).then(() => n);
 }

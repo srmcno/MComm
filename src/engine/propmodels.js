@@ -327,7 +327,9 @@ function barrel(M) {
 // ------------------------------------------------------------------ the columns
 
 // What holds the roof up, floor to ceiling. They were painted cards that
-// turned to face you; now they are solid, and each floor has its own.
+// turned to face you; now they are solid, and each floor has its own. Every
+// one fits inside the circle rounds collide with (COLUMN_R, 0.27 from the
+// middle of its cell), so what you see is what stops a shot.
 const COL_H = 1.31;
 const heightOf = (ly, h) => ly + h / 2;            // a cylinder's local y, as height off its foot
 
@@ -335,8 +337,8 @@ const heightOf = (ly, h) => ly + h / 2;            // a cylinder's local y, as h
 function pillar(M) {
   const crete = mat('paint', [140, 136, 128], { gloss: 0.05, wear: 0.06 });
   const sh = COL_H - 0.18;
-  M.box([0, 0.05, 0], [0.5, 0.1, 0.5], crete, { bevel: 0.012 });
-  M.box([0, COL_H - 0.045, 0], [0.5, 0.09, 0.5], crete, { bevel: 0.012 });
+  M.cyl([0, 0.05, 0], 0.265, 0.1, crete);
+  M.cyl([0, COL_H - 0.045, 0], 0.265, 0.09, crete);
   M.cyl([0, 0.1 + sh / 2, 0], 0.22, sh, crete, {
     paint: (u, v, f, lx, ly, lz) => {
       const y = heightOf(ly, sh) + 0.1, a = Math.atan2(lz, lx);
@@ -352,8 +354,8 @@ function pillar(M) {
 function pillarWood(M) {
   const timber = mat('wood', [112, 72, 42], { grain: 1.1 });
   M.box([0, COL_H / 2, 0], [0.32, COL_H - 0.16, 0.32], timber, { bevel: 0.012 });
-  M.box([0, 0.05, 0], [0.42, 0.1, 0.42], timber, { bevel: 0.016 });
-  M.box([0, COL_H - 0.04, 0], [0.42, 0.08, 0.42], timber, { bevel: 0.016 });
+  M.box([0, 0.05, 0], [0.375, 0.1, 0.375], timber, { bevel: 0.016 });
+  M.box([0, COL_H - 0.04, 0], [0.375, 0.08, 0.375], timber, { bevel: 0.016 });
   for (const y of [0.27, 0.67, 1.07]) {
     M.box([0, y, 0], [0.336, 0.05, 0.336], C.darkMetal, { bevel: 0.004 });
     for (const [x, z] of [[0.17, 0.09], [0.17, -0.09], [-0.17, 0.09], [-0.17, -0.09]]) M.cyl([x, y, z], 0.012, 0.012, C.darkMetal, { axis: 'x' });
@@ -373,11 +375,11 @@ function pillarSalt(M) {
       return null;
     },
   });
-  M.cone([0, 0.07, 0], 0.36, 0.2, 0.14, salt);                               // the drift at its foot
+  M.cone([0, 0.07, 0], 0.265, 0.2, 0.14, salt);                              // the drift at its foot
   for (let k = 0; k < 7; k++) {                                              // crystals on the shoulders
-    const a = k * 0.9 + 0.3, r = 0.2;
+    const a = k * 0.9 + 0.3, r = 0.17;
     M.cone([Math.cos(a) * r, COL_H - 0.16 - (k % 3) * 0.06, Math.sin(a) * r], 0.045, 0.004, 0.13 + (k % 2) * 0.05, salt,
-      { roll: Math.cos(a) * -0.35, pitch: Math.sin(a) * 0.35 });
+      { roll: Math.cos(a) * -0.22, pitch: Math.sin(a) * 0.22 });
   }
   for (let k = 0; k < 6; k++) {                                              // lumps of crust on the shaft
     const a = k * 1.7, y = 0.3 + k * 0.15;
@@ -392,8 +394,8 @@ function pillarRust(M) {
   M.box([0, COL_H / 2, 0.15], [0.36, hh, 0.035], steel);
   M.box([0, COL_H / 2, -0.15], [0.36, hh, 0.035], steel);
   M.box([0, COL_H / 2, 0], [0.04, hh, 0.27], steel);
-  M.box([0, 0.03, 0], [0.48, 0.06, 0.46], steel, { bevel: 0.006 });
-  M.box([0, COL_H - 0.03, 0], [0.48, 0.06, 0.46], steel, { bevel: 0.006 });
+  M.box([0, 0.03, 0], [0.37, 0.06, 0.37], steel, { bevel: 0.006 });
+  M.box([0, COL_H - 0.03, 0], [0.37, 0.06, 0.37], steel, { bevel: 0.006 });
   for (let y = 0.16; y < COL_H - 0.1; y += 0.15) {
     for (const z of [0.17, -0.17]) for (const x of [-0.13, 0.13]) M.cyl([x, y, z], 0.011, 0.012, C.darkMetal, { axis: 'z' });
   }

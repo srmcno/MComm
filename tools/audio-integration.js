@@ -512,6 +512,36 @@ check('the VOICE option exists and reports what is playing', !!r.label && r.mode
     `${whileOff} files while off, then ${asked.length} (${o.castLoaded} takes)${missing.length ? `, missing ${missing.join(' ')}` : ''}${extra.length ? `, extra ${extra.join(' ')}` : ''}`);
 }
 
+// A voice file that fails to load is asked for again the next time the cast is.
+{
+  const pg = await browser.newPage();
+  pg.on('pageerror', (e) => errs.push(e.message));
+  const asked = [];
+  let dropped = false;
+  await pg.route('**/voices/*.js', async (route) => {
+    const n = route.request().url().replace(/^.*\/voices\//, '');
+    asked.push(n);
+    if (n === 'cast-1.js' && !dropped) { dropped = true; await route.abort(); return; }
+    await route.continue();
+  });
+  await pg.goto(`http://127.0.0.1:${PORT}/index.html`);
+  await pg.waitForFunction(() => window.NUKEHAUS && window.NUKEHAUS.game, null, { timeout: 120000 });
+  const r = await pg.evaluate(async () => {
+    const g = window.NUKEHAUS.game;
+    const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+    for (let i = 0; i < 600 && !g.castLoaded; i++) await sleep(50);
+    const before = g.castBank.clips.length;
+    const voice = g.titleScreen.optionList(g).find((x) => x.label === 'VOICE');
+    voice.adj(1); voice.adj(1);           // off, and on again
+    for (let i = 0; i < 400 && g.castBank.clips.length === before; i++) await sleep(50);
+    return { before, after: g.castBank.clips.length };
+  });
+  await pg.close();
+  const tries = asked.filter((n) => n === 'cast-1.js').length;
+  check('a voice file that failed to load is fetched again the next time the cast is', dropped && tries === 2 && r.after > r.before,
+    `cast-1 asked for ${tries} times, ${r.before} takes then ${r.after}`);
+}
+
 if (errs.length) { console.log('\nPAGE ERRORS:'); for (const e of errs.slice(0, 6)) console.log('  ' + e); }
 console.log(`\n${fails ? fails + ' failures' : 'all audio checks passed'}`);
 await browser.close();

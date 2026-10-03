@@ -8,7 +8,7 @@ import { MeshBank } from '../src/engine/propmesh.js';
 import { MODELS, PIECES } from '../src/engine/propmodels.js';
 import { MAPS, DECOR, parseLevel } from '../src/game/maps.js';
 import { PROP_DEFS, Props } from '../src/game/props.js';
-import { Level } from '../src/game/level.js';
+import { Level, COLUMN_R } from '../src/game/level.js';
 import { WallDamage } from '../src/game/walldamage.js';
 import { TEXTURE_ORDER } from '../src/engine/textures.js';
 
@@ -93,6 +93,17 @@ check('viewDir: in front is 0, off its right side is 2, behind is 4',
   check(`every model bakes into a solid 3D mesh, whole, battered and wrecked, and every piece too (${n} meshes)`, badM.length === 0, badM.slice(0, 6).join(', '));
   check('a mesh bakes quickly enough to do while the briefing is up (under 60 ms on average, 250 ms worst)', per < 60 && worst < 250, `${per.toFixed(0)} ms average, worst ${worst.toFixed(0)} ms (${worstK})`);
   check('no standing model is heavier than 4000 triangles', tris <= 4000, `${tris}`);
+  // a column is what rounds hit: every one fits inside that circle
+  const fat = [];
+  for (const kind of Object.keys(MODELS).filter((k) => k === 'pillar' || k.startsWith('pillar_'))) {
+    const m = bank.make(kind, 'ok', 0);
+    let r = 0;
+    for (let i = 0; i < m.vx.length; i++) r = Math.max(r, Math.hypot(m.vx[i], m.vz[i]));
+    fat.push([kind, r]);
+  }
+  const over = fat.filter(([, r]) => r > COLUMN_R + 0.004);
+  check(`every column model fits inside the circle rounds collide with (${COLUMN_R})`, fat.length >= 5 && over.length === 0,
+    (over.length ? over : fat).map(([k, r]) => `${k} ${r.toFixed(3)}`).join(', '));
 }
 
 // ------------------------------------------------------------------ placement
