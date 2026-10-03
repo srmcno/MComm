@@ -321,18 +321,25 @@ export class Level {
   }
 
   /**
-   * A step from (x0, y0) to (x1, y1) that changes both cell coordinates skips
-   * the corner between them, and passes through one of the two cells beside
-   * it. Which one: [x, y, k], a point in that cell on the step and how far
-   * along it is, or null when the step crosses no corner. Rounds and shells
-   * test it, or a shot down a diagonal slips between two walls that meet.
+   * A step from (x0, y0, z0) to (x1, y1, z1) that changes both cell
+   * coordinates skips the corner between them and passes through one of the
+   * two cells beside it: does that cell stop it (blockedAt, or blockedShot
+   * when `shot`)? A step exactly through the corner point squeezes between
+   * both, and either one stops it, as in clearLine. Rounds, shells and Halo
+   * rings test it, or a shot down a diagonal slips between two walls that meet.
    */
-  cornerCell(x0, y0, x1, y1) {
+  cornerBlocked(x0, y0, z0, x1, y1, z1, shot = false) {
     const ax = Math.floor(x0), ay = Math.floor(y0), bx = Math.floor(x1), by = Math.floor(y1);
-    if (ax === bx || ay === by || x1 === x0 || y1 === y0) return null;
+    if (ax === bx || ay === by) return false;
+    const at = (x, y, z) => (shot ? this.blockedShot(x, y, z) : this.blockedAt(x, y, z));
     const tx = (Math.max(ax, bx) - x0) / (x1 - x0), ty = (Math.max(ay, by) - y0) / (y1 - y0);
-    const k = (tx + ty) * 0.5;
-    return [x0 + (x1 - x0) * k, y0 + (y1 - y0) * k, k];
+    if (Math.abs(tx - ty) > 1e-6) {
+      const k = (tx + ty) * 0.5;
+      return at(x0 + (x1 - x0) * k, y0 + (y1 - y0) * k, z0 + (z1 - z0) * k);
+    }
+    const X = x0 + (x1 - x0) * tx, Y = y0 + (y1 - y0) * tx, Z = z0 + (z1 - z0) * tx;
+    const ex = Math.sign(x1 - x0) * 0.01, ey = Math.sign(y1 - y0) * 0.01;
+    return at(X + ex, Y - ey, Z) || at(X - ex, Y + ey, Z);
   }
 
   /**

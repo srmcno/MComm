@@ -2286,8 +2286,7 @@ export class Game {
       // the corner this step skipped, if it skipped one: two walls that only
       // meet at a corner are still a wall
       if (t > 0) {
-        const cc = this.level.cornerCell(px - dx * step, py - dy * step, px, py);
-        if (cc && this.level.blockedShot(cc[0], cc[1], pz - dz * step * (1 - cc[2]))) {
+        if (this.level.cornerBlocked(px - dx * step, py - dy * step, pz - dz * step, px, py, pz, true)) {
           return { wall: true, enemy: null, item: null, x: px - dx * step, y: py - dy * step, z: pz - dz * step };
         }
       }
@@ -2503,13 +2502,14 @@ export class Game {
 
   /**
    * Can a blast at (x, y, z) reach (tx, ty)? A wall or a shut door between
-   * them stops it. One that goes off up over the roofs reaches what is out in
-   * the open and nothing under a roof: the slab is between them.
+   * them stops it. One that goes off up over the roofs, or on top of one (a
+   * ring burst that splashed on the slab), reaches what is out in the open and
+   * nothing under a roof: the slab is between them.
    */
   blastReaches(x, y, tx, ty, z = 0.5) {
     const lv = this.level;
     if (!lv) return true;
-    if (z > CEIL_H + 0.05) return !lv.inBounds(tx, ty) || !!lv.sky[lv.idx(tx, ty)];
+    if (z >= CEIL_H) return !lv.inBounds(tx, ty) || !!lv.sky[lv.idx(tx, ty)];
     return lv.clearLine(x, y, tx, ty);
   }
 
@@ -2532,7 +2532,8 @@ export class Game {
       if (!stop && inside) {
         // a wall below its top; the ceiling from below, or the roof from above
         const roofed = !lv.sky[lv.idx(x, y)] && !lv.wall[lv.idx(x, y)];
-        stop = lv.blockedAt(x, y, z) || lv.hitsCeiling(lx, ly, lz, x, y, z) || (roofed && lz >= CEIL_H && z < CEIL_H);
+        stop = lv.blockedAt(x, y, z) || lv.cornerBlocked(lx, ly, lz, x, y, z) || lv.hitsCeiling(lx, ly, lz, x, y, z)
+          || (roofed && lz >= CEIL_H && z < CEIL_H);
       }
       if (stop) {
         const zc = lz < CEIL_H ? Math.max(0.05, Math.min(lz, CEIL_H - 0.05)) : Math.max(lz, CEIL_H + 0.05);

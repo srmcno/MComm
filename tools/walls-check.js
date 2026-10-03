@@ -136,6 +136,47 @@ const wallAt = (lv, x, y, z) => {
     }
   }
   check(`a blast does not get through where two walls meet at a corner (${corners} such corners)`, corners > 0 && leaks.length === 0, leaks.slice(0, 4).join(', '));
+
+  // exactly down the diagonal through each such corner, both ways: a round, a
+  // flak shell and a Halo ring each stop on their own side of it
+  const specs = Object.values(WEAPONS).filter((w) => w.kind === 'flak' || w.kind === 'ring');
+  let paths = 0; const slips = [];
+  for (let li = 0; li < MAPS.length; li++) {
+    const L = new Level(parseLevel(li), art);
+    const gl = Object.create(Game.prototype); gl.level = L;
+    const fake = { level: L, enemies: [], items: [], props: { lampAt: () => null, at: () => null, hit() {} } };
+    const game = { level: L, props: null, enemies: [], player: { x: 0, y: 0, z: 0.5 },
+      onFlakDud() {}, onFlakBurst() {}, onBlastSweep() {}, onBlastHurtPlayer() {}, onWarheadKilled() {} };
+    const sky = new SkyWar(game);
+    const op = (x, y) => L.opaque(x + 0.5, y + 0.5);
+    for (let y = 1; y < L.H - 2; y++) for (let x = 1; x < L.W - 2; x++) {
+      for (const [a, b, c, d] of [[[x, y], [x + 1, y + 1], [x + 1, y], [x, y + 1]], [[x + 1, y], [x, y + 1], [x, y], [x + 1, y + 1]]]) {
+        if (!op(...a) || !op(...b) || op(...c) || op(...d)) continue;
+        const cx = Math.max(c[0], d[0]), cy = Math.max(c[1], d[1]);
+        const P = (e) => [e[0] + 0.5 + (e[0] + 0.5 - cx) * 0.6, e[1] + 0.5 + (e[1] + 0.5 - cy) * 0.6];
+        for (const [s0, s1] of [[P(c), P(d)], [P(d), P(c)]]) {
+          paths++;
+          const D = Math.hypot(s1[0] - s0[0], s1[1] - s0[1]), ux = (s1[0] - s0[0]) / D, uy = (s1[1] - s0[1]) / D;
+          const past = (px, py) => Math.hypot(px - s0[0], py - s0[1]) > D / 2 + 0.02;   // beyond the corner
+          const where = `L${li} ${s0[0].toFixed(1)},${s0[1].toFixed(1)}`;
+          const hit = Game.prototype.traceHit.call(fake, s0[0], s0[1], 0.5, ux, uy, 0, D + 2, 0);
+          if (!hit.wall || past(hit.x, hit.y)) slips.push(`round ${where}`);
+          const f = sky.fireFlak(s0[0], s0[1], 0.48, ux, uy, 0, specs[paths % specs.length], 60);
+          for (let k = 0; k < 600 && sky.flak.includes(f); k++) sky._updateFlak(1 / 60, game);
+          sky.blasts.length = 0;
+          if (past(f.x, f.y)) slips.push(`flak ${where}`);
+          const r = gl.ringClip(s0[0], s0[1], 0.5, s1[0], s1[1], 0.5);
+          if (!r || past(r.x, r.y)) slips.push(`ring ${where}`);
+        }
+      }
+    }
+  }
+  check(`a round, a shell and a Halo ring each stop at such a corner, straight down its diagonal (${paths} paths)`, paths > 0 && slips.length === 0, slips.slice(0, 4).join(', '));
+
+  // a ring burst that splashes on top of a roof is up on the roof, not in the room under it
+  const top = g.ringClip(rx, ry, CEIL_H + 0.01, rx + 0.05, ry, CEIL_H - 0.6);
+  check('a ring burst that lands on a roof does not reach the room under it', !!top && top.z >= CEIL_H && !g.blastReaches(top.x, top.y, rx, ry, top.z),
+    top ? `burst at z ${top.z.toFixed(2)}` : 'not clipped');
 }
 
 console.log(`\nwalls-check - flak, rounds and blasts against walls, doors and ceilings\n`);

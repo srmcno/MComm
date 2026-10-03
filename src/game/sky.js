@@ -533,10 +533,7 @@ export class SkyWar {
             if (sz < CEIL_H && sz >= 0 && along > 0.3 && game.props && game.props.at(sx, sy, sz)) what = 'prop';
             else if (sz < CEIL_H + 0.25) {
               let blockedHere = lv.blockedAt(sx, sy, sz);
-              if (!blockedHere) {
-                const cc = lv.cornerCell(lx, ly, sx, sy);
-                if (cc && lv.blockedAt(cc[0], cc[1], lz + (sz - lz) * cc[2])) blockedHere = true;
-              }
+              if (!blockedHere && lv.cornerBlocked(lx, ly, lz, sx, sy, sz)) blockedHere = true;
               if (blockedHere) {
                 const i = cy * W + cx;
                 const parapet = lv.wall[i] === 1 && lv.wallHeight(i) < CEIL_H - 0.01;
