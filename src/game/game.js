@@ -2502,7 +2502,8 @@ export class Game {
 
   /**
    * Can a blast at (x, y, z) reach (tx, ty)? A wall or a shut door between
-   * them stops it. One that goes off up over the roofs, or on top of one (a
+   * them stops it, and so does a low one (a parapet) if the blast is below its
+   * top. One that goes off up over the roofs, or on top of one (a
    * ring burst that splashed on the slab), reaches what is out in the open and
    * nothing under a roof: the slab is between them.
    */
@@ -2510,7 +2511,7 @@ export class Game {
     const lv = this.level;
     if (!lv) return true;
     if (z >= CEIL_H) return !lv.inBounds(tx, ty) || !!lv.sky[lv.idx(tx, ty)];
-    return lv.clearLine(x, y, tx, ty);
+    return lv.clearLine(x, y, tx, ty, z);
   }
 
   /**

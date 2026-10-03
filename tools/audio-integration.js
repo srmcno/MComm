@@ -477,6 +477,41 @@ check('the VOICE option exists and reports what is playing', !!r.label && r.mode
     `${stale.length} of ${of(s.first).length} ${s.first} files fetched${twice.length ? `, twice: ${twice.join(' ')}` : ''}${missing.length ? `, missing: ${missing.join(' ')}` : ''}`);
 }
 
+// With VOICE off the cast is not downloaded at all; turning it on fetches it.
+{
+  const pg = await browser.newPage();
+  pg.on('pageerror', (e) => errs.push(e.message));
+  await pg.addInitScript(() => { try { localStorage.setItem('nukehaus.voice.v1', 'off'); } catch {} });
+  const asked = [];
+  await pg.route('**/voices/*.js', async (route) => {
+    asked.push(route.request().url().replace(/^.*\/voices\//, ''));
+    await route.continue();
+  });
+  await pg.goto(`http://127.0.0.1:${PORT}/index.html`);
+  await pg.waitForFunction(() => window.NUKEHAUS && window.NUKEHAUS.game, null, { timeout: 120000 });
+  await sleep(2500);
+  const whileOff = asked.length;
+  const o = await pg.evaluate(async () => {
+    const g = window.NUKEHAUS.game;
+    const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+    const { VOICE_FILES } = await import('./src/audio/voicepack.js');
+    const mode = g.voiceMode;
+    g.titleScreen.optionList(g).find((x) => x.label === 'VOICE').adj(1);
+    for (let i = 0; i < 600 && !g.castLoaded; i++) await sleep(50);
+    return {
+      mode, now: g.voiceMode, castLoaded: g.castLoaded || 0, brick: g.brickVoice,
+      files: VOICE_FILES.map((f) => ({ name: f.src.replace(/^voices\//, ''), set: f.set })),
+    };
+  });
+  await pg.close();
+  const want = o.files.filter((f) => f.set === 'cast' || f.set === o.brick).map((f) => f.name);
+  const missing = want.filter((n) => !asked.includes(n));
+  const extra = asked.filter((n) => !want.includes(n) || asked.indexOf(n) !== asked.lastIndexOf(n));
+  check('with VOICE off nothing is downloaded; turning it on fetches the cast and his Brick, once each',
+    o.mode === 'off' && o.now !== 'off' && whileOff === 0 && !missing.length && !extra.length && o.castLoaded > 400,
+    `${whileOff} files while off, then ${asked.length} (${o.castLoaded} takes)${missing.length ? `, missing ${missing.join(' ')}` : ''}${extra.length ? `, extra ${extra.join(' ')}` : ''}`);
+}
+
 if (errs.length) { console.log('\nPAGE ERRORS:'); for (const e of errs.slice(0, 6)) console.log('  ' + e); }
 console.log(`\n${fails ? fails + ' failures' : 'all audio checks passed'}`);
 await browser.close();

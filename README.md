@@ -354,7 +354,7 @@ modest hardware and sharpens up when it can.
 ## Tests
 
 ```
-node tools/playtest.js            # 124 gameplay assertions in a real browser
+node tools/playtest.js            # 125 gameplay assertions in a real browser
 node tools/audio-integration.js   # static coverage + live audio graph measurement
 node tools/speech-check.js        # voice casting, captions, timing, fallback (mocked browsers)
 node tools/scrawl-check.js        # the wall messages: font coverage, fit, curses, faces
@@ -430,7 +430,8 @@ a city that burns again says something new). A floor opening, or one of
 Hardigan's distracted moments, is only played when the whole exchange was
 recorded, so no scene switches voices halfway. Anything without a take is a
 subtitle only: the game never reads a line out in a synthetic voice. **CALIBRATION
-> VOICE** shows RECORDED CAST, or OFF.
+> VOICE** shows RECORDED CAST, or OFF; with it off the cast is not downloaded at
+all, and only the Brick you picked ever is.
 
 `src/audio/speech.js` can still speak unrecorded lines (its `recordedOnly`
 option, which the game turns on, is what stops it) through the browser's own

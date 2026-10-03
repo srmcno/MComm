@@ -601,7 +601,7 @@ function openToSky(lv, s) {
   if (!lv) return true;
   const x = s.x, y = s.y;
   if (x < 0 || y < 0 || x >= lv.W || y >= lv.H) return true;
-  if ((s.z || 0) > CEIL_H - 0.05) return true;
+  if ((s.z || 0) >= CEIL_H) return true;     // up over the slab, not just under it
   return !!lv.sky[(y | 0) * lv.W + (x | 0)];
 }
 

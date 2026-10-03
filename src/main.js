@@ -133,17 +133,26 @@ export async function boot() {
   };
   // Each file is fetched once, and a Brick's only while he is the one chosen:
   // switching away mid-download stops his remaining files, switching back
-  // fetches whatever of his never came.
+  // fetches whatever of his never came. With VOICE off nothing is wanted at
+  // all; turning it back on fetches what never came.
   const fetched = new Set();
   const wanted = (f) => {
-    if (fetched.has(f.src) || (f.set !== 'cast' && f.set !== game.brickVoice)) return false;
+    if (game.voiceMode === 'off' || fetched.has(f.src) || (f.set !== 'cast' && f.set !== game.brickVoice)) return false;
     fetched.add(f.src);
     return true;
   };
-  if (!safe) {
+  const fetchCast = () => {
+    if (safe) return;
     loadVoices(castArrived, { brick: game.brickVoice, want: wanted })
-      .then((n) => { game.castLoaded = n; }).catch(() => { /* the cast stays subtitles */ });
-  }
+      .then((n) => { if (n) game.castLoaded = castBank.clips.length; }).catch(() => { /* the cast stays subtitles */ });
+  };
+  let voiceMode = game.voiceMode;
+  Object.defineProperty(game, 'voiceMode', {
+    configurable: true, enumerable: true,
+    get: () => voiceMode,
+    set: (m) => { const was = voiceMode; voiceMode = m; if (was === 'off' && m !== 'off') fetchCast(); },
+  });
+  fetchCast();
   game.castBank = castBank;
   game.brickVoices = BRICK_VOICES;
   game.setBrickVoice = (id) => {

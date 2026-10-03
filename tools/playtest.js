@@ -3171,10 +3171,21 @@ s = await page.evaluate(async () => {
   const withIt = g.rc.buf;
   let diff = 0;
   for (let i = 0; i < without.length; i++) if (without[i] !== withIt[i]) diff++;
-  return { found: true, spot, diff };
+  // nor is a spark that flew up and stopped against that room's ceiling
+  e.x = -50; e.y = -50;
+  const { CEIL_H } = await import('./src/core/world.js');
+  const sp = g.particles.spawn({ x: spot.rx + 0.5, y: spot.y + 0.5, z: CEIL_H - 0.03, life: 5, size: 0.3, r: 255, g: 255, b: 255, drag: 0, grav: 0 });
+  renderWorld(g, 640, 400);
+  const withSpark = g.rc.buf;
+  let sparkDiff = 0;
+  for (let i = 0; i < without.length; i++) if (without[i] !== withSpark[i]) sparkDiff++;
+  sp.life = 0;
+  return { found: true, spot, diff, sparkDiff };
 });
 check('with the roof open, a body in a room past a parapet is not drawn floating over it',
   s.found && s.diff === 0, s.found ? `${s.diff} pixels changed (parapet at ${s.spot.x - 1},${s.spot.y}, body at ${s.spot.rx},${s.spot.y})` : 'no deck by a parapet with a room behind it');
+check('nor is a spark stopped against the ceiling of that room',
+  s.found && s.sparkDiff === 0, s.found ? `${s.sparkDiff} pixels changed` : 'no deck by a parapet with a room behind it');
 
 // ------------------------------------------------------------- report
 console.log('');

@@ -363,9 +363,11 @@ export class Level {
    * Is the straight line from a to b clear of anything opaque, every cell it
    * passes through checked (a walk of the grid, not samples along it)? Two
    * walls that meet only at a corner seal it. For blasts, which must not
-   * reach through a corner the way a sampled line of sight can.
+   * reach through a corner the way a sampled line of sight can. `z`, the
+   * height of the blast: a wall lower than that (a parapet with the roof
+   * open) lets it over, and one that stands above it stops it.
    */
-  clearLine(ax, ay, bx, by) {
+  clearLine(ax, ay, bx, by, z = Infinity) {
     let cx = Math.floor(ax), cy = Math.floor(ay);
     const ex = Math.floor(bx), ey = Math.floor(by);
     const dx = bx - ax, dy = by - ay;
@@ -377,13 +379,20 @@ export class Level {
     while (left > 0) {
       if (Math.abs(tx - ty) < 1e-9) {
         // exactly through a corner: sealed if either cell beside it is
-        if (this.opaque(cx + sx + 0.5, cy + 0.5) || this.opaque(cx + 0.5, cy + sy + 0.5)) return false;
+        if (this.blocksBlast(cx + sx + 0.5, cy + 0.5, z) || this.blocksBlast(cx + 0.5, cy + sy + 0.5, z)) return false;
         tx += tdx; ty += tdy; cx += sx; cy += sy; left -= 2;
       } else if (tx < ty) { tx += tdx; cx += sx; left--; }
       else { ty += tdy; cy += sy; left--; }
-      if (this.opaque(cx + 0.5, cy + 0.5)) return false;
+      if (this.blocksBlast(cx + 0.5, cy + 0.5, z)) return false;
     }
     return true;
+  }
+
+  /** Does this cell stop a blast at height z: anything opaque, or a wall standing above z. */
+  blocksBlast(x, y, z) {
+    if (this.opaque(x, y)) return true;
+    const i = this.idx(x, y);
+    return this.wall[i] === CELL_SOLID && z < this.wallHeight(i);
   }
 
 

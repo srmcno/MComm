@@ -173,6 +173,23 @@ const wallAt = (lv, x, y, z) => {
   }
   check(`a round, a shell and a Halo ring each stop at such a corner, straight down its diagonal (${paths} paths)`, paths > 0 && slips.length === 0, slips.slice(0, 4).join(', '));
 
+  // a parapet, with the roof open: a blast below its top does not get over it,
+  // one above it does
+  {
+    const P = new Level(parseLevel(0), art);
+    P.roofTarget = 1; for (let k = 0; k < 400; k++) P.updateRoof(0.05);
+    const gp = Object.create(Game.prototype); gp.level = P;
+    let at = null;
+    for (let y = 1; y < P.H - 1 && !at; y++) for (let x = 1; x < P.W - 1 && !at; x++) {
+      const i = P.idx(x, y);
+      if (P.parapet[i] && P.wall[i] === 1 && !P.wall[i - 1] && !P.wall[i + 1] && !P.propBlock[i - 1] && !P.propBlock[i + 1]) at = { x, y, h: P.wallHeight(i) };
+    }
+    const low = at && gp.blastReaches(at.x - 0.2, at.y + 0.5, at.x + 1.2, at.y + 0.5, at.h * 0.45);
+    const high = at && gp.blastReaches(at.x - 0.2, at.y + 0.5, at.x + 1.2, at.y + 0.5, at.h + 0.15);
+    check('a blast below a parapet\'s top does not get over it; one above it does', !!at && !low && high,
+      at ? `parapet at ${at.x},${at.y}, ${at.h.toFixed(2)} high: low ${low}, high ${high}` : 'no parapet found');
+  }
+
   // a ring burst that splashes on top of a roof is up on the roof, not in the room under it
   const top = g.ringClip(rx, ry, CEIL_H + 0.01, rx + 0.05, ry, CEIL_H - 0.6);
   check('a ring burst that lands on a roof does not reach the room under it', !!top && top.z >= CEIL_H && !g.blastReaches(top.x, top.y, rx, ry, top.z),
