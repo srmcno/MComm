@@ -1659,7 +1659,7 @@ const PHAL3 = [0.45, 0.30, 0.25];
 // The thumb: its metacarpal (buried in the ball of the thumb), then the two
 // segments you see, together about 0.65 of the index finger. `root` is how
 // much of the metacarpal the digit itself carries before the mound takes over.
-const THUMB3 = { L: [4.6, 2.9, 2.5], root: 1.6, w: 1.0, h: 0.85 };
+const THUMB3 = { L: [4.6, 2.9, 2.5], root: 1.6, w: 1.15, h: 0.96 };
 const PALM3 = 9.0;    // wrist joint to the middle of the knuckle row
 // the knuckle row in the palm's own frame (toward the fingers, toward the
 // thumb, out of the back), index first: an arc, the little finger set back
@@ -1881,7 +1881,7 @@ function digitShade3(S) {
     const e = pr.cut - u;
     const hem = pr.thumb ? 0.18 : 0.32;
     if (e < lw * 1.2) { S.col = shadeC(S.col, 0.42); S.gl *= 0.4; }                 // the cut edge
-    else if (e < hem) { S.col = shadeC(S.col, (pr.thumb ? 1.04 : 1.12) + (hem - e) * 0.8); S.gl += 0.06; } // rolled hem
+    else if (e < hem) { S.col = shadeC(S.col, 1.12 + (hem - e) * 0.8); S.gl += 0.06; } // rolled hem
     else if (stitch3(S.v * pr.circ, e - 0.48, px)) S.col = STITCH3;
     // seams down both sides of the stall
     const side = acos(clamp(abs(sd), 0, 1)) * pr.wb;
@@ -1908,10 +1908,9 @@ function digitShade3(S) {
   // wrinkles across the knuckles, folds under them
   if (cd > 0.35) {
     const arch = (1 - cd) * 0.16, lw2 = lw * 0.8;
-    const wk = pr.thumb ? 0.5 : 0.34;
     for (let k = -1; k <= 1; k++) {
       const uk = jK + k * 0.19 + arch;
-      if (abs(u - uk) < lw2 && abs(sd) < 0.62 - abs(k) * 0.22) { c = mix(c, SKIN3_D, k ? wk * 0.75 : wk); gl *= 0.8; }
+      if (abs(u - uk) < lw2 && abs(sd) < 0.62 - abs(k) * 0.22) { c = mix(c, SKIN3_D, k && !pr.thumb ? 0.255 : 0.34); gl *= 0.8; }
     }
     if (!pr.thumb) {
       for (let k = 0; k <= 1; k++) {
@@ -1928,19 +1927,21 @@ function digitShade3(S) {
     if (k > 0.02) { c = mix(c, HAIR3, clamp(k * 0.5, 0, 0.45)); gl *= 1 - k * 0.4; }
   }
   // the nail: a glossy plate on the back of the tip, pale lunula, cream free edge
-  if (cd > 0 && u > pr.nail0 - lw * 1.4 && u < pr.nail1 + lw) {
+  const fold = max(lw * 1.4, pr.fold || 0);   // the nail fold, wider where the tip is seen end-on
+  if (cd > 0 && u > pr.nail0 - fold && u < pr.nail1 + lw) {
     const a = abs(th > PI ? th - TAU : th);
     const half = pr.nailA * sqrt(clamp((u - pr.nail0) / 0.3, 0, 1));
+    const halfF = pr.nailA * sqrt(clamp((u + fold - pr.nail0) / 0.3, 0, 1));   // the outline, `fold` further back
     const aw = lw / pr.wt;
     if (u >= pr.nail0 && u <= pr.nail1 && a < half) {
-      let nc = mix(NAIL3B, rgba(228, 192, 178, 255), clamp(1 - (u - pr.nail0) / 0.26, 0, 1) * 0.5);
+      let nc = mix(NAIL3B, rgba(228, 192, 178, 255), clamp(1 - (u - pr.nail0) / (pr.moon || 0.26), 0, 1) * 0.5);
       nc = shadeC(nc, 0.94 + (f - 0.5) * 0.12);
       if (u > pr.nail1 - max(0.12, px * 1.5)) nc = NAIL3E;
       if (a > half - aw) nc = mix(nc, SKIN3_D, 0.45);
       c = mix(nc, c, 0.12);
-      gl = 0.46;
+      gl = pr.fold ? 0.3 : 0.46;     // a thumbnail seen end-on must not flash white like a highlight
       S.nx += pr.nailN[0] * 0.5; S.ny += pr.nailN[1] * 0.5; S.nz += pr.nailN[2] * 0.5;
-    } else if (a < half + aw * 1.3 && u < pr.nail1 && u > pr.nail0 - lw * 1.4) c = mix(c, SKIN3_D, 0.6);
+    } else if (a < (pr.fold ? max(half + aw * 1.3, halfF) : half + aw * 1.3) && u < pr.nail1 && u > pr.nail0 - fold) c = pr.fold ? mix(c, rgba(96, 48, 34, 255), 0.8) : mix(c, SKIN3_D, 0.6);
   }
   S.col = c; S.gl = gl;
 }
@@ -1971,20 +1972,7 @@ function palmShade3(S) {
   }
 }
 const PALM_MAT3 = { col: GLOVE3, gl: 0.38, hand: true, soft: true, shade: palmShade3 };
-const THENAR_MAT3 = {
-  col: GLOVE3, gl: 0.38, hand: true, soft: true,
-  shade(S) {
-    gloveShade(S, S.prim.seed, 11, 0.8);
-    // soft creases where the leather folds as the thumb comes in to the hand
-    const px = S.z / CAM_F, lw = max(0.05, px * 0.65);
-    if (S.u > 3.4 && S.u < 5.4) {
-      const w = nz3(S.u * 0.5 + S.prim.seed, S.v * 3.0);
-      const k = ((S.u + w * 0.9) / 0.62) % 1;
-      if (abs(k - 0.5) * 0.62 < lw) S.col = shadeC(S.col, 0.66);
-      else if (abs(k - 0.62) * 0.62 < lw) S.col = shadeC(S.col, 1.16);
-    }
-  },
-};
+const THENAR_MAT3 = { col: GLOVE3, gl: 0.38, hand: true, soft: true, shade: (S) => gloveShade(S, S.prim.seed, 11, 0.8) };
 
 /**
  * The ball of the thumb and the web, as one fan of hand: a solid whose
@@ -2001,7 +1989,7 @@ function web3(sc, cmc, mcp, palmP, idxP, fs, extra) {
   };
   const tan = (t) => vNorm(vSub(at(min(1, t + 0.04)).C, at(max(0, t - 0.04)).C));
   const half = (t) => { const g = at(t); return vLen(vSub(g.I, g.M)) * 0.5 + 0.6 * fs; };
-  const thick = (t) => (lerp(1.4, 0.84, smoothstep(0.15, 1, t)) + 0.32 * sin(PI * min(1, t * 1.25))) * fs;
+  const thick = (t) => lerp(1.6, 0.82, smoothstep(0, 1, t)) * fs;
   const ring = (C, T, g, ra, rb) => {
     let L = vSub(g.I, g.M);
     L = vNorm(vSub(L, vMul(T, vDot(L, T))));
@@ -2230,9 +2218,9 @@ function hand3(sc, H) {
     const tl = THUMB3.root + THUMB3.L[1] + THUMB3.L[2];
     digit3(sc, [root, mcp, ip, tip], null, { w: THUMB3.w * fs, h: THUMB3.h * fs }, TPROF3,
       [0, THUMB3.root / tl, (THUMB3.root + THUMB3.L[1]) / tl, 1], DIGIT_MAT3, {
-        seed: so + 9, part: part(), cut: (THUMB3.root - 0.05) * fs,
-        circ: TAU * THUMB3.w * fs * 0.95, wb: THUMB3.w * fs, nailA: 0.98, hair: 0.6, thumb: true,
-      }, { up, capBase: 0.4, nailLen: 1.5 * fs, segs: 16 });
+        seed: so + 9, part: part(), cut: (THUMB3.root + 0.45) * fs,
+        circ: TAU * THUMB3.w * fs * 0.95, wb: THUMB3.w * fs, nailA: 1.15, moon: 0.45, fold: 0.25, hair: 0.6, thumb: true,
+      }, { up, capBase: 0.4, nailLen: 1.6 * fs, segs: 16 });
     // the ball of the thumb and the web, one piece with the palm
     web3(sc, cmc, vLerp(root, mcp, 0.92), vBasis(W, F, 4.6 * fs, R, 0.9 * fs, D, -0.4 * fs),
       vBasis(K[0], F, -0.9 * fs, R, 0.25 * fs, D, -0.2 * fs), fs, { seed: so + 5 });
@@ -2616,7 +2604,7 @@ function drawWidow3(sc, P) {
     c: vAdd(gt, vMul(a, 0.4)), a, p, q, rp: 1.62, rq: 2.7,
     s: [0.2, 2.3, 4.35, 6.3], mcpP: 1.4, mcpQ: [0.9, 0.6, 0.3, 0.0], slope: 0.05,
     trigger: [[2.2, 5.4, 6.4], [0.9, 6.2, 8.9], [-0.4, 6.4, 9.4]],
-    thumbBase: [0.0, 6.4, -3.2], thumb: [[-2.35, 4.05, 3.1], [-2.5, 3.85, 6.0], [-3.15, 3.35, 8.1]], thumbUp: [-0.7, -1, 0],
+    thumbBase: [0.0, 6.4, -3.2], thumb: [[-2.45, 3.9, 3.1], [-2.55, 4.1, 6.0], [-2.25, 4.32, 8.42]], thumbUp: [-1, -0.3, 0],
     wrist: [3.5, 12.5, -5.0], armLen: 36, armBend: [0.05, 0.25, 0],
     tattoo: { u: 15, s: 2.6, face: true }, seed: 7,
   });
@@ -2866,7 +2854,7 @@ function rightGrip3(sc, gTop, gDir, trig, o = {}) {
     s: [0.2, 2.3, 4.35, 6.3], mcpP: 1.4, mcpQ: [0.9, 0.6, 0.3, 0.0], slope: 0.05,
     trigger: [R(2.2, -0.7, -2.5), R(0.9, 0.1, 0), R(-0.4, 0.3, 0.5)],
     thumbBase: T(0, 1.8 + ty * 0.5, -6.4),
-    thumb: [T(-2.35 + tx, -0.65 + ty, -0.1 + tz), T(-2.4 + tx, -0.5 + ty, 2.8 + tz), T(-3.2 + tx, -0.3 + ty, 5.0 + tz)],
+    thumb: [T(-2.45 + tx, -0.7 + ty, -0.1 + tz), T(-2.55 + tx, -0.5 + ty, 2.8 + tz), T(-2.25 + tx, -0.28 + ty, 5.22 + tz)],
     thumbUp: [-1, -0.3, 0],
     wrist: T(3.5, 7.9, -8.2), armLen: 36, armBend: [0.05, 0.2, 0],
     tattoo: { u: 16, s: 2.6, face: true }, seed: 7,
