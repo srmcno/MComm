@@ -303,7 +303,8 @@ from a set of variants (stains, bullet holes, graffiti, posters, fuse boxes,
 screens showing radar, error dialogs and a fish tank, a whiteboard of sales
 figures that only goes one way, a wall phone off the hook, a sign asking you
 not to punch the machine, and the dent that made it necessary), each floor has its own
-palette, tint and columns, and the rooms are dressed with what a bunker staff
+palette, tint and columns (solid models, not painted cards: poured concrete,
+iron-banded timber, salt-crusted, a rusted I-beam, a conduit wrapped in cable), and the rooms are dressed with what a bunker staff
 leaves behind (see **Breaking things**), and the staff themselves. The
 toilets work, in the Duke tradition.
 
@@ -358,7 +359,7 @@ node tools/audio-integration.js   # static coverage + live audio graph measureme
 node tools/speech-check.js        # voice casting, captions, timing, fallback (mocked browsers)
 node tools/scrawl-check.js        # the wall messages: font coverage, fit, curses, faces
 node tools/props-check.js         # furniture models, facing, routes, breakable walls, nothing in a wall
-node tools/walls-check.js         # 10,000 flak shells and 20,000 rounds: none through a wall, door or ceiling
+node tools/walls-check.js         # 10,000 flak shells and 20,000 rounds: none through a wall, door or ceiling; no blast round a sealed corner
 node tools/props-tour.js          # photographs the furniture in the game (no asserts)
 node tools/campaign.js [0|1|2]    # a bot plays the whole game and reports balance
 node tools/smoke.js               # boots, drives the UI, screenshots, frame cost
