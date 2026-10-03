@@ -522,12 +522,15 @@ export class Speech {
    * covers the rest.
    */
   attachClips(bank) {
-    this.clips = bank && bank.size ? bank : null;
+    // The bank fills up as the voice files arrive; attaching it again after
+    // each one forgets what was worked out from the takes it held before.
+    this.clips = bank || null;
+    this._spare = null;
   }
 
-  /** Takes are in use: NATURAL mode, and a pack wired into the audio graph. */
+  /** Takes are in use: NATURAL mode, and takes wired into the audio graph. */
   _acted() {
-    return !!(this.clips && this.clips.ready && this.mode === 'natural');
+    return !!(this.clips && this.clips.size && this.clips.ready && this.mode === 'natural');
   }
 
   /** Is the recorded cast speaking, for the options page. */

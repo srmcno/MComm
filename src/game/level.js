@@ -10,6 +10,32 @@ export const CELL_EMPTY = 0;
 export const CELL_SOLID = 1;
 export const CELL_DOOR = 2;
 export const CELL_SECRET = 3;
+/** How far a column (a pillar) reaches from the middle of its cell, as rounds see it. */
+export const COLUMN_R = 0.27;
+
+/** Squared distance from (px, py) to the segment a-b. */
+function segDist2(ax, ay, bx, by, px, py) {
+  const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+  let t = L > 0 ? ((px - ax) * dx + (py - ay) * dy) / L : 0;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const qx = ax + dx * t - px, qy = ay + dy * t - py;
+  return qx * qx + qy * qy;
+}
+
+/** Does the segment a-b pass through the box [x0, x1] x [y0, y1]? (Liang-Barsky) */
+function segHitsRect(ax, ay, bx, by, x0, y0, x1, y1) {
+  if (x1 <= x0 || y1 <= y0) return false;
+  let t0 = 0, t1 = 1;
+  const dx = bx - ax, dy = by - ay;
+  const clip = (p, q) => {
+    if (p === 0) return q >= 0;
+    const r = q / p;
+    if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
+    else { if (r < t0) return false; if (r < t1) t1 = r; }
+    return true;
+  };
+  return clip(-dx, ax - x0) && clip(dx, x1 - ax) && clip(-dy, ay - y0) && clip(dy, y1 - ay) && t0 <= t1;
+}
 
 const DOOR_SPEED = 1.7;       // fraction of a cell per second
 const DOOR_HOLD = 4.5;        // seconds a door stays open before closing itself
@@ -261,6 +287,7 @@ export class Level {
   blockedAt(x, y, z) {
     if (x < 0 || y < 0 || x >= this.W || y >= this.H) return false;
     const i = this.idx(x, y);
+    if (this.propBlock[i] && !this.propH[i]) return z < CEIL_H - 0.05 && this.inColumn(x, y);
     if (this.propBlock[i] && z < (this.propH[i] || CEIL_H - 0.05)) return true;
     const c = this.wall[i];
     if (c === CELL_SOLID) return z < this.wallHeight(i);
@@ -277,11 +304,23 @@ export class Level {
   blockedShot(x, y, z) {
     if (x < 0 || y < 0 || x >= this.W || y >= this.H) return true;
     const i = this.idx(x, y);
-    if (this.propBlock[i] && (this.propH[i] === 0 || z < this.propH[i])) return true;
+    if (this.propBlock[i] && this.propH[i] === 0) { if (this.inColumn(x, y)) return true; }
+    else if (this.propBlock[i] && z < this.propH[i]) return true;
     const c = this.wall[i];
     if (c === CELL_SOLID) { const h = this.wallHeight(i); return h >= CEIL_H - 0.01 || z < h; }
     if (c === CELL_DOOR) return this.blocked(x, y);
     return false;
+  }
+
+  /**
+   * Inside the column standing in this cell (a cell blocked full height by a
+   * prop is a column, stood in the middle of it). Bodies are kept out of the
+   * whole cell; rounds and anything thrown hit the column itself, not the air
+   * round it.
+   */
+  inColumn(x, y) {
+    const dx = x - ((x | 0) + 0.5), dy = y - ((y | 0) + 0.5);
+    return dx * dx + dy * dy < COLUMN_R * COLUMN_R;
   }
 
   /**
@@ -303,6 +342,102 @@ export class Level {
     const i = this.idx(x, y);
     if (this.wall[i] === CELL_SOLID) { const h = this.wallHeight(i); return h < CEIL_H - 0.01 ? h : 0; }
     return this.propBlock[i] && this.propH[i] > 0 ? this.propH[i] : 0;
+  }
+
+  /**
+   * A step from (x0, y0, z0) to (x1, y1, z1) that changes both cell
+   * coordinates skips the corner between them and passes through one of the
+   * two cells beside it: does that cell stop it (blockedAt, or blockedShot
+   * when `shot`)? A step exactly through the corner point squeezes between
+   * both, and either one stops it, as in clearLine. Rounds, shells and Halo
+   * rings test it, or a shot down a diagonal slips between two walls that meet.
+   */
+  cornerBlocked(x0, y0, z0, x1, y1, z1, shot = false) {
+    const ax = Math.floor(x0), ay = Math.floor(y0), bx = Math.floor(x1), by = Math.floor(y1);
+    if (ax === bx || ay === by) return false;
+    const at = (x, y, z) => (shot ? this.blockedShot(x, y, z) : this.blockedAt(x, y, z));
+    const tx = (Math.max(ax, bx) - x0) / (x1 - x0), ty = (Math.max(ay, by) - y0) / (y1 - y0);
+    if (Math.abs(tx - ty) > 1e-6) {
+      const k = (tx + ty) * 0.5;
+      return at(x0 + (x1 - x0) * k, y0 + (y1 - y0) * k, z0 + (z1 - z0) * k);
+    }
+    const X = x0 + (x1 - x0) * tx, Y = y0 + (y1 - y0) * tx, Z = z0 + (z1 - z0) * tx;
+    const ex = Math.sign(x1 - x0) * 0.01, ey = Math.sign(y1 - y0) * 0.01;
+    return at(X + ex, Y - ey, Z) || at(X - ex, Y + ey, Z);
+  }
+
+  /**
+   * Did something moving from (x0, y0, z0) to (x1, y1, z1) just go up into
+   * the ceiling slab? Decided by the cell it crossed the ceiling's height in,
+   * which on a fast step need not be the one it ended in: only under a roof,
+   * not under open sky or off the map, and not if it was above the roof
+   * already (a burst high over the building).
+   */
+  hitsCeiling(x0, y0, z0, x1, y1, z1) {
+    return this.ceilingCross(x0, y0, z0, x1, y1, z1) >= 0;
+  }
+
+  /** How far along that step it met the ceiling (0..1), or -1 if it did not. */
+  ceilingCross(x0, y0, z0, x1, y1, z1) {
+    const c = CEIL_H - 0.02;
+    if (z1 < c || z0 >= c) return -1;
+    const q = (c - z0) / (z1 - z0);
+    const x = x0 + (x1 - x0) * q, y = y0 + (y1 - y0) * q;
+    if (x < 0 || y < 0 || x >= this.W || y >= this.H) return -1;
+    const i = this.idx(x, y);
+    return !this.sky[i] && this.wall[i] !== CELL_SOLID ? q : -1;
+  }
+
+
+  /**
+   * Is the straight line from a to b clear for a blast, every cell it passes
+   * through checked (a walk of the grid, not samples along it)? Two walls
+   * that meet only at a corner seal it, the way a sampled line of sight does
+   * not. `z`, the height of the blast: a wall lower than that (a parapet with
+   * the roof open) lets it over, and one that stands above it stops it. A door
+   * stops it where the slab still is, and a column where the column is.
+   */
+  clearLine(ax, ay, bx, by, z = Infinity) {
+    let cx = Math.floor(ax), cy = Math.floor(ay);
+    const ex = Math.floor(bx), ey = Math.floor(by);
+    const dx = bx - ax, dy = by - ay;
+    const sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1;
+    const tdx = dx !== 0 ? Math.abs(1 / dx) : Infinity, tdy = dy !== 0 ? Math.abs(1 / dy) : Infinity;
+    let tx = dx !== 0 ? (dx > 0 ? cx + 1 - ax : ax - cx) * tdx : Infinity;
+    let ty = dy !== 0 ? (dy > 0 ? cy + 1 - ay : ay - cy) * tdy : Infinity;
+    let left = Math.abs(ex - cx) + Math.abs(ey - cy);
+    // the blast's own cell: only a door or a column in it can be in the way
+    if (this.inBounds(cx, cy) && this.wall[this.idx(cx, cy)] !== CELL_SOLID && this.cellStops(cx, cy, ax, ay, bx, by, z)) return false;
+    while (left > 0) {
+      if (Math.abs(tx - ty) < 1e-9) {
+        // exactly through a corner: sealed if either cell beside it is
+        if (this.cellStops(cx + sx, cy, ax, ay, bx, by, z) || this.cellStops(cx, cy + sy, ax, ay, bx, by, z)) return false;
+        tx += tdx; ty += tdy; cx += sx; cy += sy; left -= 2;
+      } else if (tx < ty) { tx += tdx; cx += sx; left--; }
+      else { ty += tdy; cy += sy; left--; }
+      if (this.cellStops(cx, cy, ax, ay, bx, by, z)) return false;
+    }
+    return true;
+  }
+
+  /** Does cell (cx, cy) stop a blast at height z on its way from a to b? */
+  cellStops(cx, cy, ax, ay, bx, by, z) {
+    if (cx < 0 || cy < 0 || cx >= this.W || cy >= this.H) return true;
+    const i = cy * this.W + cx;
+    const c = this.wall[i];
+    if (c === CELL_SOLID) { const h = this.wallHeight(i); return h > 0.7 || z < h; }
+    if (c === CELL_DOOR) {
+      // the slab that is left, as bodies and rounds meet it
+      const open = this.doorOpen[i];
+      if (open > 0.92) return false;
+      return this.doorVert[i] === 1
+        ? segHitsRect(ax, ay, bx, by, cx + 0.2, cy + open, cx + 0.8, cy + 1)
+        : segHitsRect(ax, ay, bx, by, cx + open, cy + 0.2, cx + 1, cy + 0.8);
+    }
+    if (this.propBlock[i] && !this.propH[i]) {
+      return z < CEIL_H - 0.05 && segDist2(ax, ay, bx, by, cx + 0.5, cy + 0.5) < COLUMN_R * COLUMN_R;
+    }
+    return false;
   }
 
   /** True if the cell blocks line of sight (doors count until nearly open). */

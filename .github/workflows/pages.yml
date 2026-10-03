@@ -1,8 +1,8 @@
 # Publishes NUKEHAUS to GitHub Pages.
 #
-# The site is the single-file build: one request, everything inlined, no
-# external fetches. It is rebuilt from source on every push to main, so the
-# published game can never drift from the code.
+# The site is the single-file build, plus the recorded cast beside it in
+# voices/ (fetched after the game starts). It is rebuilt from source on every
+# push to main, so the published game can never drift from the code.
 #
 # This deploys by committing the built file to the gh-pages branch rather than
 # through actions/deploy-pages. The Pages REST API refuses the workflow token
@@ -50,6 +50,7 @@ jobs:
           mkdir -p _site
           cp dist/nukehaus.html _site/index.html
           cp dist/nukehaus.html _site/nukehaus.html
+          cp -r dist/voices _site/voices
           # Without this, Pages runs the file through Jekyll.
           touch _site/.nojekyll
           test -s _site/index.html
@@ -65,6 +66,7 @@ jobs:
           # The site is only ever these files; drop anything stale.
           find /tmp/ghp -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +
           cp _site/index.html _site/nukehaus.html /tmp/ghp/
+          cp -r _site/voices /tmp/ghp/voices
           touch /tmp/ghp/.nojekyll
           cd /tmp/ghp
           git add -A

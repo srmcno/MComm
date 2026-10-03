@@ -19,8 +19,8 @@ tell you which of your exes lives in whichever city is currently on fire.
 Every pixel, every sound effect and every note of music in this game is
 generated from code at load time. There are no image files. The one exception
 is recorded sound: the cast's lines were recorded by voice actors (ElevenLabs)
-and ship inside the game as small clips, as does the chainsaw's engine. A line
-nobody recorded is a subtitle; no synthetic voice ever reads one out.
+and ship beside the game as small clips, and the chainsaw's engine inside it. A
+line nobody recorded is a subtitle; no synthetic voice ever reads one out.
 
 ## Play it
 
@@ -45,7 +45,8 @@ python3 -m http.server 8080
 ```
 
 The built single file (`dist/nukehaus.html`, via `node tools/bundle.js`) has no
-module loading and no external requests, so that one *does* open from `file://`.
+module loading, so that one *does* open from `file://`, and it speaks as long as
+its `voices/` folder is beside it.
 
 Then open <http://localhost:8080>. Click once to wake the audio, and go.
 
@@ -55,10 +56,11 @@ Then open <http://localhost:8080>. Click once to wake the audio, and go.
 npm install && node tools/bundle.js
 ```
 
-writes `dist/nukehaus.html`: the entire game (engine, art, levels, music,
-voice) in a single ~14 MB HTML file (about 2 MB of game and 12 MB of recorded
-voice) that makes no external requests. Open it directly, mail it to someone,
-put it anywhere.
+writes `dist/nukehaus.html`: the entire game (engine, art, levels, music) in a
+single ~2.5 MB HTML file, and `dist/voices/`, the recorded cast (about 40 MB of
+plain scripts the game fetches after it starts, the lines heard most first).
+Open the file directly, mail it, put it anywhere: without the folder beside it,
+the cast is subtitles.
 
 Mouse look uses pointer lock where the browser allows it. Where it doesn't (an
 embedded frame, a browser setting, a user who said no) the cursor steers the
@@ -301,7 +303,8 @@ from a set of variants (stains, bullet holes, graffiti, posters, fuse boxes,
 screens showing radar, error dialogs and a fish tank, a whiteboard of sales
 figures that only goes one way, a wall phone off the hook, a sign asking you
 not to punch the machine, and the dent that made it necessary), each floor has its own
-palette, tint and columns, and the rooms are dressed with what a bunker staff
+palette, tint and columns (solid models, not painted cards: poured concrete,
+iron-banded timber, salt-crusted, a rusted I-beam, a conduit wrapped in cable), and the rooms are dressed with what a bunker staff
 leaves behind (see **Breaking things**), and the staff themselves. The
 toilets work, in the Duke tradition.
 
@@ -351,11 +354,12 @@ modest hardware and sharpens up when it can.
 ## Tests
 
 ```
-node tools/playtest.js            # 115 gameplay assertions in a real browser
+node tools/playtest.js            # 125 gameplay assertions in a real browser
 node tools/audio-integration.js   # static coverage + live audio graph measurement
 node tools/speech-check.js        # voice casting, captions, timing, fallback (mocked browsers)
 node tools/scrawl-check.js        # the wall messages: font coverage, fit, curses, faces
-node tools/props-check.js         # furniture models, facing, routes, breakable walls
+node tools/props-check.js         # furniture models, facing, routes, breakable walls, nothing in a wall
+node tools/walls-check.js         # 10,000 flak shells and 20,000 rounds: none through a wall, door or ceiling; no blast round a sealed corner
 node tools/props-tour.js          # photographs the furniture in the game (no asserts)
 node tools/campaign.js [0|1|2]    # a bot plays the whole game and reports balance
 node tools/smoke.js               # boots, drives the UI, screenshots, frame cost
@@ -371,8 +375,10 @@ one Widow round hurts and a headshot hurts double, that a burst chains through a
 flight, that a shell put right on a warhead pays double, that the roof opening
 hands over the Splitter and the sky closing hands back the Widow, that one leak
 burns a city and two destroy it, that keycards gate their doors, that a wave can be fought
-and cleared, that every level is fully reachable with live collision in place,
-and that two minutes of continuous combat leaks no memory and produces no NaN.
+and cleared, that a shell fired into a wall stops there and a blast does not
+reach the next room, that nothing in a room past a parapet floats up over it,
+that every level is fully reachable with live collision in place, and that two
+minutes of continuous combat leaks no memory and produces no NaN.
 
 It also drives a **synthetic standard-layout gamepad** through look, movement,
 the trigger, the boot and the weapon buttons, so controller support is covered by the
@@ -398,17 +404,24 @@ fight, and the siege track thickens as the barrage does.
 
 ## The voices
 
-**The recorded cast.** The lines heard most (the story on every floor, the gore
-quips, the kills, the sky, the city losses, MUTTER reading your file, the doors,
-the crates and the chain reactions) were recorded with ElevenLabs: Hardigan is
-"John Texas", a deep gravelly American; Vance is "German Petra", English with a
-hard German accent; MUTTER is "Daniel", a steady British broadcaster; and the
-staff on the saw are "Dexter Glitch", a nervous man who has read the safety
-manual twice. There are 408 takes, about 47 minutes of them (172 Hardigan, 177
-MUTTER, 40 Vance, 19 on the saw), covering 108 of the game's 126 line pools. The
-takes are trimmed, levelled to one loudness and stored as mono MP3 in
-`src/audio/voicepack.js`: the first 163 at 32 kbps, the rest at 24 kbps (Vance,
-who is on a band-limited radio, at 16 kbps and 16 kHz) to keep the file small.
+**The recorded cast.** Nearly everything the cast says (the story on every
+floor, the gore quips, the kills, the sky, the city losses, MUTTER reading your
+file, the doors, the crates, the chain reactions and the furniture) was recorded
+with ElevenLabs' eleven_v4: Vance is "German Petra", English with a hard German
+accent; MUTTER is "Daniel", a steady British broadcaster; and the staff on the
+saw are "Dexter Glitch", a nervous man who has read the safety manual twice.
+Hardigan comes in two casts, picked in **CALIBRATION > BRICK VOICE**: "John
+Texas", a deep gravelly American, and "SteveM", a southern drawl, marked
+PREVIEW until the rest of his lines are recorded (a line he has not said yet is
+a subtitle). There are 829 takes in the full cast, about 97 minutes of them (353
+Hardigan, 305 MUTTER, 145 Vance, 26 on the saw), covering 148 of the game's 150
+line pools, plus SteveM's. Every take was checked by speech recognition against
+the words it was meant to say. They are trimmed, levelled to one loudness and
+stored as mono MP3 in `voices/*.js`, plain scripts the game fetches after it has
+started (`src/audio/voicepack.js` lists them and loads them, the lines heard most
+first): Hardigan at 40 kbps, MUTTER and the saw at 32, and Vance, who is on a
+band-limited radio, at 24 kbps and 16 kHz. `tools/voicecast/` has the script of
+takes and the builder that makes the files.
 `src/audio/acted.js` plays them through Web Audio, Vance through a radio
 band-pass and MUTTER with a faint metallic comb. A line that has takes plays one
 of them (never the same one twice running, and the right one for the city a line
@@ -417,7 +430,8 @@ a city that burns again says something new). A floor opening, or one of
 Hardigan's distracted moments, is only played when the whole exchange was
 recorded, so no scene switches voices halfway. Anything without a take is a
 subtitle only: the game never reads a line out in a synthetic voice. **CALIBRATION
-> VOICE** shows RECORDED CAST, or OFF.
+> VOICE** shows RECORDED CAST, or OFF; with it off the cast is not downloaded at
+all, and only the Brick you picked ever is.
 
 `src/audio/speech.js` can still speak unrecorded lines (its `recordedOnly`
 option, which the game turns on, is what stops it) through the browser's own

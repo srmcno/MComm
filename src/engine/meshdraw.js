@@ -31,6 +31,10 @@ function ensure(n) {
 
 // per-frame state shared with the rasterizer
 let buf, zbuf, pz, W, H, fogFar, fr, fg, fb, halfW, projY, horizon, eye, focal;
+// Over a parapet the raycaster draws open sky (skyTop is the berm's top row);
+// a model out in the open beyond it shows above the berm, one under a roof
+// next door does not (openNow, per model).
+let skyTop = null, openNow = false;
 let dx0 = 1e9, dy0 = 1e9, dx1 = -1, dy1 = -1;   // what we touched this frame
 
 /**
@@ -53,6 +57,8 @@ export function drawMeshes(rc, cam, hz, light, list, opts) {
   }
   if (!list || !list.length) return;
   buf = rc.buf; zbuf = rc.zbuf; pz = rc.pz; W = rc.w; H = rc.h;
+  skyTop = rc.skyTop || null;
+  const lv = rc.lv || null;
   fogFar = opts.fogFar;
   const fc = opts.fogColor;
   fr = fc & 255; fg = (fc >>> 8) & 255; fb = (fc >>> 16) & 255;
@@ -71,8 +77,11 @@ export function drawMeshes(rc, cam, hz, light, list, opts) {
   }
   for (let n = 0; n < list.length; n++) {
     const it = list[n];
-    if (it.mesh && it.mesh.ready) drawOne(it, it.mesh, cam, dirX, dirY, L, light);
+    if (!it.mesh || !it.mesh.ready) continue;
+    openNow = !!skyTop && (!lv || it.x < 0 || it.y < 0 || it.x >= lv.W || it.y >= lv.H || !!lv.sky[(it.y | 0) * lv.W + (it.x | 0)]);
+    drawOne(it, it.mesh, cam, dirX, dirY, L, light);
   }
+  openNow = false;
   if (dx1 >= dx0) rc.pzBox = [Math.max(0, dx0), Math.max(0, dy0), Math.min(W - 1, dx1), Math.min(H - 1, dy1)];
 }
 
@@ -230,7 +239,8 @@ function raster(a, b, c, tex, tw, th) {
     for (let x = xs; x <= xe; x++, o++, iz += dIZ, uz += dU, vz += dV, lr += dR, lg += dG, lb += dB) {
       if (iz <= 0) continue;
       const d = 1 / iz;
-      if (d >= pz[o] || d >= zbuf[x]) continue;
+      if (d >= pz[o]) continue;
+      if (d >= zbuf[x] && !(openNow && y < skyTop[x])) continue;
       let tu = (uz * d * tw) | 0, tv = (vz * d * th) | 0;
       if (tu < 0) tu = 0; else if (tu > twm) tu = twm;
       if (tv < 0) tv = 0; else if (tv > thm) tv = thm;

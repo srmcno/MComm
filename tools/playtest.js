@@ -81,6 +81,25 @@ await page.evaluate(() => {
       for (let i = 0; i < Math.round(seconds / dt); i++) g.update(dt, g.input);
     },
     god(on) { g._god = on; },
+    /**
+     * Out on the silo deck with the roof open, which is where the sky is
+     * fought from: a shell fired indoors stops at the ceiling.
+     */
+    deck() {
+      const lv = g.level;
+      lv.openRoof();
+      for (let i = 0; i < 400; i++) lv.updateRoof(0.05);
+      const c = lv._deckCentre || [lv.W / 2, lv.H / 2];
+      let best = null, bd = 1e9;
+      for (let y = 1; y < lv.H - 1; y++) for (let x = 1; x < lv.W - 1; x++) {
+        const i = y * lv.W + x;
+        if (!lv.sky[i] || lv.wall[i] || lv.blocked(x + 0.5, y + 0.5)) continue;
+        const d = Math.hypot(x + 0.5 - c[0], y + 0.5 - c[1]);
+        if (d < bd) { bd = d; best = [x + 0.5, y + 0.5]; }
+      }
+      if (best) { g.player.x = best[0]; g.player.y = best[1]; }
+      return !!best;
+    },
     /** Stand somewhere walkable with a clear line to a point. */
     standNear(x, y, minD = 2, maxD = 7) {
       const lv = g.level;
@@ -158,7 +177,7 @@ for (const L of s) {
 // -------------------------------------------------- 3. flak kills a warhead
 s = await page.evaluate(() => {
   const g = window.NUKEHAUS.game;
-  g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('splitter');
+  g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('splitter'); window.T.deck();
   const w = g.sky.spawnWarhead('stick', 1);
   const before = g.sky.warheads.length;
   let range = 0, tries = 0;
@@ -177,7 +196,7 @@ check('flak airburst kills a warhead', s.after < s.before && s.score > 0,
 s = await page.evaluate(() => {
   const g = window.NUKEHAUS.game;
   const shoot = (over) => {
-    g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('splitter');
+    g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('splitter'); window.T.deck();
     g.player.score = 0;
     const w = g.sky.spawnWarhead('stick', 1);
     w.vx = w.vy = w.vz = 0;                  // park it
@@ -240,7 +259,7 @@ check('a Splitter shell bursts on the body in front of it',
 // ------------------------------------------------------- 5. chain reaction
 s = await page.evaluate(() => {
   const g = window.NUKEHAUS.game;
-  g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('splitter');
+  g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('splitter'); window.T.deck();
   g.player.score = 0; g.sky.bestChain = 0;
   // A tight cluster strung out behind the first one: one burst on the near
   // warhead should cook off the rest. Spaced for the Splitter's 5 m burst.
@@ -371,6 +390,7 @@ s = await page.evaluate(() => {
   const opened = [];
   for (let i = 0; i < 260; i++) { g.update(1 / 60, g.input); }
   const roofOpen = g.level.roofOpen;
+  window.T.deck();                           // and up onto it, where the sky is fought from
   let spawned = 0, maxAlive = 0;
   for (let i = 0; i < 60 * 70; i++) {
     g.update(1 / 60, g.input);
@@ -411,7 +431,7 @@ check('the Splitter gets a lead on a warhead in its sights, the Widow does not',
 s = await page.evaluate(() => {
   const g = window.NUKEHAUS.game;
   const shoot = (off) => {
-    g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('splitter');
+    g.loadLevel(0); g.setState('play'); g._god = true; window.T.arm('splitter'); window.T.deck();
     g.player.score = 0;
     const spec = g.player.spec, spread = spec.spread;
     spec.spread = 0;                         // all three shells where they are aimed
@@ -3064,6 +3084,112 @@ s = await page.evaluate(async () => {
 check('modelled furniture is drawn as solid 3D models with a depth buffer, and none of it as a billboard',
   s.solids > 3 && s.billboards === 0 && s.front > 500 && s.side > 500 && s.front !== s.side,
   `${s.solids} solid models, ${s.billboards} billboards, desk covers ${s.front} px from the front, ${s.side} from the side`);
+
+// ------- 80. a shell fired into a wall at close range stops there: a dud, not a burst next door
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  const lv = g.level, p = g.player;
+  g.enemies.length = 0;
+  // a one-cell wall with open floor on both sides
+  let w = null;
+  for (let y = 2; y < lv.H - 2 && !w; y++) for (let x = 2; x < lv.W - 2 && !w; x++) {
+    const i = lv.idx(x, y);
+    if (lv.wall[i] === 1 && !lv.parapet[i] && !lv.wall[i - 1] && !lv.wall[i + 1] && !lv.propBlock[i - 1] && !lv.propBlock[i + 1]
+      && !lv.wall[i - 2] && !lv.propBlock[i - 2]) w = { x, y };
+  }
+  p.x = w.x - 0.7; p.y = w.y + 0.5; p.ang = 0; p.pitch = 0;
+  p.owned.splitter = true; p.weapon = 'splitter'; p.pendingWeapon = null; p.swapT = 0; p.cooldown = 0;
+  for (const k in p.ammo) p.ammo[k] = 99;
+  const blasts = [], duds = [];
+  const det = g.sky.detonate.bind(g.sky);
+  g.sky.detonate = (...a) => { blasts.push(a.slice(0, 3)); return det(...a); };
+  const dud0 = g.onFlakDud.bind(g);
+  g.onFlakDud = (f, k) => { duds.push([f.x, f.y, k]); return dud0(f, k); };
+  g.tryFire();
+  let beyond = false;
+  for (let k = 0; k < 90; k++) {
+    g.update(1 / 60, g.input);
+    for (const f of g.sky.flak) if (f.x > w.x + 1) beyond = true;
+  }
+  g.sky.detonate = det; g.onFlakDud = dud0;
+  return { w, duds: duds.length, dudsHere: duds.every((d) => d[0] < w.x), blasts: blasts.filter((b) => b[0] > w.x).length, beyond };
+});
+check('a shell fired into a wall at close range stops at it, a dud, and nothing bursts on the far side',
+  s.duds >= 1 && s.dudsHere && s.blasts === 0 && !s.beyond, `${s.duds} duds, ${s.blasts} bursts past the wall at ${s.w && s.w.x},${s.w && s.w.y}`);
+
+// ------- 81. a blast does not reach through a wall into the next room
+s = await page.evaluate(() => {
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  const lv = g.level;
+  let w = null;
+  for (let y = 2; y < lv.H - 2 && !w; y++) for (let x = 2; x < lv.W - 2 && !w; x++) {
+    const i = lv.idx(x, y);
+    if (lv.wall[i] === 1 && !lv.parapet[i] && !lv.wall[i - 1] && !lv.wall[i + 1] && !lv.wall[i - 2]
+      && !lv.propBlock[i - 1] && !lv.propBlock[i + 1] && !lv.propBlock[i - 2]) w = { x, y };
+  }
+  const [a, b] = g.enemies.filter((e) => e.alive && !e.def.boss && !e.def.miniboss);
+  for (const e of g.enemies) if (e !== a && e !== b) { e.x = -50; e.y = -50; }
+  a.x = w.x + 1.5; a.y = w.y + 0.5;       // next door, behind the wall
+  b.x = w.x - 1.9; b.y = w.y + 0.5;       // in the open, the same distance away
+  a.hp = a.maxHp = b.hp = b.maxHp = 999;   // count the damage, do not end it
+  const ha = a.hp, hb = b.hp;
+  g.explodeAt(w.x - 0.25, w.y + 0.5, 0.5, 2.6, 60);
+  return { w, behind: ha - a.hp, open: hb - b.hp };
+});
+check('a blast against a wall hurts nobody in the next room, and does hurt somebody the same distance away in the open',
+  s.behind === 0 && s.open > 0, `behind the wall -${s.behind}, in the open -${Math.round(s.open)}`);
+
+// ------- 82. with the roof open, nothing in a room past a parapet floats up over it
+s = await page.evaluate(async () => {
+  const { renderWorld } = await import('./src/game/render.js');
+  const { CEIL_H } = await import('./src/core/world.js');
+  const g = window.NUKEHAUS.game;
+  g.loadLevel(0); g.setState('play'); g._god = true;
+  const lv = g.level, p = g.player;
+  lv.roofTarget = 1; for (let k = 0; k < 200; k++) lv.updateRoof(0.05);
+  // a deck cell, a parapet west of it, walls, then a roofed room
+  let spot = null;
+  for (let y = 1; y < lv.H - 1 && !spot; y++) for (let x = 4; x < lv.W - 1 && !spot; x++) {
+    const i = lv.idx(x, y);
+    if (!lv.sky[i] || lv.wall[i] || !lv.parapet[i - 1]) continue;
+    for (let d = 2; d < 8; d++) {
+      const j = i - d;
+      if (x - d < 1) break;
+      if (!lv.wall[j] && !lv.sky[j] && !lv.propBlock[j]) { spot = { x, y, rx: x - d }; break; }
+    }
+  }
+  if (!spot) return { found: false };
+  p.x = spot.x + 0.5; p.y = spot.y + 0.5; p.ang = Math.PI; p.pitch = 0;
+  const e = g.enemies.find((q) => q.alive && !q.def.boss && !q.def.miniboss);
+  for (const q of g.enemies) if (q !== e) q.vanish = true;
+  e.x = -50; e.y = -50;
+  renderWorld(g, 640, 400);
+  const without = g.rc.buf.slice();
+  e.x = spot.rx + 0.5; e.y = spot.y + 0.5;
+  renderWorld(g, 640, 400);
+  const withIt = g.rc.buf;
+  let diff = 0;
+  for (let i = 0; i < without.length; i++) if (without[i] !== withIt[i]) diff++;
+  // nor is a spark that flew up and stopped against that room's ceiling
+  // (a fresh frame to compare with, drawn straight before it: the lights
+  // flicker with time, so frames a moment apart differ anyway)
+  e.x = -50; e.y = -50;
+  renderWorld(g, 640, 400);
+  const bare = g.rc.buf.slice();
+  const sp = g.particles.spawn({ x: spot.rx + 0.5, y: spot.y + 0.5, z: CEIL_H - 0.03, life: 5, size: 0.3, r: 255, g: 255, b: 255, drag: 0, grav: 0 });
+  renderWorld(g, 640, 400);
+  const withSpark = g.rc.buf;
+  let sparkDiff = 0;
+  for (let i = 0; i < bare.length; i++) if (bare[i] !== withSpark[i]) sparkDiff++;
+  sp.life = 0;
+  return { found: true, spot, diff, sparkDiff };
+});
+check('with the roof open, a body in a room past a parapet is not drawn floating over it',
+  s.found && s.diff === 0, s.found ? `${s.diff} pixels changed (parapet at ${s.spot.x - 1},${s.spot.y}, body at ${s.spot.rx},${s.spot.y})` : 'no deck by a parapet with a room behind it');
+check('nor is a spark stopped against the ceiling of that room',
+  s.found && s.sparkDiff === 0, s.found ? `${s.sparkDiff} pixels changed` : 'no deck by a parapet with a room behind it');
 
 // ------------------------------------------------------------- report
 console.log('');

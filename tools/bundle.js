@@ -1,5 +1,6 @@
-// bundle.js - roll the whole game into one self-contained HTML file.
-// No network, no module loading: paste it anywhere and it runs.
+// bundle.js - roll the whole game into one self-contained HTML file, with the
+// recorded cast in a voices/ folder beside it. No module loading: the HTML
+// runs anywhere on its own, and speaks when the folder is next to it.
 import { build } from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -78,4 +79,20 @@ ${js.split('\n').map((l) => '  ' + l).join('\n')}
 const file = path.join(OUT, 'nukehaus.html');
 fs.writeFileSync(file, html);
 const kb = (fs.statSync(file).size / 1024).toFixed(0);
-console.log(`wrote ${file}  (${kb} KB, single file, no external requests)`);
+console.log(`wrote ${file}  (${kb} KB, the whole game in one file)`);
+
+// The recorded cast is too big for the one file and rides beside it in
+// voices/, fetched after the game has started (src/audio/voicepack.js). The
+// game plays without it; the lines are subtitles then.
+const VSRC = path.join(ROOT, 'voices'), VOUT = path.join(OUT, 'voices');
+fs.rmSync(VOUT, { recursive: true, force: true });
+if (fs.existsSync(VSRC)) {
+  fs.mkdirSync(VOUT, { recursive: true });
+  let n = 0, bytes = 0;
+  for (const f of fs.readdirSync(VSRC)) {
+    if (!f.endsWith('.js')) continue;
+    fs.copyFileSync(path.join(VSRC, f), path.join(VOUT, f));
+    n++; bytes += fs.statSync(path.join(VOUT, f)).size;
+  }
+  console.log(`copied ${n} voice files to ${VOUT}  (${(bytes / 1048576).toFixed(1)} MB)`);
+}

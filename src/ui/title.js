@@ -119,6 +119,7 @@ export class TitleScreen {
       { label: 'MUSIC', value: () => pct(game.volMusic), adj: (d) => { game.volMusic = step(game.volMusic, d, 0, 1); game.sound.setMusicVol(game.volMusic); saveVolumes(game); } },
       { label: 'VOICE VOLUME', value: () => pct(game.volVox), adj: (d) => { game.volVox = step(game.volVox, d, 0, 1); game.vox.setVolume(game.volVox); saveVolumes(game); } },
       { label: 'VOICE', value: () => voiceLabel(game), adj: (d) => cycleVoice(game, d) },
+      { label: 'BRICK VOICE', value: () => brickLabel(game), adj: (d) => cycleBrick(game, d) },
       { label: 'SUBTITLES', value: () => (game.subtitlesOn ? 'ON' : 'OFF'), adj: () => { game.subtitlesOn = !game.subtitlesOn; } },
       { label: 'CRT SCANLINES', value: () => pct(s.scan / 0.6), adj: (d) => { s.scan = clamp(s.scan + d * 0.06, 0, 0.6); } },
       { label: 'BLOOM', value: () => pct(s.bloom / 1.6), adj: (d) => { s.bloom = clamp(s.bloom + d * 0.16, 0, 1.6); } },
@@ -653,6 +654,29 @@ function voiceLabel(game) {
   // Only recorded takes are ever spoken; anything else is a subtitle.
   if (m !== 'off' && game.vox && game.vox.acted) return 'RECORDED CAST';
   return VOICE_LABEL[m];
+}
+
+// Brick has two recorded casts; the player picks one.
+function brickLabel(game) {
+  const list = game.brickVoices || [];
+  const v = list.find((b) => b.id === game.brickVoice) || list[0];
+  if (!v) return 'RECORDED';
+  const name = v.preview ? `${v.name} (PREVIEW)` : v.name;
+  return game.brickVoiceReady && !game.brickVoiceReady() ? `${name} (LOADING)` : name;
+}
+
+function cycleBrick(game, d) {
+  const list = game.brickVoices || [];
+  if (list.length < 2 || !game.setBrickVoice) return;
+  const at = Math.max(0, list.findIndex((b) => b.id === game.brickVoice));
+  const next = list[(at + (d < 0 ? list.length - 1 : 1)) % list.length];
+  if (!game.setBrickVoice(next.id)) return;
+  // say something in him, if he is here already
+  const v = game.vox;
+  if (v && v.acted && v.sayLine && v.hasTake && v.hasTake('brick_kill')) {
+    if (v.cancel) v.cancel();
+    v.sayLine('brick_kill', { priority: 4 });
+  }
 }
 
 // Somebody has to say something, or the setting is a guess.

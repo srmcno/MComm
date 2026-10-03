@@ -133,6 +133,12 @@ export function renderWorld(game, W, H) {
       : it.kind === 'flare' ? `flare${Math.floor(game.time * 9) % 3}`
       : it.kind === 'ammo' ? 'ammo_flak'
       : it.kind;
+    // A column is modelled too, in the floor's own style.
+    if (it.kind === 'pillar' && art.meshes) {
+      const pk = lv.pillarKey && art.meshes.has(lv.pillarKey) ? lv.pillarKey : 'pillar';
+      const pm = art.meshes.has(pk) ? art.meshes.get(pk, 'ok', 0) : null;
+      if (pm) { M.push({ mesh: pm, x: it.x, y: it.y, z: 0, yaw: 0 }); continue; }
+    }
     // A barrel is modelled like the furniture it stands among.
     if (it.kind === 'barrel' && art.meshes && art.meshes.has('barrel')) {
       const bm = art.meshes.get('barrel', 'ok', 0);

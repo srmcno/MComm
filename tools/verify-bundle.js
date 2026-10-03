@@ -75,8 +75,19 @@ check('all levels present', state.levels === 5, `${state.levels}`);
 check('a siege runs', state.warheads >= 0 && state.level.length > 0, state.level);
 check('audio started', state.audio);
 check('WebGL post chain active', state.webgl);
-check('no external requests', requests.length === 0,
-  requests.length ? requests.slice(0, 3).join(', ') : 'fully self-contained');
+// The one file is the whole game; the only other thing it asks for is its
+// recorded cast, from the voices folder beside it.
+const voiceReqs = requests.filter((u) => u.startsWith(`http://127.0.0.1:${PORT}/voices/`));
+const others = requests.filter((u) => !voiceReqs.includes(u));
+check('nothing fetched but the voices beside it', others.length === 0,
+  others.length ? others.slice(0, 3).join(', ') : `${voiceReqs.length} voice files`);
+const cast = await page.evaluate(async () => {
+  const g = window.NUKEHAUS.game;
+  for (let i = 0; i < 600 && !g.castLoaded; i++) await new Promise((r) => setTimeout(r, 50));
+  return { loaded: g.castLoaded || 0, bank: g.castBank ? g.castBank.size : 0, brick: g.castBank && g.castBank.has('brick_kill') };
+});
+check('the recorded cast arrives from the voices folder', cast.loaded > 400 && cast.bank === cast.loaded && cast.brick,
+  `${cast.loaded} takes`);
 // Pointer lock can be refused in an embedded frame, so the cursor-steering
 // fallback has to be able to fly the game on its own.
 await page.evaluate(() => {

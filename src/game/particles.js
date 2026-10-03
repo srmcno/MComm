@@ -7,6 +7,7 @@
 
 import { rgba, makeFrame, clamp as pclamp } from '../core/pixels.js';
 import { clamp, makeRng, randRange } from '../core/math.js';
+import { CEIL_H } from '../core/world.js';
 
 const MAX_PARTICLES = 1400;
 const MAX_EFFECTS = 220;
@@ -251,6 +252,7 @@ export class Particles {
       p.vx *= d; p.vy *= d; p.vz *= d;
       p.vz -= p.grav * dt;
       const nx = p.x + p.vx * dt, ny = p.y + p.vy * dt;
+      const x0 = p.x, y0 = p.y;
       if (level && p.z < 1.4 && level.blockedShot(nx, ny, p.z)) {
         if (p.hard && !p.additive && p.grav > 1) {
           // Blood that reaches a wall stays on it for a while and runs.
@@ -263,7 +265,15 @@ export class Particles {
           p.vx *= -0.24; p.vy *= -0.24;
         }
       } else { p.x = nx; p.y = ny; }
+      const z0 = p.z;
       p.z += p.vz * dt;
+      // Indoors the ceiling stops them too, or sparks and chips fly up into
+      // the slab and show through it.
+      if (level && p.vz > 0 && level.hitsCeiling(x0, y0, z0, p.x, p.y, p.z)) {
+        p.z = CEIL_H - 0.03;
+        p.vz = -p.vz * 0.2;
+        if (p.hard && !p.additive && p.grav > 1) { p.vx *= 0.5; p.vy *= 0.5; }
+      }
       if (p.z < 0.02) {
         p.z = 0.02;
         if (p.bounce > 0 && Math.abs(p.vz) > 0.6) { p.vz = -p.vz * p.bounce; p.vx *= 0.6; p.vy *= 0.6; }

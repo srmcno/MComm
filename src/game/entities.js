@@ -1,6 +1,7 @@
 // entities.js - everything walking, hovering or bolted to a wall that wants you dead.
 
 import { clamp, damp, dist, wrapAngle, makeRng, randRange, TAU } from '../core/math.js';
+import { CEIL_H } from '../core/world.js';
 
 // The walk runs off distance. The sprite generator publishes how far its
 // painted feet push the floor back per cycle (rig.cycle, a fraction of the
@@ -624,6 +625,29 @@ export class Enemy {
 }
 
 /** A slow visible projectile, so the player can actually dodge. */
+/**
+ * Where a projectile that has just hit something actually met it: the point
+ * its step crossed a roofed ceiling, or else the face of what it went into
+ * (found by halving the step), so the sparks and the splash land on this side
+ * of the slab or the wall rather than past it. `zOff` lifts the test to the
+ * top of a blob that has size.
+ */
+function settleImpact(o, lv, x0, y0, z0, zOff, blocked) {
+  const q = lv.ceilingCross(x0, y0, z0 + zOff, o.x, o.y, o.z + zOff);
+  if (q >= 0) {
+    o.x = x0 + (o.x - x0) * q; o.y = y0 + (o.y - y0) * q;
+    o.z = CEIL_H - 0.04 - zOff;
+    return;
+  }
+  if (!blocked(o.x, o.y, o.z) || blocked(x0, y0, z0)) return;
+  let lo = 0, hi = 1;
+  for (let k = 0; k < 7; k++) {
+    const m = (lo + hi) / 2;
+    if (blocked(x0 + (o.x - x0) * m, y0 + (o.y - y0) * m, z0 + (o.z - z0) * m)) hi = m; else lo = m;
+  }
+  o.x = x0 + (o.x - x0) * lo; o.y = y0 + (o.y - y0) * lo; o.z = z0 + (o.z - z0) * lo;
+}
+
 export class Bolt {
   constructor(x, y, z, dx, dy, dz, speed, damage, owner) {
     this.x = x; this.y = y; this.z = z;
@@ -637,10 +661,13 @@ export class Bolt {
   update(dt, game) {
     this.t += dt;
     this.life -= dt;
+    const x0 = this.x, y0 = this.y, z0 = this.z;
     this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
     if (this.life <= 0) { this.alive = false; return; }
-    if (this.z < 0.05 || this.z > 2.4 || game.level.blockedShot(this.x, this.y, this.z)) {
+    if (this.z < 0.05 || this.z > 2.4 || game.level.blockedShot(this.x, this.y, this.z) || game.level.hitsCeiling(x0, y0, z0, this.x, this.y, this.z)) {
       this.alive = false;
+      const lv = game.level;
+      settleImpact(this, lv, x0, y0, z0, 0, (x, y, z) => lv.blockedShot(x, y, z));
       game.onBoltImpact(this, null);
       return;
     }
@@ -687,6 +714,7 @@ export class PipeBomb {
     if (this.settled) return;
 
     this.vz -= 16 * dt;
+    const x0 = this.x, y0 = this.y;
     const nx = this.x + this.vx * dt, ny = this.y + this.vy * dt;
     if (game.level.blockedAt(nx, ny, this.z)) {
       // Bounce off the wall it hit, on whichever axis actually blocked.
@@ -694,7 +722,14 @@ export class PipeBomb {
       if (game.level.blockedAt(this.x, ny, this.z)) this.vy *= -0.42; else this.y = ny;
       game.sound.sfx('pipebomb_land', { pan: game.panAt(this.x, this.y), vol: 0.5 });
     } else { this.x = nx; this.y = ny; }
+    const z0 = this.z;
     this.z += this.vz * dt;
+    // The ceiling: it bounces off the slab instead of sailing up through it.
+    if (this.vz > 0 && game.level.hitsCeiling(x0, y0, z0 + 0.06, this.x, this.y, this.z + 0.06)) {
+      this.z = CEIL_H - 0.07;
+      this.vz = -this.vz * 0.35;
+      game.sound.sfx('pipebomb_land', { pan: game.panAt(this.x, this.y), vol: 0.4, rate: 1.2 });
+    }
     // The floor here, or the top of whatever parapet or prop it came down on.
     const rest = 0.08 + (game.level.restAt ? game.level.restAt(this.x, this.y) : 0);
     if (this.z <= rest) {
@@ -781,6 +816,7 @@ export class Acid {
     this.t += dt;
     this.life -= dt;
     this.vz -= 11 * dt;
+    const x0 = this.x, y0 = this.y, z0 = this.z;
     this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
     const p = game.player;
     if (this.life <= 0) { this.alive = false; return; }
@@ -791,8 +827,10 @@ export class Acid {
       game.onAcidSplash(this, true);
       return;
     }
-    if (this.z < 0.06 || game.level.blockedAt(this.x, this.y, this.z)) {
+    if (this.z < 0.06 || game.level.blockedAt(this.x, this.y, this.z) || game.level.hitsCeiling(x0, y0, z0 + 0.05, this.x, this.y, this.z + 0.05)) {
       this.alive = false;
+      const lv = game.level;
+      settleImpact(this, lv, x0, y0, z0, 0.05, (x, y, z) => lv.blockedAt(x, y, z));
       game.onAcidSplash(this, false);
     }
   }

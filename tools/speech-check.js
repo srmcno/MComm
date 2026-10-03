@@ -16,7 +16,8 @@ import {
 import { LINES, PHONE_SET, textToPhonemes, voiceOf } from '../src/audio/vox.js';
 import { Radio, SPEAKERS } from '../src/game/story.js';
 import { ClipBank, clipKey } from '../src/audio/acted.js';
-import { VOICE_PACK } from '../src/audio/voicepack.js';
+import { VOICE_FILES, BRICK_VOICES, voiceFilesFor } from '../src/audio/voicepack.js';
+import { readVoices } from './voices.js';
 import { DISTRACTED, LEVEL_STORY_SETS } from '../src/game/story.js';
 
 let pass = 0, fail = 0;
@@ -980,8 +981,12 @@ const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve();
 }
 
 /* 9. the shipped takes match the script they claim to say */
-{
-  const clips = (VOICE_PACK && VOICE_PACK.clips) || [];
+const VOICES = await readVoices();
+const FULL = BRICK_VOICES.find((b) => !b.preview).id;
+for (const { id: brick, preview } of BRICK_VOICES) {
+  // the cast as the game hears it with this Brick
+  const clips = [...(VOICES.cast || []), ...(VOICES[brick] || [])];
+  const VOICE_PACK = { clips };
   const norm = (t) => clipKey('x', t);
   const bad = [], seen = new Set();
   const gags = new Map();
@@ -992,9 +997,11 @@ const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve();
     const bytes = Buffer.from(c.b || '', 'base64');
     const mp3 = bytes.length > 400 && ((bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) || (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0));
     if (!mp3) bad.push(id + ' audio');
-    const k = clipKey(c.r, c.t);
-    if (seen.has(k)) bad.push(id + ' duplicate');
-    seen.add(k);
+    // the same words twice for the same line is waste; two lines that happen
+    // to share their words (a curse when hurt, the same curse when dying) are not
+    const k = clipKey(c.r, c.t), kk = k + '|' + (c.k || '');
+    if (seen.has(kk)) bad.push(id + ' duplicate');
+    seen.add(kk);
     if (c.k) {
       const v = LINES[c.k];
       const src = Array.isArray(v) ? v[c.i] : v;
@@ -1005,11 +1012,22 @@ const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve();
       bad.push(id + ' exact line not in the script');
     }
   }
-  check(`every take (${clips.length}) is sound, unique and says what the script says`, bad.length === 0, bad.slice(0, 6).join(', '));
+  check(`with Brick as ${brick}: every take (${clips.length}) is sound, unique and says what the script says`, bad.length === 0, bad.slice(0, 6).join(', '));
   if (clips.length) {
     const bank = new ClipBank(VOICE_PACK);
-    const whole = LEVEL_STORY_SETS.map((sets) => sets.some((set) => set.every((b) => bank.has(b.key))));
-    check('every floor has an opening exchange the recorded cast can play whole', whole.every(Boolean), whole.join(','));
+    const hisKeys = new Set((VOICES[FULL] || []).map((c) => `${c.k}|${c.i}|${c.t}`));
+    const mine = new Set((VOICES[brick] || []).map((c) => `${c.k}|${c.i}|${c.t}`));
+    if (preview) {
+      // still being recorded: only what he has said must be what the full cast says
+      check(`Brick as ${brick} (a preview) says only lines the full Brick does (${mine.size} of ${hisKeys.size})`, [...mine].every((k) => hisKeys.has(k)) && mine.size > 0);
+    } else {
+      const whole = LEVEL_STORY_SETS.map((sets) => sets.some((set) => set.every((b) => bank.has(b.key))));
+      check(`with Brick as ${brick}: every floor has an opening exchange the recorded cast can play whole`, whole.every(Boolean), whole.join(','));
+      check(`Brick as ${brick} says every line the other Bricks do`, BRICK_VOICES.filter((b) => !b.preview).every((b) => {
+        const theirs = new Set((VOICES[b.id] || []).map((c) => `${c.k}|${c.i}|${c.t}`));
+        return [...theirs].every((k) => mine.has(k)) && theirs.size === mine.size;
+      }), `${mine.size}`);
+    }
     const CITY_NAMES = ['Saint Errol', 'Verity', 'Candlemark', 'Hollow Bay', 'Low Sabbath', 'Ashgrove'];
     const few = [];
     for (const key of ['city_burning', 'city_lost']) {
@@ -1029,9 +1047,29 @@ const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve();
       if (t) distinct.add(t);
     }
     check('a city that burns again does not say the same thing twice running', twice === 0 && distinct.size >= 3, `${twice} repeats, ${distinct.size} takes`);
-    const kb = Math.round(clips.reduce((n, c) => n + c.b.length, 0) / 1024);
-    check('the pack stays under 12 MB of base64', kb < 12288, `${kb} KB`);
   }
+}
+{
+  // The files: small enough to host and fetch one at a time, the game file
+  // free of them, and the order the most-heard lines first.
+  const big = VOICE_FILES.filter((f) => f.bytes > 8 * 1048576).map((f) => f.src);
+  check(`every voice file is under 8 MB (${VOICE_FILES.length} files)`, big.length === 0, big.join(', '));
+  const total = VOICE_FILES.reduce((n, f) => n + f.bytes, 0) / 1048576;
+  check('all of the voices together stay under 56 MB', total < 56, `${total.toFixed(1)} MB`);
+  const a = voiceFilesFor(BRICK_VOICES[0].id), b = voiceFilesFor(BRICK_VOICES[1].id), c = voiceFilesFor('bogus');
+  const A = BRICK_VOICES[0].id, B = BRICK_VOICES[1].id;
+  check('a choice of Brick fetches the rest of the cast and only that Brick',
+    a.every((f) => f.set === 'cast' || f.set === A) && b.every((f) => f.set === 'cast' || f.set === B)
+      && a.some((f) => f.set === A) && b.some((f) => f.set === B) && c.map((f) => f.src).join() === a.map((f) => f.src).join());
+  check('the lines heard most come first', a.every((f, i) => !i || a[i - 1].tier <= f.tier) && a[0].set !== 'cast');
+  const bank = new ClipBank(null);
+  const n1 = bank.add(VOICES.cast || []), n2 = bank.add(VOICES.texas || []);
+  bank.dropRole('brick');
+  const left = bank.clips.filter((x) => x.r === 'brick').length;
+  bank.add(VOICES.stevem || []);
+  check('switching Brick swaps his takes and keeps everyone else\'s', n1 > 0 && n2 > 0 && left === 0
+    && bank.has('brick_kill') && bank.clips.filter((x) => x.r === 'brick').length === (VOICES.stevem || []).length
+    && bank.clips.filter((x) => x.r !== 'brick').length === n1);
 }
 
 console.log('\nspeech-check - Web Speech casting, text, timing and fallback\n');
