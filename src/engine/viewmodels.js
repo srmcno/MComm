@@ -1557,13 +1557,13 @@ function flat3(col, gl, shadeFn, o = {}) {
 // leather, the last two joints of every finger are sunburnt skin with hair on
 // them, and the forearms carry what he refers to as his "art".
 
-const SKIN3 = rgba(214, 160, 124, 255);
-const SKIN3_D = rgba(156, 100, 76, 255);
-const SKIN3_R = rgba(200, 118, 96, 255);    // knuckles and fingertips flush redder
+const SKIN3 = rgba(198, 134, 98, 255);         // sunburnt: warm enough to stay skin under the screen's lift
+const SKIN3_D = rgba(138, 82, 58, 255);
+const SKIN3_R = rgba(192, 98, 78, 255);     // knuckles and fingertips flush redder
 const HAIR3 = rgba(62, 42, 30, 255);
-const GLOVE3 = rgba(52, 45, 43, 255);
-const GLOVE3_HI = rgba(118, 108, 104, 255);
-const STITCH3 = rgba(150, 136, 112, 255);
+const GLOVE3 = rgba(88, 56, 36, 255);         // saddle-brown driving leather
+const GLOVE3_HI = rgba(150, 104, 70, 255);
+const STITCH3 = rgba(206, 182, 136, 255);
 const INK3 = rgba(34, 44, 70, 255);
 const INK3_R = rgba(176, 34, 38, 255);
 const CLOTH3 = rgba(92, 96, 64, 255);        // olive shirt sleeve, rolled
@@ -1640,8 +1640,8 @@ function tattoo3(S, t) {
 // rolled stitched hem where the skin starts, seams down the stalls and three
 // stitched points down the back.
 
-const SKIN3_P = rgba(222, 140, 118, 255);   // the pad of a fingertip
-const SKIN3_W = rgba(228, 184, 152, 255);   // the pale band the glove keeps out of the sun
+const SKIN3_P = rgba(206, 112, 92, 255);    // the pad of a fingertip
+const SKIN3_W = rgba(214, 160, 126, 255);   // the pale band the glove keeps out of the sun
 const NAIL3B = rgba(234, 194, 182, 255);    // nail plate over its pink bed
 const NAIL3E = rgba(246, 232, 214, 255);    // the free edge
 const sq3 = (x) => x * x;
@@ -1659,7 +1659,7 @@ const PHAL3 = [0.45, 0.30, 0.25];
 // The thumb: its metacarpal (buried in the ball of the thumb), then the two
 // segments you see, together about 0.65 of the index finger. `root` is how
 // much of the metacarpal the digit itself carries before the mound takes over.
-const THUMB3 = { L: [4.6, 2.9, 2.5], root: 1.6, w: 1.15, h: 0.96 };
+const THUMB3 = { L: [4.6, 2.9, 2.5], root: 1.6, w: 1.0, h: 0.85 };
 const PALM3 = 9.0;    // wrist joint to the middle of the knuckle row
 // the knuckle row in the palm's own frame (toward the fingers, toward the
 // thumb, out of the back), index first: an arc, the little finger set back
@@ -1716,10 +1716,10 @@ function gloveShade(S, so, circ, wearK = 0.6) {
   let c = shadeC(GLOVE3, 0.82 + n * 0.34 + (f - 0.5) * 0.26);
   // the worn sheen where the leather is stretched over a crest toward the light
   const crest = clamp(-S.ny * 0.8 - S.nz * 0.35, 0, 1) * wearK;
-  c = mix(c, GLOVE3_HI, crest * (0.2 + n * 0.42));
-  c = mix(c, rgba(12, 10, 10, 255), clamp((1 - S.ao) * 0.9, 0, 0.62));
+  c = mix(c, GLOVE3_HI, crest * (0.14 + n * 0.32));
+  c = mix(c, rgba(30, 18, 12, 255), clamp((1 - S.ao) * 0.9, 0, 0.62));
   S.col = c;
-  S.gl = 0.38 + crest * 0.2 + (f - 0.5) * 0.12;
+  S.gl = 0.34 + crest * 0.18 + (f - 0.5) * 0.12;
   S.nx += (f - 0.5) * 0.22; S.ny += (f2 - 0.5) * 0.22;
 }
 
@@ -1881,7 +1881,7 @@ function digitShade3(S) {
     const e = pr.cut - u;
     const hem = pr.thumb ? 0.18 : 0.32;
     if (e < lw * 1.2) { S.col = shadeC(S.col, 0.42); S.gl *= 0.4; }                 // the cut edge
-    else if (e < hem) { S.col = shadeC(S.col, 1.12 + (hem - e) * 0.8); S.gl += 0.06; } // rolled hem
+    else if (e < hem) { S.col = shadeC(S.col, (pr.thumb ? 1.04 : 1.12) + (hem - e) * 0.8); S.gl += 0.06; } // rolled hem
     else if (stitch3(S.v * pr.circ, e - 0.48, px)) S.col = STITCH3;
     // seams down both sides of the stall
     const side = acos(clamp(abs(sd), 0, 1)) * pr.wb;
@@ -1908,9 +1908,10 @@ function digitShade3(S) {
   // wrinkles across the knuckles, folds under them
   if (cd > 0.35) {
     const arch = (1 - cd) * 0.16, lw2 = lw * 0.8;
+    const wk = pr.thumb ? 0.5 : 0.34;
     for (let k = -1; k <= 1; k++) {
       const uk = jK + k * 0.19 + arch;
-      if (abs(u - uk) < lw2 && abs(sd) < 0.62 - abs(k) * 0.22) { c = mix(c, SKIN3_D, 0.34); gl *= 0.8; }
+      if (abs(u - uk) < lw2 && abs(sd) < 0.62 - abs(k) * 0.22) { c = mix(c, SKIN3_D, k ? wk * 0.75 : wk); gl *= 0.8; }
     }
     if (!pr.thumb) {
       for (let k = 0; k <= 1; k++) {
@@ -1970,7 +1971,20 @@ function palmShade3(S) {
   }
 }
 const PALM_MAT3 = { col: GLOVE3, gl: 0.38, hand: true, soft: true, shade: palmShade3 };
-const THENAR_MAT3 = { col: GLOVE3, gl: 0.38, hand: true, soft: true, shade: (S) => gloveShade(S, S.prim.seed, 11, 0.8) };
+const THENAR_MAT3 = {
+  col: GLOVE3, gl: 0.38, hand: true, soft: true,
+  shade(S) {
+    gloveShade(S, S.prim.seed, 11, 0.8);
+    // soft creases where the leather folds as the thumb comes in to the hand
+    const px = S.z / CAM_F, lw = max(0.05, px * 0.65);
+    if (S.u > 3.4 && S.u < 5.4) {
+      const w = nz3(S.u * 0.5 + S.prim.seed, S.v * 3.0);
+      const k = ((S.u + w * 0.9) / 0.62) % 1;
+      if (abs(k - 0.5) * 0.62 < lw) S.col = shadeC(S.col, 0.66);
+      else if (abs(k - 0.62) * 0.62 < lw) S.col = shadeC(S.col, 1.16);
+    }
+  },
+};
 
 /**
  * The ball of the thumb and the web, as one fan of hand: a solid whose
@@ -1987,7 +2001,7 @@ function web3(sc, cmc, mcp, palmP, idxP, fs, extra) {
   };
   const tan = (t) => vNorm(vSub(at(min(1, t + 0.04)).C, at(max(0, t - 0.04)).C));
   const half = (t) => { const g = at(t); return vLen(vSub(g.I, g.M)) * 0.5 + 0.6 * fs; };
-  const thick = (t) => lerp(1.6, 0.82, smoothstep(0, 1, t)) * fs;
+  const thick = (t) => (lerp(1.4, 0.84, smoothstep(0.15, 1, t)) + 0.32 * sin(PI * min(1, t * 1.25))) * fs;
   const ring = (C, T, g, ra, rb) => {
     let L = vSub(g.I, g.M);
     L = vNorm(vSub(L, vMul(T, vDot(L, T))));
@@ -2128,7 +2142,7 @@ function hand3(sc, H) {
       const sk = H.s && H.s[k] !== null && H.s[k] !== undefined ? H.s[k] : sDef[k] * fs;
       const mp = Array.isArray(H.mcpP) ? H.mcpP[k] : (H.mcpP === undefined ? 1.55 : H.mcpP);
       const mq = Array.isArray(H.mcpQ) ? H.mcpQ[k] : (H.mcpQ === undefined ? 0.4 : H.mcpQ);
-      const slope = H.slope || 0;
+      const slope = Array.isArray(H.slope) ? H.slope[k] : (H.slope || 0);
       const pts = [[rp + mp, mq]];
       let th = atan2(mq / rq, (rp + mp) / rp);
       const offs = [0.92, 0.84, 0.8];
@@ -2216,9 +2230,9 @@ function hand3(sc, H) {
     const tl = THUMB3.root + THUMB3.L[1] + THUMB3.L[2];
     digit3(sc, [root, mcp, ip, tip], null, { w: THUMB3.w * fs, h: THUMB3.h * fs }, TPROF3,
       [0, THUMB3.root / tl, (THUMB3.root + THUMB3.L[1]) / tl, 1], DIGIT_MAT3, {
-        seed: so + 9, part: part(), cut: (THUMB3.root + 0.45) * fs,
-        circ: TAU * THUMB3.w * fs * 0.95, wb: THUMB3.w * fs, nailA: 0.86, hair: 0.6, thumb: true,
-      }, { up, capBase: 0.4, nailLen: 1.3 * fs, segs: 16 });
+        seed: so + 9, part: part(), cut: (THUMB3.root - 0.05) * fs,
+        circ: TAU * THUMB3.w * fs * 0.95, wb: THUMB3.w * fs, nailA: 0.98, hair: 0.6, thumb: true,
+      }, { up, capBase: 0.4, nailLen: 1.5 * fs, segs: 16 });
     // the ball of the thumb and the web, one piece with the palm
     web3(sc, cmc, vLerp(root, mcp, 0.92), vBasis(W, F, 4.6 * fs, R, 0.9 * fs, D, -0.4 * fs),
       vBasis(K[0], F, -0.9 * fs, R, 0.25 * fs, D, -0.2 * fs), fs, { seed: so + 5 });
@@ -2602,7 +2616,7 @@ function drawWidow3(sc, P) {
     c: vAdd(gt, vMul(a, 0.4)), a, p, q, rp: 1.62, rq: 2.7,
     s: [0.2, 2.3, 4.35, 6.3], mcpP: 1.4, mcpQ: [0.9, 0.6, 0.3, 0.0], slope: 0.05,
     trigger: [[2.2, 5.4, 6.4], [0.9, 6.2, 8.9], [-0.4, 6.4, 9.4]],
-    thumbBase: [0.0, 6.4, -3.2], thumb: [[-2.45, 3.9, 3.1], [-2.55, 4.1, 6.0], [-1.9, 4.35, 8.3]], thumbUp: [-1, -0.3, 0],
+    thumbBase: [0.0, 6.4, -3.2], thumb: [[-2.35, 4.05, 3.1], [-2.5, 3.85, 6.0], [-3.15, 3.35, 8.1]], thumbUp: [-0.7, -1, 0],
     wrist: [3.5, 12.5, -5.0], armLen: 36, armBend: [0.05, 0.25, 0],
     tattoo: { u: 15, s: 2.6, face: true }, seed: 7,
   });
@@ -2823,10 +2837,10 @@ function drawSplitter3(sc, P) {
   // fingers hooked over the top of the barrels, thumb hooked under. The
   // section the fingers walk round is the wood plus the barrels on it.
   hand3(sc, {
-    side: -1, c: [0, 4.2, 21.9], a: [0, 0, 1], p: [-1, 0, 0], q: [0, -1, 0], rp: 5.85, rq: 4.0, sq: 2.6,
-    s: [0, 2.05, 4.05, 5.85], mcpP: 1.35, mcpQ: [0.7, 0.65, 0.55, 0.35], slope: 0,
-    thumb: [[-5.6, 8.2, 20.6], [-3.4, 8.4, 21.6], [-1.2, 8.3, 22.7]], thumbUp: [0, 1, 0.2],
-    wrist: [-7.6, 12.6, 23.0], arm: [-0.45, 0.55, -1], armLen: 38, armBend: [-0.1, 0.25, 0],
+    side: -1, c: [0, 4.2, 17.9], a: [0, 0, 1], p: [-1, 0, 0], q: [0, -1, 0], rp: 5.85, rq: 4.45, sq: 2.6,
+    s: [0, 2.4, 4.8, 7.0], mcpP: 1.35, mcpQ: [-1.6, 0.0, -0.3, -1.6], slope: [-1.3, -0.45, 0.45, 1.3], gap: 0.1,
+    thumb: [[-5.6, 8.2, 16.6], [-3.4, 8.4, 17.6], [-1.2, 8.3, 18.7]], thumbUp: [0, 1, 0.2],
+    wrist: [-7.6, 12.6, 19.0], arm: [-0.45, 0.55, -1], armLen: 38, armBend: [-0.1, 0.25, 0],
     tattoo: { u: 14, s: 2.4, word: 'NUKE', face: true }, seed: 13,
   });
   pop3(sc);
@@ -2852,7 +2866,7 @@ function rightGrip3(sc, gTop, gDir, trig, o = {}) {
     s: [0.2, 2.3, 4.35, 6.3], mcpP: 1.4, mcpQ: [0.9, 0.6, 0.3, 0.0], slope: 0.05,
     trigger: [R(2.2, -0.7, -2.5), R(0.9, 0.1, 0), R(-0.4, 0.3, 0.5)],
     thumbBase: T(0, 1.8 + ty * 0.5, -6.4),
-    thumb: [T(-2.45 + tx, -0.7 + ty, -0.1 + tz), T(-2.55 + tx, -0.5 + ty, 2.8 + tz), T(-1.9 + tx, -0.25 + ty, 5.1 + tz)],
+    thumb: [T(-2.35 + tx, -0.65 + ty, -0.1 + tz), T(-2.4 + tx, -0.5 + ty, 2.8 + tz), T(-3.2 + tx, -0.3 + ty, 5.0 + tz)],
     thumbUp: [-1, -0.3, 0],
     wrist: T(3.5, 7.9, -8.2), armLen: 36, armBend: [0.05, 0.2, 0],
     tattoo: { u: 16, s: 2.6, face: true }, seed: 7,
