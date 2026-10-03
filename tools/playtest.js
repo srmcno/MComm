@@ -3144,6 +3144,7 @@ check('a blast against a wall hurts nobody in the next room, and does hurt someb
 // ------- 82. with the roof open, nothing in a room past a parapet floats up over it
 s = await page.evaluate(async () => {
   const { renderWorld } = await import('./src/game/render.js');
+  const { CEIL_H } = await import('./src/core/world.js');
   const g = window.NUKEHAUS.game;
   g.loadLevel(0); g.setState('play'); g._god = true;
   const lv = g.level, p = g.player;
@@ -3172,13 +3173,16 @@ s = await page.evaluate(async () => {
   let diff = 0;
   for (let i = 0; i < without.length; i++) if (without[i] !== withIt[i]) diff++;
   // nor is a spark that flew up and stopped against that room's ceiling
+  // (a fresh frame to compare with, drawn straight before it: the lights
+  // flicker with time, so frames a moment apart differ anyway)
   e.x = -50; e.y = -50;
-  const { CEIL_H } = await import('./src/core/world.js');
+  renderWorld(g, 640, 400);
+  const bare = g.rc.buf.slice();
   const sp = g.particles.spawn({ x: spot.rx + 0.5, y: spot.y + 0.5, z: CEIL_H - 0.03, life: 5, size: 0.3, r: 255, g: 255, b: 255, drag: 0, grav: 0 });
   renderWorld(g, 640, 400);
   const withSpark = g.rc.buf;
   let sparkDiff = 0;
-  for (let i = 0; i < without.length; i++) if (without[i] !== withSpark[i]) sparkDiff++;
+  for (let i = 0; i < bare.length; i++) if (bare[i] !== withSpark[i]) sparkDiff++;
   sp.life = 0;
   return { found: true, spot, diff, sparkDiff };
 });
